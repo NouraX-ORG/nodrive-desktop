@@ -29,7 +29,7 @@ Q_LOGGING_CATEGORY(lcOcsAssistantConnector, "nextcloud.gui.assistant.connector",
 constexpr auto basePath = "/ocs/v2.php/taskprocessing"_L1;
 constexpr auto assistantChatTaskTypeId = "core:text2text:chat"_L1;
 constexpr auto assistantSystemPrompt =
-    "This is a conversation in a specific language between the user and you, Nextcloud Assistant. "
+    "This is a conversation in a specific language between the user and you, the Assistant. "
     "You are a kind, polite and helpful AI that helps the user to the best of its abilities. "
     "If you do not understand something, you will ask for clarification. Detect the language "
     "that the user is using. Make sure to use the same language in your response. Do not mention "

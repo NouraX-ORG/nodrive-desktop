@@ -1,0 +1,83 @@
+{
+  "_comment": "NoDrive desktop ids. Single source of truth for tools/rebrand.py (renders nodrive/NODRIVE.cmake). Plan: plans/desktop-plan.md section 2. GUIDs were generated once with uuid.uuid4() on 2026-10-25 and are fixed.",
+  "product": {
+    "name": "NoDrive",
+    "vendor": "Nourax",
+    "server_url": "https://drive.nourax.org",
+    "help_url": "https://drive.nourax.org",
+    "update_url_placeholder": "https://drive.nourax.org/",
+    "privacy_url": "",
+    "repo_url": "https://github.com/NouraX-ORG/nodrive-desktop",
+    "upstream_version": "35.0.0",
+    "nourax_release": 1
+  },
+  "cmake": {
+    "APPLICATION_NAME": "NoDrive",
+    "APPLICATION_SHORTNAME": "NoDrive",
+    "APPLICATION_EXECUTABLE": "nodrive",
+    "APPLICATION_CONFIG_NAME": "nodrive",
+    "APPLICATION_ICON_NAME": "NoDrive",
+    "APPLICATION_VENDOR": "Nourax",
+    "APPLICATION_DOMAIN": "drive.nourax.org",
+    "APPLICATION_REV_DOMAIN": "org.nourax.nodrive.desktop",
+    "APPLICATION_REV_DOMAIN_DBUS": "desktop.nodrive.nourax.org",
+    "APPLICATION_REV_DOMAIN_INSTALLER": "org.nourax.nodrive.desktop",
+    "LINUX_PACKAGE_SHORTNAME": "nodrive",
+    "LINUX_APPLICATION_ID": "org.nourax.nodrive.desktop.nodrive",
+    "APPLICATION_VIRTUALFILE_SUFFIX": "nodrive",
+    "APPLICATION_URI_HANDLER_SCHEME": "nc",
+    "DEVELOPMENT_TEAM": "NOURAXTEAM",
+    "DBUS_PREFIX": "org",
+    "THEME_CLASS": "NoDriveTheme",
+    "THEME_INCLUDE": "nodrivetheme.h"
+  },
+  "colors": {
+    "primary": "#2563EB",
+    "primary_light": "#3B82F6",
+    "accent": "#F97316",
+    "accent_dark": "#EA580C",
+    "light_bg": "#F8FAFC",
+    "dark_bg": "#0B1220",
+    "dark_surface": "#0F172A",
+    "wizard_header_title": "#FFFFFF"
+  },
+  "windows": {
+    "WIN_SHELLEXT_CONTEXT_MENU_GUID": "{3D056A87-6CB2-47ED-BB26-88619E5F1310}",
+    "WIN_SHELLEXT_OVERLAY_GUID_ERROR": "{2735AE03-F851-41BD-8A7D-9990874280A1}",
+    "WIN_SHELLEXT_OVERLAY_GUID_OK": "{7FDD1DD4-BFAA-40E0-BC3C-820B4ACE2094}",
+    "WIN_SHELLEXT_OVERLAY_GUID_OK_SHARED": "{C29F966A-75FB-4A4F-9C21-A81FE8BE7860}",
+    "WIN_SHELLEXT_OVERLAY_GUID_SYNC": "{8D7C3782-C1B0-4A62-8248-E452BDA833F6}",
+    "WIN_SHELLEXT_OVERLAY_GUID_WARNING": "{7BBC37AC-82DF-4EAB-8BE0-58CEF2DF42E1}",
+    "WIN_MSI_UPGRADE_CODE": "128D34E5-4AC9-4F86-B692-48CCEBDD8E80",
+    "CFAPI_SHELLEXT_APPID_REG": "{D0DEF841-F1C6-408F-A61A-5648FF369364}",
+    "CFAPI_SHELLEXT_CUSTOM_STATE_HANDLER_CLASS_ID": "E83B042C-9E22-4595-A329-165EDD0CE33A",
+    "CFAPI_SHELLEXT_THUMBNAIL_HANDLER_CLASS_ID": "925951D6-1412-4A58-9A02-EF15798AC23C"
+  },
+  "switches": {
+    "BUILD_UPDATER": "OFF",
+    "WITH_PROVIDERS": "OFF",
+    "WITH_CRASHREPORTER": "OFF",
+    "DISABLE_ACCOUNT_MIGRATION": "ON",
+    "APPLICATION_DISPLAY_LEGACY_IMPORT_DIALOG": "OFF",
+    "APPLICATION_SERVER_URL_ENFORCE": "ON",
+    "MACOS_USE_ICON_COMPOSER": "OFF",
+    "APPLICATION_ICON_SET": "SVG",
+    "APPLICATION_WIZARD_USE_CUSTOM_LOGO": "ON"
+  },
+  "linux": {
+    "desktop_file": "org.nourax.nodrive.desktop.nodrive.desktop",
+    "systemd_unit": "org.nourax.nodrive.desktop.nodrive.service",
+    "dbus_service": "org.nourax.nodrive.desktop.nodrive",
+    "cloudproviders_bus": "org.nourax.NoDrive",
+    "cloudproviders_path": "/org/nourax/NoDrive",
+    "mime_type": "application/vnd.nodrive",
+    "hicolor_icon": "NoDrive.png"
+  },
+  "user_agent": {
+    "server_rule_source": "nextcloud/server v35.0.2 lib/public/IRequest.php USER_AGENT_CLIENT_DESKTOP",
+    "server_rule": "/^Mozilla\\/5\\.0 \\([A-Za-z ]+\\) (?:mirall|csyncoC)\\/([^ ]*).*$/",
+    "linux": "Mozilla/5.0 (Linux) mirall/35.0.0-nourax.1 (NoDrive, <distro>-<kernel> ClientArchitecture: x86_64 OsArchitecture: x86_64)",
+    "windows": "Mozilla/5.0 (Windows) mirall/35.0.0-nourax.1 (NoDrive, windows-<kernel> ClientArchitecture: x86_64 OsArchitecture: x86_64)",
+    "macos": "Mozilla/5.0 (Macintosh) mirall/35.0.0-nourax.1 (NoDrive, macos-<kernel> ClientArchitecture: arm64 OsArchitecture: arm64)"
+  }
+}

@@ -1,0 +1,63 @@
+# Testing NoDrive for Linux
+
+How the Linux build is tested, and the results. CI file: `.github/workflows/linux.yml`.
+
+## What CI runs
+
+| Job | What it does |
+|---|---|
+| Branding gate | `tools/rebrand.py --check` (the rebrand is complete) and `tools/check-branding.py --lane linux` (no unclassified Nextcloud name, link, colour or logo in shared and Linux files) |
+| Build and unit tests | Debug build with tests in upstream's public Qt CI image, then `ctest` under Xvfb as a normal user. Skipped tests and the reason for each: `tools/branding/ctest-skip-linux.txt` |
+| AppImage | `admin/linux/build-appimage.sh` (as upstream, NoDrive names) → artifact `nodrive-linux-appimage` |
+| Smoke test | `tools/screenshots/linux.sh`: starts the AppImage under Xvfb with a fresh HOME, takes the screenshots below, clicks "Log in" with a fake browser that only records the URL, and logs DNS (tcpdump) and the app's `connect()` calls (strace). Then checks the package: `.desktop` file, icon, licence files, and `check-branding.py --artifact` over the unpacked AppImage (text files, compiled translations, URLs inside the binaries). Artifact `nodrive-linux-screenshots` |
+
+A smoke-only run can reuse an AppImage from an earlier run: *Actions → Linux → Run workflow → reuse_run = <run id>*.
+
+## Results
+
+Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the owner's home network reach the Drive login page).
+
+| Feature | Who | Result | Evidence |
+|---|---|---|---|
+| Starts | CI | PASS | 8 starts (4 variants × 2 runs), wizard window 720×420 every time (`results.tsv`: `launch-*`) |
+| Shows NoDrive's name | CI | PASS | Window title "NoDrive", "Log in to NoDrive", `NoDrive version 35.0.0-nourax.1 (build N)`, `--help` without "Nextcloud"; `.desktop` file `org.nourax.nodrive.desktop.nodrive.desktop` with `Name=NoDrive Desktop` |
+| Shows NoDrive's icon | CI | PASS | Nourax logo in the tray and the title bar (screenshots); `usr/share/icons/hicolor/512x512/apps/NoDrive.png` has the same SHA-256 as `theme/colored/512-NoDrive-icon.png` from `tools/make-icons.py` |
+| Shows NoDrive's colours | CI | PASS | Pixel check finds the "Log in" button in `#2563EB` in every variant |
+| Server fixed, no server-entry screen | CI | PASS | First page has no address field, no "Sign up" / "Self-host" (screenshots 01); unit test `NoDriveBrandingTest` (`serverUrlEditable() == false`, server `https://drive.nourax.org`); provisioning tests check that another `--serverurl` is refused |
+| Sign-in opens the browser at drive.nourax.org | CI | PASS | The app handed `https://drive.nourax.org/login/v2/flow/<token>` to the browser in all 4 variants (token redacted in the logs). The page itself is not loaded in CI |
+| No Nextcloud service contacted | CI | PASS | DNS names during the whole test: only `drive.nourax.org` and the runner's own GitHub hosts. The app connected only to drive.nourax.org (after "Log in") and the local DNS resolver (`net/network-report.md`) |
+| Dark mode (before sign-in) | CI | PASS | Wizard background `#202124` with the desktop set to dark (XDG portal `color-scheme` = prefer dark) |
+| Second language: German | CI | PASS | Screenshots `de-light` |
+| Right-to-left: Arabic | CI | PASS, with a note | Layout is mirrored (buttons, menus). Several new wizard texts have no Arabic translation upstream yet and show in English |
+| Unit tests | CI | PASS | `100% tests passed, 0 tests failed out of 99`; skipped: `UpdateChannelTest` (no update channels in branded builds; no updater) |
+| Branding sweep of the AppImage | CI | PASS | Only legal text (licence files, Legal Notice copyright line in the translations) and one stale, never-shown translation are kept, all listed in `tools/branding/allow-shared.txt` |
+| File list | owner | pending owner test | |
+| Upload, download, rename, move, delete | owner | pending owner test | |
+| Public link with expiry and password | owner | pending owner test | |
+| Sync folder and a conflict | owner | pending owner test | |
+| Files on demand (if it loads) | owner | pending owner test | |
+| Sign out | owner | pending owner test | |
+| Dark mode (after sign-in) | owner | pending owner test | |
+| Second language (after sign-in) | owner | pending owner test | |
+| Next to the real Nextcloud app (optional) | owner | pending owner test | |
+| Device name in the web page (Settings → Security → Devices) | owner | pending owner test | |
+
+Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
+
+## Screenshots
+
+Folder `docs/screenshots/linux/<variant>/`. Variants: `en-light`, `de-light`, `ar-light` (Arabic, right to left), `en-dark`.
+
+| File | Screen |
+|---|---|
+| `01-wizard.png` | First start: "Log in to NoDrive" with the Log in button only |
+| `02-tray-menu.png` | Tray icon menu without an account (Add account, Settings, Quit) |
+| `03-proxy-settings.png` | Proxy settings dialog of the wizard |
+| `04-sign-in.png` | After "Log in": "Switch to your browser" |
+
+These are all the screens the app shows without an account: "Settings" in the tray menu opens the same wizard until an account exists.
+
+Notes:
+- The window frame and title bar come from the test's window manager (openbox, theme Onyx), not from NoDrive.
+- In `en-dark`, the tray menu stays light: the test desktop gives Qt's widget menus a light palette. The NoDrive windows follow dark mode. The owner's dark-mode test after sign-in checks this on a real desktop.
+- The screenshots were taken in run 40163272940 from the AppImage of run 40162847566 (commit 8050d10ce6). The app's code has not changed since then; later commits changed only CI, tools and docs.

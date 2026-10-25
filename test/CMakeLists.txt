@@ -107,6 +107,7 @@ nextcloud_add_test(SharingDialog)
 target_link_libraries(SharingDialogTest PRIVATE nextcloudGuiSharing nextcloudGuiSharingplugin)
 nextcloud_add_test(PushNotifications)
 nextcloud_add_test(Theme)
+nextcloud_add_test(NoDriveBranding) # NoDrive branding checks
 nextcloud_add_test(SettingsDialog)
 nextcloud_add_test(IconUtils)
 nextcloud_add_test(CustomStateIcons)

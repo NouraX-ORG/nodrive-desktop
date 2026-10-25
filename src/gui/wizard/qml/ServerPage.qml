@@ -16,6 +16,8 @@ Item {
     required property var controller
     readonly property color primaryTextColor: Style.wizardPrimaryText
     readonly property color hintTextColor: Style.wizardSecondaryText
+    // NoDrive: the server is fixed, so the address field and its texts are hidden.
+    readonly property bool fixedServer: !root.controller.serverUrlEditable && !root.controller.overrideServerSelectionRequired
 
     ColumnLayout {
         anchors.fill: parent
@@ -35,6 +37,7 @@ Item {
         }
 
         EnforcedPlainTextLabel {
+            visible: !root.fixedServer
             text: qsTr("Enter the link to your %1 web interface from the browser or the link to a folder shared with you.").arg(root.controller.appName)
             color: root.hintTextColor
             font.pixelSize: Style.pixelSize + 2
@@ -54,7 +57,7 @@ Item {
 
                 WizardTextField {
                     id: serverUrlField
-                    visible: !root.controller.overrideServerSelectionRequired
+                    visible: !root.controller.overrideServerSelectionRequired && !root.fixedServer
                     Layout.fillWidth: true
                     text: root.controller.serverUrl
                     enabled: !root.controller.busy
@@ -184,6 +187,7 @@ Item {
             }
 
             Rectangle {
+                visible: !root.fixedServer
                 x: 8
                 y: 0
                 width: serverAddressLabel.implicitWidth + 8

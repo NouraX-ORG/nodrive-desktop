@@ -27,7 +27,7 @@ NextcloudTheme::NextcloudTheme()
 
 QString NextcloudTheme::wizardUrlHint() const
 {
-    return QStringLiteral("https://try.nextcloud.com");
+    return {}; // NoDrive: no trial-server link in the binary (class unused, see nodrive/nodrivetheme.h)
 }
 
 }

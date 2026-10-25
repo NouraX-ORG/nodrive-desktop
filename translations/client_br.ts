@@ -228,11 +228,6 @@
 <context>
     <name>AssistantWindow</name>
     <message>
-        <location filename="../src/gui/AssistantWindow.qml" line="19"/>
-        <source>Nextcloud Assistant</source>
-        <translation type="unfinished"/>
-    </message>
-    <message>
         <location filename="../src/gui/AssistantWindow.qml" line="91"/>
         <location filename="../src/gui/AssistantWindow.qml" line="95"/>
         <source>Start new conversation?</source>
@@ -1779,7 +1774,7 @@ This action will abort any currently running synchronization.</source>
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="203"/>
-        <source>seconds (if &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; is unavailable)</source>
+        <source>seconds (if Client Push is unavailable)</source>
         <translation type="unfinished"/>
     </message>
     <message>

@@ -5,6 +5,7 @@
 
 #include "accountsetupcommandlinemanager.h"
 #include "accountsetupfromcommandlinejob.h"
+#include "theme.h" // NoDrive: enforced server
 
 namespace OCC
 {
@@ -83,6 +84,11 @@ bool AccountSetupCommandLineManager::parseCommandlineOption(const QString &optio
 
 bool AccountSetupCommandLineManager::isCommandLineParsed() const
 {
+    // NoDrive: only the enforced server may be configured from the command line.
+    if (const auto theme = Theme::instance(); theme->forceOverrideServerUrl() && !theme->overrideServerUrl().isEmpty()
+        && !_serverUrl.matches(QUrl(theme->overrideServerUrl()), QUrl::StripTrailingSlash)) {
+        return false;
+    }
     return !_userId.isEmpty() && _serverUrl.isValid();
 }
 

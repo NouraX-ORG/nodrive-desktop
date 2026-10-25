@@ -6,6 +6,8 @@ include( InstallRequiredSystemLibraries )
 set( CPACK_PACKAGE_CONTACT  "Dominik Schmidt <domme@tomahawk-player.org>" )
 
 include("${CMAKE_SOURCE_DIR}/NEXTCLOUD.cmake")
+# NoDrive: the line above resets the names to upstream's; apply the overlay again.
+include("${CMAKE_SOURCE_DIR}/nodrive/NODRIVE.cmake")
 
 include( VERSION.cmake )
 set( CPACK_PACKAGE_VERSION_MAJOR  ${MIRALL_VERSION_MAJOR} )

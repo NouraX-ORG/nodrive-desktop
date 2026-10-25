@@ -12,6 +12,7 @@
 #include "owncloudgui.h"
 #include "settingspanelstyle.h"
 #include "theme.h"
+#include "nodriveconfig.h" // NoDrive: NOURAX_PRIVACY_URL
 
 #if defined(BUILD_UPDATER)
 #include "updater/updater.h"
@@ -61,6 +62,17 @@ InfoSettings::InfoSettings(QWidget *parent)
 #endif
 
     connect(_ui->legalNoticeButton, &QPushButton::clicked, this, &InfoSettings::slotShowLegalNotice);
+    // NoDrive: no in-app legal page; the licence texts ship as files next to
+    // the app (see NOTICE.md, "Legal notices").
+    _ui->legalNoticeButton->setVisible(false);
+    // NoDrive: privacy-policy link, only when NOURAX_PRIVACY_URL is set at build time.
+    if (const auto privacyUrl = QString::fromUtf8(NOURAX_PRIVACY_URL); !privacyUrl.isEmpty()) {
+        const auto privacyButton = new QPushButton(tr("Privacy policy"), _ui->aboutAndUpdatesGroupBox);
+        _ui->aboutLayout->insertWidget(_ui->aboutLayout->indexOf(_ui->legalNoticeButton), privacyButton);
+        connect(privacyButton, &QPushButton::clicked, this, [privacyUrl]() {
+            Utility::openBrowser(QUrl(privacyUrl));
+        });
+    }
 
     connect(_ui->usageDocumentationButton, &QPushButton::clicked, this, []() {
         Utility::openBrowser(QUrl(Theme::instance()->helpUrl()));
