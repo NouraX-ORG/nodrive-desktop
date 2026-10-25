@@ -75,13 +75,18 @@ tray_icon_centre() {
 
 click() { xdotool mousemove --sync "$1" "$2" sleep 0.3 click "${3:-1}"; sleep 0.3; xdotool mousemove 2 2; }
 
-stop_app() { # stop_app <strace pid>: SIGTERM the app (process name "nodrive"), then wait
-    pkill -TERM -x nodrive 2>/dev/null
-    local i
-    for ((i = 0; i < 40; i++)); do kill -0 "$1" 2>/dev/null || break; sleep 0.5; done
-    pkill -KILL -x nodrive 2>/dev/null
-    for ((i = 0; i < 20; i++)); do kill -0 "$1" 2>/dev/null || break; sleep 0.5; done
-    kill "$1" 2>/dev/null
+descendants() { local c; for c in $(ps -o pid= --ppid "$1" 2>/dev/null); do echo "$c"; descendants "$c"; done; }
+
+# stop_app <strace pid> <tag>: SIGTERM the app (all processes strace started),
+# then SIGKILL whatever still runs with this run's log file in its command line
+# (strace itself blocks SIGTERM when it starts the program with -o FILE).
+stop_app() {
+    ps -eo pid,ppid,comm,args --forest > "$OUT/logs/ps-$2.txt" 2>&1
+    local i pids
+    pids=$(descendants "$1")
+    [ -n "$pids" ] && kill -TERM $pids 2>/dev/null
+    for ((i = 0; i < 30; i++)); do kill -0 "$1" 2>/dev/null || break; sleep 0.5; done
+    pkill -KILL -f "logs/app-$2[.]log" 2>/dev/null
     wait "$1" 2>/dev/null
     for ((i = 0; i < 20; i++)); do [ -z "$(find_wizard)" ] && break; sleep 0.5; done
 }
@@ -135,7 +140,7 @@ inner() {
         windows > "$OUT/logs/windows-$tag.txt"
         shot "$variant" "00-no-wizard-$run"
         result "launch-$tag" FAIL "no NoDrive window within 120 s (see logs/stdout-$tag.txt)"
-        stop_app "$app"; kill "$portal" 2>/dev/null
+        stop_app "$app" "$tag"; kill "$portal" 2>/dev/null
         return 1
     fi
     xdotool mousemove 2 2   # no hover effects in the screenshots
@@ -205,7 +210,7 @@ inner() {
             fi
         fi
     fi
-    stop_app "$app"
+    stop_app "$app" "$tag"
     kill "$portal" 2>/dev/null
     rm -rf "$H/tmp"
     return 0
@@ -248,19 +253,20 @@ log "Xvfb ${SCREEN_W}x${SCREEN_H}, openbox, stalonetray"
 Xvfb :99 -screen 0 "${SCREEN_W}x${SCREEN_H}x24" -nolisten tcp > "$OUT/logs/xvfb.txt" 2>&1 &
 XVFB=$!
 for ((i = 0; i < 50; i++)); do xdpyinfo -display :99 > /dev/null 2>&1 && break; sleep 0.2; done
-xsetroot -solid '#4B5563'
 openbox > "$OUT/logs/openbox.txt" 2>&1 &
 sleep 1
+xsetroot -solid '#4B5563'
 stalonetray --geometry 1x1-0+0 --icon-size 32 --kludges force_icons_size --window-type dock -bg '#1F2937' \
     > "$OUT/logs/stalonetray.txt" 2>&1 &
 sleep 1
 
-dbus-run-session -- bash "$0" --inner en-light cli
+timeout -k 10 300 dbus-run-session -- bash "$0" --inner en-light cli
 
 STATUS=0
 for variant in en-light de-light ar-light en-dark; do
     for run in screens login; do
-        dbus-run-session -- bash "$0" --inner "$variant" "$run" || STATUS=1
+        timeout -k 10 300 dbus-run-session -- bash "$0" --inner "$variant" "$run" || STATUS=1
+        pkill -KILL -f "logs/app-$variant-$run[.]log" 2>/dev/null
     done
 done
 
