@@ -638,7 +638,8 @@ LICENSE_FILES = [
 
 THIRD_PARTY = [
     # (component, licence, copyright holders as published by the component)
-    ("NoDrive desktop app (based on the Nextcloud desktop client 35.0.0)", "GPL-2.0-or-later",
+    # {upstream_version} comes from ids.json (product.upstream_version).
+    ("NoDrive desktop app (based on the Nextcloud desktop client {upstream_version})", "GPL-2.0-or-later",
      "Nourax (changes, 2026); Nextcloud GmbH and Nextcloud contributors; ownCloud GmbH"),
     ("Qt 6", "LGPL-3.0-only (GPL-3.0 text included)", "The Qt Company Ltd. and other contributors"),
     ("KDE Frameworks (KArchive, KGuiAddons, KDBusAddons) and bundled KDE parts (Kirigami, KMessageWidget)",
@@ -671,8 +672,9 @@ def render_third_party(ids: dict) -> str:
         "Component | Licence | Copyright",
         "--------- | ------- | ---------",
     ]
+    upstream_version = ids["product"]["upstream_version"]
     for comp, lic, holders in THIRD_PARTY:
-        lines.append(f"{comp} | {lic} | {holders}")
+        lines.append(f"{comp.format(upstream_version=upstream_version)} | {lic} | {holders}")
     lines += [
         "",
         "Trademarks: all product names and trademarks are the property of their",

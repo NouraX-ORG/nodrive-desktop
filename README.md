@@ -1,119 +1,103 @@
 <!--
-  - SPDX-FileCopyrightText: 2017 Nextcloud GmbH and Nextcloud contributors
-  - SPDX-FileCopyrightText: 2011 Nextcloud GmbH and Nextcloud contributors
+  - SPDX-FileCopyrightText: 2026 Nourax
   - SPDX-License-Identifier: GPL-2.0-or-later
 -->
-# Nextcloud Desktop Client
+# NoDrive for Windows, macOS and Linux
 
-[![REUSE status](https://api.reuse.software/badge/github.com/nextcloud/desktop)](https://api.reuse.software/info/github.com/nextcloud/desktop)
+NoDrive is the desktop sync app of **Nourax**. It keeps folders on your computer
+in sync with your files in Nourax Workspace at `https://drive.nourax.org`.
 
-The Nextcloud Desktop Client is an app to synchronize files from Nextcloud Server with your computer available for Windows, macOS and Linux.
+- One server only: the app always connects to `https://drive.nourax.org`. There is
+  no "enter server address" screen.
+- Sign-in happens in your web browser ("Log in with Nourax").
+- Folder sync with Explorer (Windows) and Finder (macOS) integration. Files on
+  demand is built on Windows; it is part of the owner tests.
+- No built-in updater, no crash reporter, no usage reporting.
 
-<p align="center">
-    <img src="doc/images/main_dialog_christine.png" alt="Desktop Client on Windows" width="450">
-</p>
+**Status:** test builds only. The builds are not code-signed, and there are no
+releases and no store versions yet.
 
-## Downloads 🚀
-For the latest stable and recommended version, please refer to [the official download page](https://nextcloud.com/install/#install-clients).
+## Based on the Nextcloud desktop client
 
-## Help 🛟
-You can find [the user, administration and developer manuals for the desktop client](https://docs.nextcloud.com/#desktop) on our central documentation site.
+NoDrive is the [Nextcloud desktop client](https://github.com/nextcloud/desktop),
+version 35.0.0 (tag `v35.0.0`), with the Nourax name, logo, colours and a fixed
+server. Thank you to Nextcloud GmbH, ownCloud GmbH and every contributor of the
+Nextcloud desktop client: almost all of the code in this repository is their work.
 
-## Contributing 🫴
-- Make sure to follow our [guidelines for contributing](https://github.com/nextcloud/desktop/blob/98690b1e9141f2c602c9b4583c1f9ed16b95a309/CONTRIBUTING.md) to this repository.
-- Don't forget to read our [Code of Conduct](https://nextcloud.com/community/code-of-conduct/). This document offers some guidance to ensure Nextcloud participants can cooperate effectively in a positive and inspiring atmosphere and to explain how together we can strengthen and support each other.
+- Upstream's own README is kept as [docs/upstream-README.md](docs/upstream-README.md).
+- What we changed and why: [NOTICE.md](NOTICE.md) and [docs/branding.md](docs/branding.md).
+- NoDrive is not made or endorsed by Nextcloud GmbH. "Nextcloud" is a trademark of
+  Nextcloud GmbH.
 
-## Join the team 👪
-There are many ways to contribute, of which development is only one! Find out [how to get involved](https://nextcloud.com/contribute/), including as a translator, designer, tester, helping others, and much more! 😍
+## Licence
 
-## Help testing 🔬
-Download and install the client:
+NoDrive is free software under the **GNU General Public License, version 2 or (at
+your option) any later version** (GPL-2.0-or-later), the same licence as upstream.
+See [COPYING](COPYING). Upstream copyright headers, `COPYING`, `LICENSES/` and
+`AUTHORS.md` are unchanged. Bundled libraries (Qt, KDE Frameworks, OpenSSL and
+others) keep their own licences; their texts ship with every package from
+[nodrive/licenses/](nodrive/licenses/). Details: [NOTICE.md](NOTICE.md).
 
-- [All releases](https://github.com/nextcloud-releases/desktop/releases)<br>
-- [Daily builds](https://download.nextcloud.com/desktop/daily)
+## How to build
 
-## Reporting issues 🐛
-If you find any bugs or have any suggestion for improvement, please
-[open an issue in this repository](https://github.com/nextcloud/desktop/issues).
+The apps are built in **GitHub Actions**, from this repository, with no secrets:
 
-## Bug fixing and development 🛠️
+| Platform | Workflow | Package |
+|---|---|---|
+| Linux | [`.github/workflows/linux.yml`](.github/workflows/linux.yml) | AppImage (x86_64) |
+| Windows | [`.github/workflows/windows.yml`](.github/workflows/windows.yml) | MSI (x64), built with KDE Craft |
+| macOS | [`.github/workflows/macos.yml`](.github/workflows/macos.yml) | `.dmg` (Apple silicon), ad-hoc signed, built with KDE Craft |
 
-> [!TIP]
-> For contributors on macOS, see the [macOS development guide](./doc/macOS-development.md).
+Every push to `main` (and to the platform branches) builds the package, runs the
+unit tests, installs or starts the app, takes screenshots and runs the branding
+check. You can also start a run by hand: *Actions → (workflow) → Run workflow*.
 
-> [!NOTE]  
-> Find the system requirements and instructions on [how to work with KDE Craft in our desktop client blueprints repository](https://github.com/nextcloud/craft-blueprints-nextcloud/).
+Step-by-step build notes, also for a local Linux build: [docs/build.md](docs/build.md).
 
-### System requirements
-- Windows 10, Windows 11, macOS 13 Ventura (or newer) or Linux
-- [🔽 Inkscape (to generate icons)](https://inkscape.org/release/)
-- Developer tools: cmake, clang/gcc/g++:
-- Qt6 since 3.14, Qt5 for earlier versions
-- OpenSSL
-- [🔽 QtKeychain](https://github.com/frankosterfeld/qtkeychain)
-- SQLite
-- [Xcode](https://developer.apple.com/xcode/) (only on macOS)
+The branding is applied by tools in this repository and must be re-run after
+every upstream update:
 
-Optional recommendations:
-
-- [Qt Creator IDE](https://www.qt.io/product/development-tools)
-- [delta: A viewer for git and diff output](https://github.com/dandavison/delta)
-
-### Build
-
-Step by step instructions on how to build the client to contribute.
-
-1. Clone the Github repository: `git clone https://github.com/nextcloud/desktop.git`
-2. Create build directory: `mkdir <build directory>`
-3. Navigate into build directory: `cd <build directory>`
-4. Compile: `cmake -S <cloned desktop repo> -B build -DCMAKE_PREFIX_PATH=<dependencies> -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=. -DNEXTCLOUD_DEV=ON`
-
-> [!TIP]
-> The cmake variable NEXTCLOUD_DEV allows you to run your own build of the client while developing in parallel with an installed version of the client.
-
-Then you might continue with these steps:
-	
-1. 🐛 [Pick a good first issue](https://github.com/nextcloud/desktop/labels/good%20first%20issue)
-2. 👩‍🔧 Create a branch and make your changes. Remember to sign off your commits using `git commit -sm "Your commit message"`
-3. ⬆ Create a [pull request](https://opensource.guide/how-to-contribute/#opening-a-pull-request) and `@mention` the people from the issue to eview
-4. 👍 Fix things that come up during a review
-5. 🎉 Wait for it to get merged!
-
-### Test servers
-
-The easiest way to have a local Nextcloud server to develop, debug and test the client against is [the Nextcloud Docker image](https://github.com/nextcloud/docker).
-The following example shows how to deploy a Nextcloud Docker container on the local host which will be removed again as soon as the command is interrupted.
-Note that this requires Docker to be installed in your developer environment.
-
-```bash
-docker run \
-    --rm \
-    --publish 8080:80 \
-    --env SQLITE_DATABASE=nextcloud.sqlite \
-    --env NEXTCLOUD_ADMIN_USER=admin \
-    --env NEXTCLOUD_ADMIN_PASSWORD=admin \
-    nextcloud
+```sh
+python tools/rebrand.py           # names, ids, server, texts, colours (idempotent)
+python tools/make-icons.py        # every icon from the Nourax logo (Pillow)
+python tools/check-branding.py --lane all   # fails if a Nextcloud name, link, logo or colour shows
 ```
 
-This simple test server already suffices in the most cases. For more advanced server test deployments we also recommend [Nextcloud development environment on Docker Compose](https://juliusknorr.github.io/nextcloud-docker-dev/).
+## Where the test builds are
 
-## Get in touch 💬
-* [📋 Forum](https://help.nextcloud.com)
-* [🐘 Mastodon](https://mastodon.xyz/@nextcloud)
-* [🔗 LinkedIn](https://www.linkedin.com/company/nextcloud-gmbh/)
-* [🦋 Bluesky](https://bsky.app/profile/nextcloud.bsky.social)
-* [👥 Facebook](https://www.facebook.com/nextclouders)
+Test builds are **Actions artifacts** (there are no GitHub releases):
 
-You can also [get professional support for Nextcloud and the desktop client](https://nextcloud.com/support)!
+1. Open the repository's **Actions** tab and pick the workflow (**Linux**,
+   **Windows** or **macOS**).
+2. Open the newest green run on `main`.
+3. Under **Artifacts**, download:
 
-## License 📜
+| Platform | Artifact | File inside (example) |
+|---|---|---|
+| Linux | `nodrive-linux-appimage` | `NoDrive-35.0.0-nourax.1-<build>-x86_64.AppImage` |
+| Windows | `nodrive-windows-msi` | `NoDrive-35.0.0.<build>-nourax.1-x64.msi` |
+| macOS | `nodrive-macos-dmg` | `NoDrive-35.0.0-nourax.1-<build>-arm64.dmg` |
 
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
+`<build>` is the run number of that workflow.
 
-    This program is distributed in the hope that it will be useful, but
-    WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
-    for more details.
+You must be signed in to GitHub to download artifacts. Artifacts are kept for
+30 days; after that, run the workflow again. Every run also has a screenshots
+artifact (`nodrive-<platform>-screenshots`) with the test results.
+
+How to install them and what to test: [docs/testing.md](docs/testing.md).
+
+## Documentation
+
+| File | What it covers |
+|---|---|
+| [NOTICE.md](NOTICE.md) | Licences, trademarks, what Nourax changed, the in-app legal-notice decision |
+| [docs/branding.md](docs/branding.md) | Every id, colours, icons, and how the branding tools work |
+| [docs/branding-sweep.md](docs/branding-sweep.md) | The "no Nextcloud on any screen" sweep: every hit and why it is kept |
+| [docs/build.md](docs/build.md) | How the three platforms are built |
+| [docs/testing.md](docs/testing.md) | Test results per platform, owner tests, screenshot index |
+| [docs/upstream-updates.md](docs/upstream-updates.md) | How to take a new Nextcloud desktop release |
+
+## Reporting problems
+
+This is Nourax's own build. Please do not report NoDrive problems to the Nextcloud
+project; contact Nourax instead.
