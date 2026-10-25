@@ -1,0 +1,435 @@
+# SPDX-FileCopyrightText: 2026 Nourax
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# NoDrive for macOS: branding gate, build, unit tests, .app and .dmg, smoke test with screenshots
+# (macOS lane, plans/desktop-plan.md 9.5).
+#
+# Based on upstream .github/upstream-workflows/macos-craft-ci.yml + macos-build-and-test.yml
+# (KDE Craft on GitHub-hosted runners). Differences:
+# - Craft blueprints stable-35.0 (upstream file still pointed at stable-34.0).
+# - Our own CraftMaster override admin/osx/nodrive-craftmaster.ini; the root craftmaster.ini stays upstream.
+# - Resumable Craft cache: the dependency step is time-limited and the cache is saved even when it
+#   fails, times out or is cancelled, so the next run continues where this one stopped
+#   (GitHub ends any job after 6 hours).
+# - Classic sync only (File Provider module off), no Sparkle, no secrets, no Nextcloud team id.
+# - Ad-hoc signing only (codesign --sign -). No notarisation, no releases, no tags.
+#
+# Build-time downloads (not app runtime): CraftMaster (invent.kde.org), Craft and blueprints
+# (github.com/nextcloud), Craft's binary package cache (download.nextcloud.com), Homebrew inkscape.
+
+name: macOS
+
+on:
+  push:
+    branches: [main, platform/macos]
+  workflow_dispatch:
+    inputs:
+      reuse_run:
+        description: "Run id whose nodrive-macos-dmg artifact the smoke test uses (skips the build)"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read # download-artifact from an earlier run (reuse_run)
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CRAFT_TARGET: macos-clang-arm64
+  # Exact version: Craft keeps a virtualenv in its root that points at this interpreter,
+  # so the cached root only works with the same Python. Part of the cache key.
+  PYTHON_VERSION: "3.12.10"
+  BLUEPRINTS_BRANCH: stable-35.0
+  KDE_BLUEPRINTS_URL: https://github.com/nextcloud/craft-blueprints-kde.git
+  NC_BLUEPRINTS_URL: https://github.com/nextcloud/craft-blueprints-nextcloud.git
+  CRAFTMASTER_URL: https://invent.kde.org/packaging/craftmaster.git
+  # Same list for every restore and save (the list is part of the cache version).
+  # Build and download trees are left out to keep the cache small.
+  CRAFT_CACHE_PATHS: |
+    CraftMaster
+    craft-clone
+    macos-clang-arm64/*
+    !macos-clang-arm64/build
+    !macos-clang-arm64/download
+
+jobs:
+  branding:
+    name: Branding gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # tools/rebrand.py also runs every lane plugin, including tools/rebrand.d/macos.py.
+      - name: Rebrand is complete (tools/rebrand.py --check)
+        run: python3 tools/rebrand.py --check
+
+      - name: No unclassified Nextcloud hit (tools/check-branding.py --lane macos)
+        run: python3 tools/check-branding.py --lane macos --report branding-macos.md
+
+      - name: Upload branding report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-macos-branding-report
+          path: branding-macos.md
+          if-no-files-found: ignore
+          retention-days: 30
+
+  deps:
+    name: Craft dependencies (resumable cache)
+    if: ${{ !inputs.reuse_run }}
+    runs-on: macos-latest
+    # Below GitHub's 6 h job limit, so the cache save at the end always gets to run.
+    timeout-minutes: 355
+    outputs:
+      cache-key: ${{ steps.keys.outputs.complete }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Runner
+        run: |
+          sw_vers
+          echo "arch $(uname -m), $(sysctl -n hw.ncpu) CPUs, $(( $(sysctl -n hw.memsize) / 1073741824 )) GB RAM"
+          xcode-select -p
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Set up Python
+        id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Compute Craft cache keys
+        id: keys
+        env:
+          INI_HASH: ${{ hashFiles('craftmaster.ini', 'admin/osx/nodrive-craftmaster.ini') }}
+          PY: ${{ steps.python.outputs.python-version }}
+        run: |
+          kde="$(git ls-remote "$KDE_BLUEPRINTS_URL" "refs/heads/$BLUEPRINTS_BRANCH" | cut -c1-12)"
+          nc="$(git ls-remote "$NC_BLUEPRINTS_URL" "refs/heads/$BLUEPRINTS_BRANCH" | cut -c1-12)"
+          if [ -z "$kde" ] || [ -z "$nc" ] || [ -z "$INI_HASH" ] || [ -z "$PY" ]; then
+            echo "::error::could not resolve the Craft cache key inputs"; exit 1
+          fi
+          family="macos-craft-v1-py$PY"
+          prefix="$family-${INI_HASH:0:16}-kde$kde-nc$nc"
+          {
+            echo "family=$family"
+            echo "prefix=$prefix"
+            echo "complete=$prefix-complete"
+            echo "partial=$prefix-partial-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+          echo "complete key: $prefix-complete"
+
+      - name: Look for a complete Craft cache
+        id: complete
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ steps.keys.outputs.complete }}
+          lookup-only: true
+
+      - name: Restore an earlier Craft cache (resume)
+        id: resume
+        if: steps.complete.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ steps.keys.outputs.partial }}
+          restore-keys: |
+            ${{ steps.keys.outputs.prefix }}-partial-
+            ${{ steps.keys.outputs.family }}-
+
+      - name: Set up Xcode
+        if: steps.complete.outputs.cache-hit != 'true'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install Homebrew dependencies
+        if: steps.complete.outputs.cache-hit != 'true'
+        run: brew install --cask inkscape
+
+      - name: Set up Craft and blueprints
+        id: setup
+        if: steps.complete.outputs.cache-hit != 'true'
+        timeout-minutes: 30
+        run: |
+          echo "restored from: ${{ steps.resume.outputs.cache-matched-key || 'nothing (fresh start)' }}"
+          if [ ! -f CraftMaster/CraftMaster.py ]; then
+            git clone -q --depth=1 "$CRAFTMASTER_URL" CraftMaster
+          fi
+          git -C CraftMaster log -1 --format='CraftMaster %H %cs'
+          admin/osx/nodrive-craft.sh --add-blueprint-repository "$KDE_BLUEPRINTS_URL|$BLUEPRINTS_BRANCH|"
+          admin/osx/nodrive-craft.sh --add-blueprint-repository "$NC_BLUEPRINTS_URL|$BLUEPRINTS_BRANCH|"
+          admin/osx/nodrive-craft.sh craft
+
+      - name: Install the client's Craft dependencies
+        id: deps
+        if: steps.complete.outputs.cache-hit != 'true'
+        # Time limit: leaves room for the cache save below inside the 355 min job.
+        timeout-minutes: 290
+        run: admin/osx/nodrive-craft.sh --install-deps nextcloud-client
+
+      - name: Disk usage
+        if: always() && steps.complete.outputs.cache-hit != 'true'
+        run: |
+          df -h "$GITHUB_WORKSPACE"
+          du -sh CraftMaster craft-clone "$CRAFT_TARGET"/* 2>/dev/null | sort -h | tail -n 15 || true
+
+      - name: Save complete Craft cache
+        if: steps.complete.outputs.cache-hit != 'true' && steps.deps.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ steps.keys.outputs.complete }}
+
+      - name: Save partial Craft cache (resume point for the next run)
+        if: always() && (steps.deps.outcome == 'failure' || steps.deps.outcome == 'cancelled')
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ steps.keys.outputs.partial }}
+
+  build:
+    name: Build, test and package (classic sync, arm64)
+    needs: [branding, deps]
+    if: ${{ !inputs.reuse_run }}
+    runs-on: macos-latest
+    timeout-minutes: 240
+    env:
+      PKG_BUILD: ${{ github.workspace }}/macos-clang-arm64/build/nextcloud-client
+      BUILD_DIR: ${{ github.workspace }}/macos-clang-arm64/build/nextcloud-client/work/build
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Runner
+        run: |
+          sw_vers
+          echo "arch $(uname -m), $(sysctl -n hw.ncpu) CPUs, $(( $(sysctl -n hw.memsize) / 1073741824 )) GB RAM"
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show Swift and Xcode versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install Homebrew dependencies
+        # CMake needs an SVG converter (cmake/modules/GenerateIconsUtils.cmake).
+        run: brew install --cask inkscape
+
+      - name: Restore the Craft cache from the deps job
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ needs.deps.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Build the client with Craft
+        id: build
+        timeout-minutes: 150
+        run: |
+          admin/osx/nodrive-craft.sh --compile --install \
+            --options "nextcloud-client.srcDir=$GITHUB_WORKSPACE" \
+            --options "nextcloud-client.buildFileProviderModule=False" \
+            --options "nextcloud-client.buildMacOSBundle=True" \
+            --options "nextcloud-client.buildTests=True" \
+            --options "nextcloud-client.args=-DMIRALL_VERSION_BUILD=$GITHUB_RUN_NUMBER" \
+            nextcloud-client
+          df -h "$GITHUB_WORKSPACE"
+
+      - name: Locate the app bundle
+        id: locate
+        run: |
+          app=""
+          while IFS= read -r -d '' a; do app="$a"; break; done < <(
+            find "$PKG_BUILD" -mindepth 2 -maxdepth 2 -type d -name '*.app' -path '*/image-*' -not -path '*-dbg/*' -print0)
+          if [ -z "$app" ] || [ ! -d "$BUILD_DIR" ]; then
+            echo "::error::built app bundle or build directory not found under $PKG_BUILD"
+            ls -la "$PKG_BUILD" || true
+            exit 1
+          fi
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "App bundle: $app"
+          ls "$app/Contents/MacOS" "$app/Contents/PlugIns" "$app/Contents/Library/LoginItems" 2>/dev/null || true
+          echo "Frameworks: $(ls "$app/Contents/Frameworks" 2>/dev/null | wc -l | tr -d ' ')"
+          /usr/libexec/PlistBuddy -c 'Print' "$app/Contents/Info.plist" | grep -E '^\s+(CFBundle(Name|Identifier|ShortVersionString|LongVersionString|Version|Executable)|NSHumanReadableCopyright|NSLocalNetworkUsageDescription|SU[A-Za-z]+) =' || true
+
+      - name: Package (ad-hoc sign, .dmg, .app.zip)
+        id: package
+        run: |
+          admin/osx/nodrive-package.sh \
+            --app "${{ steps.locate.outputs.app }}" \
+            --build-dir "$BUILD_DIR" \
+            --out "$RUNNER_TEMP/dist" \
+            --build-number "$GITHUB_RUN_NUMBER"
+
+      - name: Upload .dmg
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-macos-dmg
+          path: ${{ steps.package.outputs.dmg }}
+          compression-level: 0 # the .dmg is already compressed (UDZO)
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload .app (zip)
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-macos-app
+          path: ${{ steps.package.outputs.zip }}
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Unit tests (ctest)
+        # Also runs when packaging failed, so test results are always reported.
+        if: always() && steps.build.outcome == 'success'
+        timeout-minutes: 60
+        run: |
+          skip=$(sed '/^#/d' tools/branding/ctest-skip-macos.txt | awk -F'\t' '
+            NF && $1 != "" {
+              if ($2 == "") { print "ctest-skip-macos.txt: no reason for " $1 > "/dev/stderr"; exit 1 }
+              printf "%s%s", sep, $1; sep = "|"
+            }')
+          args=(--output-on-failure --timeout 300 --output-junit "$RUNNER_TEMP/ctest-macos.xml")
+          if [ -n "$skip" ]; then
+            echo "Skipping: $skip"
+            args+=(-E "^($skip)\$")
+          fi
+          cd "$BUILD_DIR"
+          ctest -N | tail -n 1
+          ctest "${args[@]}"
+
+      - name: Upload test results
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-macos-test-results
+          path: |
+            ${{ runner.temp }}/ctest-macos.xml
+            ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest*.log
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-macos-build-logs
+          path: |
+            ${{ env.BUILD_DIR }}/CMakeCache.txt
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ env.BUILD_DIR }}/.ninja_log
+          retention-days: 14
+          if-no-files-found: ignore
+          include-hidden-files: true
+
+  smoke:
+    name: Install from the .dmg, start, screenshots, network check
+    needs: [branding, build]
+    if: ${{ !cancelled() && needs.branding.result == 'success' && (needs.build.result == 'success' || inputs.reuse_run) }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Download the .dmg (this run)
+        if: ${{ !inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-macos-dmg
+          path: dmg
+
+      - name: Download the .dmg (run ${{ inputs.reuse_run }})
+        if: ${{ inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-macos-dmg
+          path: dmg
+          run-id: ${{ inputs.reuse_run }}
+          github-token: ${{ github.token }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the test tools
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet "pillow==12.2.0"
+          sw_vers
+          xcrun swiftc --version | head -n 1
+          ls -l dmg
+
+      - name: Smoke test and screenshots (tools/screenshots/macos.sh)
+        run: bash tools/screenshots/macos.sh dmg/*.dmg smoke
+
+      - name: Branding sweep of the installed app (check-branding.py --artifact)
+        if: ${{ !cancelled() }}
+        run: |
+          app=/Applications/NoDrive.app
+          if [ ! -d "$app" ]; then echo "::error::$app is not installed"; exit 1; fi
+          mkdir -p smoke/logs
+          if python3 tools/check-branding.py --artifact "$app" --lane macos --report smoke/artifact-sweep.md --list > smoke/logs/artifact-sweep.txt; then
+            printf 'artifact-sweep\tPASS\t%s\n' "$(tail -n 1 smoke/logs/artifact-sweep.txt)" >> smoke/results.tsv
+            status=0
+          else
+            printf 'artifact-sweep\tFAIL\t%s\n' "$(tail -n 1 smoke/logs/artifact-sweep.txt) (see artifact-sweep.md)" >> smoke/results.tsv
+            status=1
+          fi
+          grep -E '^UNCLASSIFIED' smoke/logs/artifact-sweep.txt | head -n 40 || true
+          tail -n 5 smoke/logs/artifact-sweep.txt
+          exit $status
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## NoDrive macOS smoke test"
+            echo
+            echo "| Check | Result | Evidence |"
+            echo "|---|---|---|"
+            [ -f smoke/results.tsv ] && awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }' smoke/results.tsv
+            echo
+            [ -f smoke/net/network-report.md ] && head -n 80 smoke/net/network-report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -f smoke/results.tsv ] && cat smoke/results.tsv || true
+
+      - name: Upload screenshots, network logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-macos-screenshots
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 30
