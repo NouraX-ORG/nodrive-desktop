@@ -631,6 +631,42 @@ def step_tests(ctx: Context) -> None:
         'QVERIFY2(output.contains(APPLICATION_EXECUTABLE "cmd") || output.contains("nextcloudcmd") || output.contains("nextclouddevcmd"),',
         what="accept the branded command-line binary name",
     )
+    # Three provisioning tests give --serverurl a dead local port to reach the setup
+    # job. NoDrive's server lock (step_server_lock) refuses any server but the
+    # enforced one before the setup starts, so these tests now check that refusal.
+    rel = "test/testnextcloudcmdprovisioning.cpp"
+    ctx.replace(
+        rel,
+        '        QVERIFY2(output.contains("Could not fetch username"), output.constData());\n'
+        '        QVERIFY2(!output.contains("does not exist"), output.constData());\n'
+        "        QCOMPARE(exitCode, 1);\n",
+        "        // NoDrive: the server is fixed, so another --serverurl is refused before any setup starts.\n"
+        '        QVERIFY2(!output.contains("Could not fetch username"), output.constData());\n'
+        '        QVERIFY2(!output.contains("does not exist"), output.constData());\n'
+        "        QVERIFY(exitCode != 0);\n",
+        what="provisioning test: other servers are refused (inline options)",
+    )
+    ctx.replace(
+        rel,
+        "        // The setup got as far as contacting the server, which is where it fails here.\n"
+        '        QVERIFY2(output.contains("Could not fetch username"), output.constData());\n'
+        "        QCOMPARE(exitCode, 1);\n",
+        "        // NoDrive: only the enforced server is accepted, so the setup never starts.\n"
+        '        QVERIFY2(!output.contains("Could not fetch username"), output.constData());\n'
+        "        QVERIFY(exitCode != 0);\n",
+        what="provisioning test: other servers are refused (no local dir)",
+    )
+    ctx.replace(
+        rel,
+        "        QCOMPARE(exitCode, 1);\n"
+        '        QVERIFY2(output.contains("Could not fetch username"), output.constData());\n'
+        '        QVERIFY2(!configHasAccount(confDir.path()), "a failed setup must not store an account");\n',
+        "        // NoDrive: a server other than the enforced one is refused up front.\n"
+        "        QVERIFY(exitCode != 0);\n"
+        '        QVERIFY2(!output.contains("Could not fetch username"), output.constData());\n'
+        '        QVERIFY2(!configHasAccount(confDir.path()), "a refused setup must not store an account");\n',
+        what="provisioning test: other servers are refused (app password)",
+    )
 
 
 # --------------------------------------------------------------------------

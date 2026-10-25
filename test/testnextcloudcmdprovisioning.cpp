@@ -220,9 +220,10 @@ private Q_SLOTS:
                                     QStringLiteral("--serverurl=") + unreachableServerUrl()},
                                    &exitCode);
 
-        QVERIFY2(output.contains("Could not fetch username"), output.constData());
+        // NoDrive: the server is fixed, so another --serverurl is refused before any setup starts.
+        QVERIFY2(!output.contains("Could not fetch username"), output.constData());
         QVERIFY2(!output.contains("does not exist"), output.constData());
-        QCOMPARE(exitCode, 1);
+        QVERIFY(exitCode != 0);
     }
 
     // --localdirpath is documented as optional.  Leaving it out used to abort the
@@ -245,9 +246,9 @@ private Q_SLOTS:
                                    &exitCode);
 
         QVERIFY2(!output.contains("local folder because the name is empty"), output.constData());
-        // The setup got as far as contacting the server, which is where it fails here.
-        QVERIFY2(output.contains("Could not fetch username"), output.constData());
-        QCOMPARE(exitCode, 1);
+        // NoDrive: only the enforced server is accepted, so the setup never starts.
+        QVERIFY2(!output.contains("Could not fetch username"), output.constData());
+        QVERIFY(exitCode != 0);
     }
 
     // With an app password the setup is asynchronous: the credentials are checked
@@ -274,9 +275,10 @@ private Q_SLOTS:
         // 1 is the code the setup job exits with.  The options were accepted, so this
         // is neither the 255 of a rejected command line nor the 0 of an early return
         // that never waited for the result.
-        QCOMPARE(exitCode, 1);
-        QVERIFY2(output.contains("Could not fetch username"), output.constData());
-        QVERIFY2(!configHasAccount(confDir.path()), "a failed setup must not store an account");
+        // NoDrive: a server other than the enforced one is refused up front.
+        QVERIFY(exitCode != 0);
+        QVERIFY2(!output.contains("Could not fetch username"), output.constData());
+        QVERIFY2(!configHasAccount(confDir.path()), "a refused setup must not store an account");
     }
 };
 

@@ -1,3 +1,4 @@
 # Unit tests skipped in .github/workflows/linux.yml (ctest -E).
 # One entry per line: <ctest test name><TAB><reason>. Empty reason = error.
 # Keep this list as short as possible; prefer fixing the test in tools/rebrand.py.
+UpdateChannelTest	Update channels exist only in unbranded builds: ConfigFile::currentUpdateChannel() returns the default channel when Theme::isBranded(), and NoDrive builds no updater (BUILD_UPDATER OFF).
