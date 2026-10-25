@@ -743,7 +743,6 @@ $Variants = @(
 $Personalize = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
 $ConfDir = Join-Path $env:APPDATA $AppName
 $LocalDir = Join-Path $env:LOCALAPPDATA $AppName
-$FirstRun = $true
 $Status = 0
 
 function Snapshot-Tcp([int] $procId, [string] $tag, [string] $when) {
@@ -773,6 +772,44 @@ function Pipe-Strings([string] $tag) {
     } finally { $pipe.Dispose() }
     Save-Text "logs\pipe-strings-$tag.txt" $lines
     return $lines
+}
+
+# First start (warm-up): Windows shows a one-time "startup app" notification when
+# the app adds its autostart entry; it would cover the tray menu of the first variant.
+# This run also checks the default config folder, the autostart entry and the pipe.
+Step 'first-start' {
+    Stop-NoDrive $null
+    Remove-Item -LiteralPath $ConfDir, $LocalDir -Recurse -Force -ErrorAction SilentlyContinue
+    $workLog = Join-Path $Work 'app-first-start.log'
+    $proc = Start-Process -FilePath $Exe -ArgumentList @('--logdebug', '--logflush', '--logfile', "`"$workLog`"") -PassThru
+    $NetPids.Add($proc.Id)
+    try {
+        $w = Wait-Wizard $proc.Id 120
+        if (-not $w) { Result 'first-start' 'FAIL' "no $AppName window within 120 s"; return }
+        [NdWin]::Foreground($w.Handle); [NdWin]::Move(1, 1)
+        Start-Sleep -Seconds 6
+        Shot 'first-start' '00-first-start' | Out-Null
+        Result 'first-start' 'PASS' ("first start without a config: window '$($w.Title)' (screens\first-start\00-first-start.png)")
+        $cfg = Join-Path $ConfDir "$($Ids.cmake.APPLICATION_CONFIG_NAME).cfg"
+        $listing = @(Get-ChildItem -LiteralPath $ConfDir -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+        Save-Text 'logs\config-folder.txt' $listing
+        $ncDirs = @((Join-Path $env:APPDATA 'Nextcloud'), (Join-Path $env:LOCALAPPDATA 'Nextcloud')) | Where-Object { Test-Path -LiteralPath $_ }
+        $okCfg = (Test-Path -LiteralPath $cfg) -and @($ncDirs).Count -eq 0
+        Result 'config-folder' $(if ($okCfg) { 'PASS' } else { 'FAIL' }) ("$cfg exists: $(Test-Path -LiteralPath $cfg); $($listing.Count) entries in $ConfDir; Nextcloud folders in AppData: $(@($ncDirs).Count)")
+        $pipes = @([IO.Directory]::GetFiles('\\.\pipe\') | ForEach-Object { $_.Substring(9) } | Where-Object { $_ -match "(?i)^($ExeName|nextcloud)-" })
+        $runKey = Get-Item -LiteralPath 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
+        $runValues = @($runKey.GetValueNames() | ForEach-Object { "$_ = $($runKey.GetValue($_))" })
+        $ourRun = $runKey.GetValue($AppName)
+        $okRun = ($ourRun -like "*$InstallDir\$ExeName.exe*") -and -not ($runValues -match $ForbiddenText)
+        Result 'autostart' $(if ($okRun) { 'PASS' } else { 'FAIL' }) ("HKCU\...\CurrentVersion\Run: $($runValues -join '; ')")
+        Result 'named-pipe' $(if ($pipes -contains "$ExeName-$env:USERNAME" -and -not ($pipes -match '(?i)^nextcloud')) { 'PASS' } else { 'FAIL' }) ("Explorer integration pipe(s): $($pipes -join ', ')")
+    } finally {
+        if (Test-Path -LiteralPath $workLog) { Copy-Item -LiteralPath $workLog -Destination (Join-Path $Out 'logs\app-first-start.log') -Force }
+        Stop-NoDrive $proc
+        Redact (Join-Path $Out 'logs\app-first-start.log')
+        [NdWin]::SweepTray()
+    }
+    Start-Sleep -Seconds 15   # let the notification time out
 }
 
 foreach ($v in $Variants) {
@@ -831,22 +868,6 @@ foreach ($v in $Variants) {
                 $texts = Uia-Dump $proc.Id "$tag-wizard"
                 Check-Texts "texts-$tag-wizard" $texts
 
-                if ($script:FirstRun) {
-                    $script:FirstRun = $false
-                    $cfg = Join-Path $ConfDir "$($Ids.cmake.APPLICATION_CONFIG_NAME).cfg"
-                    $listing = @(Get-ChildItem -LiteralPath $ConfDir -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
-                    Save-Text 'logs\config-folder.txt' $listing
-                    $ncDirs = @((Join-Path $env:APPDATA 'Nextcloud'), (Join-Path $env:LOCALAPPDATA 'Nextcloud')) | Where-Object { Test-Path -LiteralPath $_ }
-                    $okCfg = (Test-Path -LiteralPath $cfg) -and @($ncDirs).Count -eq 0
-                    Result 'config-folder' $(if ($okCfg) { 'PASS' } else { 'FAIL' }) ("$cfg exists: $(Test-Path -LiteralPath $cfg); $($listing.Count) entries in $ConfDir; Nextcloud folders in AppData: $(@($ncDirs).Count)")
-                    $pipes = @([IO.Directory]::GetFiles('\\.\pipe\') | ForEach-Object { $_.Substring(9) } | Where-Object { $_ -match "(?i)^($ExeName|nextcloud)-" })
-                    $runKey = Get-Item -LiteralPath 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
-                    $runValues = @($runKey.GetValueNames() | ForEach-Object { "$_ = $($runKey.GetValue($_))" })
-                    $ourRun = $runKey.GetValue($AppName)
-                    $okRun = ($ourRun -like "*$InstallDir\$ExeName.exe*") -and -not ($runValues -match $ForbiddenText)
-                    Result 'autostart' $(if ($okRun) { 'PASS' } else { 'FAIL' }) ("HKCU\...\CurrentVersion\Run: $($runValues -join '; ')")
-                    Result 'named-pipe' $(if ($pipes -contains "$ExeName-$env:USERNAME" -and -not ($pipes -match '(?i)^nextcloud')) { 'PASS' } else { 'FAIL' }) ("Explorer integration pipe(s): $($pipes -join ', ')")
-                }
 
                 if ($run -eq 'screens') {
                     Shot $v.Name '01-wizard' | Out-Null
