@@ -1,0 +1,16 @@
+# NoDrive branding sweep: keyword list (spec section 6, step 1).
+# One entry per line: label<TAB>Python regex. Matching is case-insensitive.
+# The Nextcloud links (nextcloud.com, help./docs./apps.nextcloud, github.com/nextcloud,
+# nextcloud.com/privacy, nextcloud.com/impressum, push-notifications.nextcloud,
+# updates.nextcloud) and the store id com.nextcloud are all covered by "nextcloud".
+nextcloud	nextcloud
+next cloud	next[ _-]cloud
+owncloud	owncloud
+mirall	mirall
+it.niedermann	it\.niedermann
+app-store id (Nextcloud iOS)	\b1125420102\b
+colour #0082c9	0082c9
+colour #00679e	00679e
+colour #0071ad	0071ad
+colour #1cafff	1cafff
+colour rgba(0,0.51,0.79)	rgba\(\s*0\s*,\s*0?\.51\s*,\s*0?\.79

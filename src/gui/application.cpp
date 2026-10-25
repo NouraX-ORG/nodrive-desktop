@@ -93,7 +93,7 @@ static const char optionsC[] =
     "  --logdir <directory>             Write rotating log files to this directory.\n"
     "  --logexpire <hours>              Set retention for rotating logs.\n"
     "  --logflush                       Flush the log after each write.\n"
-    "  --logdebug                       Enable debug messages in Nextcloud logging categories.\n"
+    "  --logdebug                       Enable debug messages in the client logging categories.\n"
     "  --debug                          Also enable debug logging. Prefer --logdebug for diagnostics.\n"
     "\n"
     "Account setup options:\n"

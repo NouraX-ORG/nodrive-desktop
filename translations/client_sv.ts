@@ -275,8 +275,8 @@
     <name>AssistantMessageList</name>
     <message>
         <location filename="../src/gui/assistant/qml/AssistantMessageList.qml" line="50"/>
-        <source>Start a conversation with Nextcloud Assistant.</source>
-        <translation>Starta en konversation med Nextcloud Assistant.</translation>
+        <source>Start a conversation with the Assistant.</source>
+        <translation>Starta en konversation med Assistant.</translation>
     </message>
 </context>
 <context>
@@ -342,11 +342,6 @@
         <location filename="../src/gui/assistant/qml/AssistantWindow.qml" line="76"/>
         <source>Send</source>
         <translation>Skicka</translation>
-    </message>
-    <message>
-        <location filename="../src/gui/AssistantWindow.qml" line="19"/>
-        <source>Nextcloud Assistant</source>
-        <translation>Nextcloud Assistant</translation>
     </message>
     <message>
         <location filename="../src/gui/AssistantWindow.qml" line="91"/>
@@ -1829,8 +1824,8 @@ Den här åtgärden avbryter alla pågående synkroniseringar.</translation>
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="210"/>
-        <source>seconds (if &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; is unavailable)</source>
-        <translation>sekunder (om &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; inte är tillgängligt)</translation>
+        <source>seconds (if Client Push is unavailable)</source>
+        <translation>sekunder (om Client Push inte är tillgängligt)</translation>
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="250"/>

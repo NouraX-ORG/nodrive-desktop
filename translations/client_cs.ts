@@ -275,7 +275,7 @@
     <name>AssistantMessageList</name>
     <message>
         <location filename="../src/gui/assistant/qml/AssistantMessageList.qml" line="50"/>
-        <source>Start a conversation with Nextcloud Assistant.</source>
+        <source>Start a conversation with the Assistant.</source>
         <translation type="unfinished"/>
     </message>
 </context>
@@ -342,11 +342,6 @@
         <location filename="../src/gui/assistant/qml/AssistantWindow.qml" line="76"/>
         <source>Send</source>
         <translation>Odeslat</translation>
-    </message>
-    <message>
-        <location filename="../src/gui/AssistantWindow.qml" line="19"/>
-        <source>Nextcloud Assistant</source>
-        <translation type="unfinished"/>
     </message>
     <message>
         <location filename="../src/gui/AssistantWindow.qml" line="91"/>
@@ -1828,7 +1823,7 @@ Současně tato akce zruší jakoukoli právě probíhající synchronizaci.</tr
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="210"/>
-        <source>seconds (if &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; is unavailable)</source>
+        <source>seconds (if Client Push is unavailable)</source>
         <translation type="unfinished"/>
     </message>
     <message>

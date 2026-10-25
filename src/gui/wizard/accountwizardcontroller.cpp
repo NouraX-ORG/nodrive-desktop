@@ -134,7 +134,12 @@ int AccountWizardController::resultOnClose() const
 void AccountWizardController::initialiseAccount()
 {
     ConfigFile cfg;
-    if (!cfg.overrideServerUrl().isEmpty()) {
+    // NoDrive: when the theme enforces a compiled server, a config-file
+    // override (or --overrideserverurl) may only repeat that server.
+    const auto nodriveCompiledServer = Theme::instance()->forceOverrideServerUrl() ? Theme::instance()->overrideServerUrl() : QString{};
+    const auto nodriveOverrideAllowed = nodriveCompiledServer.isEmpty()
+        || QUrl(cfg.overrideServerUrl()).matches(QUrl(nodriveCompiledServer), QUrl::StripTrailingSlash);
+    if (!cfg.overrideServerUrl().isEmpty() && nodriveOverrideAllowed) {
         Theme::instance()->setOverrideServerUrl(cfg.overrideServerUrl());
         Theme::instance()->setForceOverrideServerUrl(true);
         Theme::instance()->setVfsEnabled(cfg.isVfsEnabled());
@@ -1001,12 +1006,12 @@ void AccountWizardController::copyLoginLink()
 
 void AccountWizardController::openSignup()
 {
-    Utility::openBrowser(QUrl(u"https://nextcloud.com/sign-up/?flow=V3"_s));
+    Utility::openBrowser(QUrl(Theme::instance()->overrideServerUrl())); // NoDrive: no external sign-up page
 }
 
 void AccountWizardController::openSelfHostedServerGuide()
 {
-    Utility::openBrowser(QUrl(QStringLiteral("https://docs.nextcloud.com/server/latest/admin_manual/installation/#installation")));
+    Utility::openBrowser(QUrl(Theme::instance()->overrideServerUrl())); // NoDrive: no self-hosting guide
 }
 
 void AccountWizardController::openProxySettings()

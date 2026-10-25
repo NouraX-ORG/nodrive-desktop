@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""Make every NoDrive desktop image from the one Nourax logo (Pillow only).
+
+Rules (spec section 3, plan section 6.1):
+- The only logo is nodrive/brand/nourax-logo.png (500x500 RGBA, a copy of
+  nourax/assets/brand/nourax-logo.png). It is never redrawn, recoloured,
+  cropped or stretched: only proportional LANCZOS scaling of the whole
+  500x500 canvas.
+- Sizes up to 500 px: transparent canvas. Sizes above 500 px: proportional
+  enlargement onto a plain white square (owner approval 2026-10-25).
+- Wide canvases: the logo is centred and padded, never stretched.
+- SVG files the build needs are thin wrappers that embed the unchanged logo
+  PNG as a base64 <image> (the logo is not redrawn as vectors).
+- No monochrome variant: the black/white "monochrome" icon sets also get the
+  full-colour logo (owner to-do: approve real monochrome icons).
+- Upstream single-colour glyph PNGs (external, folder, wizard-files,
+  wizard-groupware) keep their shape; only pixels in Nextcloud blue #0082c9
+  are moved to Nourax primary #2563EB with the alpha untouched.
+
+Every output is listed with its SHA-256 in tools/branding/icons-manifest.txt.
+Usage:
+  python tools/make-icons.py            write all images and the manifest
+  python tools/make-icons.py --check    exit 1 if any output would change
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import io
+import re
+import sys
+from pathlib import Path
+
+from PIL import Image, ImageDraw
+
+ROOT = Path(__file__).resolve().parent.parent
+LOGO = "nodrive/brand/nourax-logo.png"
+MANIFEST = "tools/branding/icons-manifest.txt"
+NAME = "NoDrive"  # APPLICATION_ICON_NAME, see tools/branding/ids.json
+
+PRIMARY = (0x25, 0x63, 0xEB)        # #2563EB
+LIGHT_BG = (0xF8, 0xFA, 0xFC)       # #F8FAFC
+WHITE = (0xFF, 0xFF, 0xFF)
+NEXTCLOUD_BLUE = (0x00, 0x82, 0xC9)  # #0082c9 (upstream glyph colour)
+
+LANCZOS = Image.Resampling.LANCZOS
+
+
+class Out:
+    """Collects outputs; writes only changed files."""
+
+    def __init__(self, check: bool):
+        self.check = check
+        self.files: dict[str, bytes] = {}
+        self.changed: list[str] = []
+
+    def put(self, rel: str, data: bytes) -> None:
+        if rel in self.files:
+            raise SystemExit(f"duplicate output {rel}")
+        p = ROOT / rel
+        old = p.read_bytes() if p.exists() else None
+        if old is not None and old != data and same_image(rel, old, data):
+            # Same pixels, different encoding (Pillow wheels on other platforms
+            # bundle a different zlib): keep the committed file.
+            data = old
+        self.files[rel] = data
+        if old != data:
+            self.changed.append(rel)
+            if not self.check:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(data)
+
+
+_SVG_PNG = re.compile(rb"data:image/png;base64,([A-Za-z0-9+/=]+)")
+
+
+def _pixels(data: bytes) -> list[tuple]:
+    """Decoded RGBA pixels of every frame (every size of an .ico)."""
+    im = Image.open(io.BytesIO(data))
+    if im.format == "ICO":
+        return [(s, im.ico.getimage(s).convert("RGBA").tobytes()) for s in sorted(im.ico.sizes())]
+    return [(im.size, im.convert("RGBA").tobytes())]
+
+
+def same_image(rel: str, a: bytes, b: bytes) -> bool:
+    """True when two encodings of an output show exactly the same pixels."""
+    try:
+        if rel.endswith(".svg"):
+            pa, pb = _SVG_PNG.findall(a), _SVG_PNG.findall(b)
+            if len(pa) != len(pb) or _SVG_PNG.sub(b"", a) != _SVG_PNG.sub(b"", b):
+                return False
+            return all(_pixels(base64.b64decode(x)) == _pixels(base64.b64decode(y)) for x, y in zip(pa, pb))
+        if rel.endswith((".png", ".bmp", ".ico")):
+            return _pixels(a) == _pixels(b)
+    except Exception:  # noqa: BLE001 - unreadable old file: treat as different
+        return False
+    return False
+
+
+def png_bytes(im: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    im.save(buf, format="PNG", optimize=False)
+    return buf.getvalue()
+
+
+def bmp_bytes(im: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    im.convert("RGB").save(buf, format="BMP")
+    return buf.getvalue()
+
+
+def load_logo() -> tuple[Image.Image, bytes]:
+    raw = (ROOT / LOGO).read_bytes()
+    im = Image.open(io.BytesIO(raw))
+    im.load()
+    if im.size != (500, 500) or im.mode != "RGBA":
+        raise SystemExit(f"{LOGO}: expected 500x500 RGBA, got {im.size} {im.mode}")
+    return im, raw
+
+
+def square(logo: Image.Image, size: int) -> Image.Image:
+    """The whole logo canvas scaled to size x size (white square above 500)."""
+    scaled = logo if size == 500 else logo.resize((size, size), LANCZOS)
+    if size <= 500:
+        return scaled
+    canvas = Image.new("RGBA", (size, size), WHITE + (255,))
+    canvas.alpha_composite(scaled)
+    return canvas
+
+
+def fitted(logo: Image.Image, w: int, h: int, pad: int = 0, bg=None, box=None) -> Image.Image:
+    """Logo scaled proportionally into a box and centred there.
+
+    box = (x, y, bw, bh) inside the canvas; default is the whole canvas.
+    bg = None gives a transparent canvas, else an RGB tuple.
+    """
+    bx, by, bw, bh = box if box else (0, 0, w, h)
+    side = min(bw, bh) - 2 * pad
+    if side > 500:
+        raise SystemExit("fitted(): logo larger than 500 px needs a white square, use square()")
+    canvas = Image.new("RGBA", (w, h), (bg + (255,)) if bg else (0, 0, 0, 0))
+    scaled = logo.resize((side, side), LANCZOS)
+    canvas.alpha_composite(scaled, (bx + (bw - side) // 2, by + (bh - side) // 2))
+    return canvas
+
+
+def svg_wrapper(logo_png: bytes, w: int, h: int, pad: int = 0) -> bytes:
+    """SVG that shows the unchanged logo PNG centred on a w x h canvas."""
+    side = min(w, h) - 2 * pad
+    x = (w - side) / 2
+    y = (h - side) / 2
+    b64 = base64.b64encode(logo_png).decode("ascii")
+    text = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<!-- Generated by tools/make-icons.py from nodrive/brand/nourax-logo.png. Do not edit. -->\n"
+        f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+        f'width="{w}" height="{h}" viewBox="0 0 {w} {h}">\n'
+        f'  <image x="{x:g}" y="{y:g}" width="{side}" height="{side}" '
+        f'preserveAspectRatio="xMidYMid meet" xlink:href="data:image/png;base64,{b64}"/>\n'
+        "</svg>\n"
+    )
+    return text.encode("ascii")
+
+
+def svg_image_wrapper(png: bytes, w: int, h: int) -> bytes:
+    """SVG that shows a ready-made PNG (for example an installer banner) 1:1."""
+    b64 = base64.b64encode(png).decode("ascii")
+    text = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<!-- Generated by tools/make-icons.py. Do not edit. -->\n"
+        f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+        f'width="{w}" height="{h}" viewBox="0 0 {w} {h}">\n'
+        f'  <image x="0" y="0" width="{w}" height="{h}" xlink:href="data:image/png;base64,{b64}"/>\n'
+        "</svg>\n"
+    )
+    return text.encode("ascii")
+
+
+def recolour_glyph(path: Path) -> bytes | None:
+    """Upstream glyph with Nextcloud blue pixels moved to Nourax primary."""
+    im = Image.open(path)
+    im.load()
+    rgba = im.convert("RGBA")
+    px = rgba.load()
+    changed = False
+    for yy in range(rgba.height):
+        for xx in range(rgba.width):
+            r, g, b, a = px[xx, yy]
+            if (r, g, b) == NEXTCLOUD_BLUE:
+                px[xx, yy] = PRIMARY + (a,)
+                changed = True
+    if not changed:
+        return None
+    return png_bytes(rgba)
+
+
+def arrow_background(w: int, h: int) -> Image.Image:
+    """Plain light background with a simple right arrow (DMG window)."""
+    im = Image.new("RGB", (w, h), LIGHT_BG)
+    d = ImageDraw.Draw(im)
+    cy = h // 2
+    shaft_w, head = 70, 26
+    x0 = w // 2 - shaft_w // 2 - head // 2
+    d.rectangle([x0, cy - 5, x0 + shaft_w, cy + 5], fill=PRIMARY)
+    d.polygon([(x0 + shaft_w, cy - head), (x0 + shaft_w + head + 6, cy), (x0 + shaft_w, cy + head)], fill=PRIMARY)
+    return im
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--check", action="store_true", help="write nothing; exit 1 if an output would change")
+    args = ap.parse_args()
+
+    logo, logo_raw = load_logo()
+    out = Out(args.check)
+
+    # 1. Application icon: sized PNGs (Windows .ico, macOS .icns, Linux hicolor, qrc)
+    for size in (16, 20, 24, 32, 40, 48, 64, 128, 256, 512, 1024):
+        out.put(f"theme/colored/{size}-{NAME}-icon.png", png_bytes(square(logo, size)))
+    out.put(f"theme/colored/{NAME}-icon.svg", svg_wrapper(logo_raw, 500, 500))
+
+    # 2. Windows start menu tile
+    out.put(f"theme/colored/{NAME}-w10startmenu.svg", svg_wrapper(logo_raw, 150, 150))
+    for size in (70, 150):
+        out.put(f"theme/colored/{size}-{NAME}-w10startmenu.png", png_bytes(square(logo, size)))
+
+    # 3. Tray/state icons: full-colour logo for every state and every set
+    #    (no monochrome variant without owner approval).
+    for flavour in ("colored", "white", "black"):
+        for svg in sorted((ROOT / "theme" / flavour).glob("state-*.svg")):
+            stem = svg.stem
+            out.put(f"theme/{flavour}/{stem}.svg", svg_wrapper(logo_raw, 500, 500))
+            for size in (16, 32, 64, 128, 256):
+                out.put(f"theme/{flavour}/{stem}-{size}.png", png_bytes(square(logo, size)))
+
+    # 4. Wizard / About logo (branded path in Theme::wizardApplicationLogo)
+    out.put("theme/colored/wizard_logo.svg", svg_wrapper(logo_raw, 266, 126))
+    out.put("theme/colored/wizard_logo.png", png_bytes(fitted(logo, 132, 63)))
+    out.put("theme/colored/wizard_logo@2x.png", png_bytes(fitted(logo, 266, 126)))
+
+    # 5. Trademarked upstream logo pictures that are still in the qrc:
+    #    overwritten with our logo so no Nextcloud pixels ship.
+    for flavour in ("colored", "black", "white"):
+        out.put(f"theme/{flavour}/wizard-nextcloud.svg", svg_wrapper(logo_raw, 200, 100))
+        out.put(f"theme/{flavour}/wizard-nextcloud.png", png_bytes(fitted(logo, 200, 100)))
+        out.put(f"theme/{flavour}/wizard-nextcloud@2x.png", png_bytes(fitted(logo, 400, 200)))
+        out.put(f"theme/{flavour}/wizard-talk.png", png_bytes(fitted(logo, 100, 100)))
+        out.put(f"theme/{flavour}/wizard-talk@2x.png", png_bytes(fitted(logo, 200, 200)))
+
+    # 6. Upstream single-colour glyphs: Nextcloud blue -> Nourax primary
+    for name in ("external", "folder", "wizard-files", "wizard-groupware"):
+        for suffix in ("", "@2x"):
+            rel = f"theme/colored/{name}{suffix}.png"
+            data = recolour_glyph(ROOT / rel)
+            if data is None:
+                data = (ROOT / rel).read_bytes()  # already recoloured
+            out.put(rel, data)
+
+    # 7. Windows MSI (WiX UI) and NSIS images
+    banner = fitted(logo, 493, 58, pad=5, bg=WHITE, box=(493 - 58, 0, 58, 58))
+    out.put("admin/win/msi/gui/banner.bmp", bmp_bytes(banner))
+    out.put("admin/win/msi/gui/banner.svg", svg_image_wrapper(png_bytes(banner), 493, 58))
+    dialog = Image.new("RGBA", (493, 314), WHITE + (255,))
+    panel = fitted(logo, 164, 314, pad=20, bg=LIGHT_BG)
+    dialog.alpha_composite(panel, (0, 0))
+    out.put("admin/win/msi/gui/dialog.bmp", bmp_bytes(dialog))
+    out.put("admin/win/nsi/welcome.bmp", bmp_bytes(fitted(logo, 164, 314, pad=20, bg=LIGHT_BG)))
+    out.put("admin/win/nsi/page_header.bmp", bmp_bytes(fitted(logo, 150, 57, pad=4, bg=WHITE)))
+    ico_sizes = [16, 24, 32, 48, 64, 128, 256]
+    ico_images = [square(logo, s) for s in ico_sizes]
+    buf = io.BytesIO()
+    ico_images[-1].save(buf, format="ICO", sizes=[(s, s) for s in ico_sizes], append_images=ico_images[:-1])
+    out.put("admin/win/nsi/installer.ico", buf.getvalue())
+
+    # 8. macOS installer / DMG backgrounds
+    out.put("admin/osx/DMGBackground.png", png_bytes(arrow_background(501, 351)))
+    out.put("admin/osx/installer-background.png", png_bytes(fitted(logo, 320, 200, pad=30)))
+    out.put("admin/osx/installer-background_2x.png", png_bytes(fitted(logo, 640, 400, pad=60)))
+    out.put("admin/osx/installer-background.svg", svg_wrapper(logo_raw, 320, 200, pad=30))
+
+    # Manifest (sorted, LF, "sha256  path")
+    lines = [
+        "# Generated by tools/make-icons.py. SHA-256 of every generated image.",
+        f"# source {LOGO} sha256 {hashlib.sha256(logo_raw).hexdigest()}",
+    ]
+    for rel in sorted(out.files):
+        lines.append(f"{hashlib.sha256(out.files[rel]).hexdigest()}  {rel}")
+    manifest = ("\n".join(lines) + "\n").encode("ascii")
+    p = ROOT / MANIFEST
+    if not p.exists() or p.read_bytes() != manifest:
+        out.changed.append(MANIFEST)
+        if not args.check:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(manifest)
+
+    verb = "would change" if args.check else "changed"
+    for rel in out.changed:
+        print(f"{verb}: {rel}")
+    print(f"make-icons: {len(out.files)} images, {len(out.changed)} {verb}")
+    if args.check and out.changed:
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

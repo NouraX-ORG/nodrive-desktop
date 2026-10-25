@@ -188,7 +188,7 @@ void help()
     std::cout << "  --exclude-anchored [file]  Exclude list file, always anchored at the" << std::endl;
     std::cout << "                         sync root regardless of the file's own name" << std::endl;
     std::cout << "                         (use this if --exclude patterns aren't matching," << std::endl;
-    std::cout << "                         see nextcloud/desktop#2916, #7682)" << std::endl;
+    std::cout << "                         see upstream issues #2916, #7682)" << std::endl;
     std::cout << "  --unsyncedfolders [file]    File containing the list of unsynced remote folders (selective sync)" << std::endl;
     std::cout << "  --user, -u [name]      Use [name] as the login name" << std::endl;
     std::cout << "  --password, -p [pass]  Use [pass] as password" << std::endl;
@@ -207,7 +207,7 @@ void help()
     std::cout << "Account provisioning options (non-interactive setup):" << std::endl;
     std::cout << "  --userid [user]        The user ID to configure" << std::endl;
     std::cout << "  --apppassword [pass]   The app password for authentication (optional)" << std::endl;
-    std::cout << "  --serverurl [url]      The base URL of the Nextcloud server" << std::endl;
+    std::cout << "  --serverurl [url]      The base URL of the server" << std::endl;
     std::cout << "  --localdirpath [path]  Local folder path for sync (optional)" << std::endl;
     std::cout << "  --remotedirpath [path] Remote folder path to sync, default /" << std::endl;
     std::cout << "  --isvfsenabled [0|1]   Enable virtual files (1) or disable (0)" << std::endl;

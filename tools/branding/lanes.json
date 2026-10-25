@@ -1,0 +1,51 @@
+{
+  "_comment": "Path ownership for the desktop lanes (plan section 11.3). Globs use fnmatch on repo-relative paths ('*' also crosses '/'). Anything not listed belongs to 'shared' (Linux lane). check-branding.py --lane <os> checks shared + linux paths (linux) or shared + that lane's paths (windows, macos). An allow-<lane>.txt entry may only classify hits in files its lane owns.",
+  "linux": [
+    "admin/linux/*",
+    "tools/rebrand.d/linux.py",
+    "tools/screenshots/linux.sh",
+    "shell_integration/dolphin/*",
+    "shell_integration/nautilus/*",
+    "shell_integration/libcloudproviders/*",
+    "mirall.desktop.in",
+    "systemd/*"
+  ],
+  "windows": [
+    "admin/win/*",
+    "shell_integration/windows/*",
+    "src/libsync/vfs/cfapi/shellext/CfApiShellIntegration.rc",
+    "src/gui/navigationpanehelper.cpp",
+    "src/gui/navigationpanehelper.h",
+    "src/common/utility_win.cpp",
+    "cmake/modules/NSIS.template.in",
+    "tools/rebrand.d/windows.py",
+    "tools/screenshots/windows.ps1"
+  ],
+  "macos": [
+    "admin/osx/*",
+    "cmake/modules/MacOSXBundleInfo.plist.in",
+    "shell_integration/MacOSX/*",
+    "src/gui/macOS/*",
+    "src/gui/*_mac.mm",
+    "src/gui/*_mac.h",
+    "src/gui/*_mac_*.mm",
+    "src/gui/*_mac_*.h",
+    "src/gui/systray_mac_usernotifications.mm",
+    "src/libsync/theme_mac.h",
+    "src/libsync/theme_mac.mm",
+    "tools/rebrand.d/macos.py",
+    "tools/screenshots/macos.sh"
+  ],
+  "shared_overrides": [
+    "admin/win/msi/gui/banner.bmp",
+    "admin/win/msi/gui/banner.svg",
+    "admin/win/msi/gui/dialog.bmp",
+    "admin/win/nsi/welcome.bmp",
+    "admin/win/nsi/page_header.bmp",
+    "admin/win/nsi/installer.ico",
+    "admin/osx/DMGBackground.png",
+    "admin/osx/installer-background.png",
+    "admin/osx/installer-background_2x.png",
+    "admin/osx/installer-background.svg"
+  ]
+}
