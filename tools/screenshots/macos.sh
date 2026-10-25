@@ -208,10 +208,17 @@ app_run() { # app_run <variant> <screens|login>
             if [ -n "$ow" ]; then
                 read -r oid ol ox oy ow2 oh2 <<< "$ow"
                 capture_window "$oid" "$ox" "$oy" "$ow2" "$oh2" "$dir/03-proxy-settings.png" > /dev/null
-                result "proxy-$tag" PASS "proxy settings dialog ${ow2}x${oh2} pt"
+                result "proxy-$tag" PASS "proxy settings dialog window ${ow2}x${oh2} pt"
             else
+                # The dialog is a popup inside the wizard window: the window must have changed.
                 capture_window "$id" "$x" "$y" "$ww" "$wh" "$dir/03-proxy-settings.png" > /dev/null
-                result "proxy-$tag" INFO "no separate dialog window after clicking the footer; captured the wizard window"
+                local changed
+                changed=$(python3 "$CI/shotcheck.py" diff "$pre" "$dir/03-proxy-settings.png" 2> /dev/null || echo 0)
+                if python3 -c "import sys; sys.exit(0 if float(sys.argv[1]) >= 2 else 1)" "$changed"; then
+                    result "proxy-$tag" PASS "proxy settings dialog opened inside the wizard window ($changed % of the window changed)"
+                else
+                    result "proxy-$tag" FAIL "the wizard did not change after clicking Proxy settings ($changed % changed)"
+                fi
             fi
             "$UI" key escape
         else
@@ -390,8 +397,11 @@ ls -R "$APP" > "$OUT/bundle/app-tree.txt"
 # --- 3. version and help output ----------------------------------------------------------------
 with_timeout 60 "$EXE" --version > "$OUT/logs/version.txt" 2>&1
 with_timeout 60 "$EXE" --help > "$OUT/logs/help.txt" 2>&1
-if grep -q "^$NAME version " "$OUT/logs/version.txt" && ! grep -qi nextcloud "$OUT/logs/version.txt" "$OUT/logs/help.txt"; then
-    result cli-version PASS "$(grep -m1 "^$NAME version " "$OUT/logs/version.txt"); --help names no Nextcloud"
+# Debug log lines start with an internal logging category ("nextcloud.gui.<name>: ...",
+# classified internal in tools/branding/allow-shared.txt); every other line is checked.
+cli_text() { grep -vE '^nextcloud(\.[a-z0-9_]+)+: ' "$@"; }
+if grep -q "^$NAME version " "$OUT/logs/version.txt" && ! cli_text "$OUT/logs/version.txt" "$OUT/logs/help.txt" | grep -qi nextcloud; then
+    result cli-version PASS "$(grep -m1 "^$NAME version " "$OUT/logs/version.txt"); --version and --help name no Nextcloud (debug log lines with internal logging categories ignored)"
 else
     result cli-version FAIL "see logs/version.txt and logs/help.txt"
 fi

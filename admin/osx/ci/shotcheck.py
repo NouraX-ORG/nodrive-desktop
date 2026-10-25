@@ -15,6 +15,7 @@ Coordinates are image pixels (the caller converts points to pixels).
                                    "<cx> <cy> <pixels> <bx> <by> <bw> <bh> <measured #RRGGBB>", exit 1 if none
   shotcheck.py footer IMG BAND     centre of the content in the bottom BAND pixels: "<cx> <cy>"
   shotcheck.py crop IMG X Y W H OUT
+  shotcheck.py diff IMG1 IMG2      share of pixels that differ (more than 12 per channel), in %
 """
 
 from __future__ import annotations
@@ -154,11 +155,21 @@ def cmd_crop(a):
     return 0
 
 
+def cmd_diff(a):
+    one, two = load(a[0]), load(a[1])
+    if one.size != two.size:
+        print(100.0)
+        return 0
+    differ = sum(1 for p, q in zip(pixels(one), pixels(two)) if max(abs(x - y) for x, y in zip(p, q)) > 12)
+    print(round(100 * differ / (one.width * one.height), 1))
+    return 0
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__, file=sys.stderr)
         return 2
-    cmds = {"info": cmd_info, "bg": cmd_bg, "primary": cmd_primary, "footer": cmd_footer, "crop": cmd_crop}
+    cmds = {"info": cmd_info, "bg": cmd_bg, "primary": cmd_primary, "footer": cmd_footer, "crop": cmd_crop, "diff": cmd_diff}
     return cmds[sys.argv[1]](sys.argv[2:])
 
 
