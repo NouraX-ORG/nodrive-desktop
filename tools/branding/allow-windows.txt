@@ -1,0 +1,20 @@
+# NoDrive branding sweep: hits kept on purpose in Windows-lane files (Windows lane).
+# Format: path-glob<TAB>regex<TAB>class<TAB>reason   (regex "*" = any hit in those files)
+# Classes: internal | server-required | not-shipped | dead-code | legal. Checked by tools/check-branding.py;
+# entries may only classify files the Windows lane owns (tools/branding/lanes.json).
+
+# --- Legal ----------------------------------------------------------------------------------
+admin/win/msi/*.in	SPDX-FileCopyrightText	legal	Upstream copyright header of the MSI script templates, kept unchanged (spec section 5); not part of any installer text.
+
+# --- Build-time identifiers (never shown) ---------------------------------------------------
+admin/win/*	MIRALL_	internal	CMake version variables (MIRALL_VERSION_*); configure replaces them with the version number.
+admin/win/msi/CMakeLists.txt	Nextcloud\.wxs	internal	Name of the WiX source file that builds the MSI; used only while building, not shipped, not shown.
+admin/win/msi/make-msi.bat.in	Nextcloud\.(wxs|wixobj)	internal	WiX source and object file names used only while building the MSI; not shipped, not shown.
+admin/win/ci/make-msi-ci.ps1	nextcloud-client	internal	Name of the upstream Craft blueprint (package) that builds the client; CI only.
+src/common/utility_win.cpp	^Nextcloud$	internal	Utility::syncFolderDisplayName() recognises old sync folders named "Nextcloud<N>" and gives them the app name (NoDrive) in Explorer; the literal itself is never shown.
+src/gui/navigationpanehelper.h	^Nextcloud$	dead-code	unbrandedApplicationName is no longer used: tools/rebrand.d/windows.py makes navigationpanehelper.cpp remove only NoDrive's own Explorer entries.
+
+# --- Not shipped -----------------------------------------------------------------------------
+admin/win/nsi/README.md	*	not-shipped	NSIS installer notes; NoDrive ships an MSI (docs/build-windows.md) and nothing from admin/win/nsi is packaged.
+admin/win/tools/NCNavRemove/*	*	not-shipped	Migration tool, built only with BUILD_WIN_TOOLS, which the NoDrive build leaves off; not in the MSI.
+cmake/modules/NSIS.template.in	*	not-shipped	CPack NSIS installer template; NoDrive ships an MSI and never builds the NSIS installer (Packager/PackageType = PortablePackager in admin/win/nodrive-craftmaster.ini).
