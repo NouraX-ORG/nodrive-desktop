@@ -390,24 +390,27 @@ ls -R "$APP" > "$OUT/bundle/app-tree.txt"
 # --- 3. version and help output ----------------------------------------------------------------
 with_timeout 60 "$EXE" --version > "$OUT/logs/version.txt" 2>&1
 with_timeout 60 "$EXE" --help > "$OUT/logs/help.txt" 2>&1
-if grep -q "$NAME" "$OUT/logs/version.txt" && ! grep -qi nextcloud "$OUT/logs/version.txt" "$OUT/logs/help.txt"; then
-    result cli-version PASS "$(grep -m1 "$NAME" "$OUT/logs/version.txt"); --help names no Nextcloud"
+if grep -q "^$NAME version " "$OUT/logs/version.txt" && ! grep -qi nextcloud "$OUT/logs/version.txt" "$OUT/logs/help.txt"; then
+    result cli-version PASS "$(grep -m1 "^$NAME version " "$OUT/logs/version.txt"); --help names no Nextcloud"
 else
     result cli-version FAIL "see logs/version.txt and logs/help.txt"
 fi
 
 # --- 4. network capture ------------------------------------------------------------------------
 log "network capture (DNS)"
+# Text output, line-buffered: Apple's tcpdump writes no pcap file on the PKTAP "any" interface.
 TCPDUMP_IF=any
-sudo tcpdump -i any -n -U -w "$OUT/net/dns.pcap" port 53 > "$OUT/logs/tcpdump.txt" 2>&1 &
+sudo tcpdump -i any -n -l port 53 > "$OUT/net/dns.txt" 2> "$OUT/logs/tcpdump.txt" &
 sleep 3
 if ! pgrep -x tcpdump > /dev/null; then
     TCPDUMP_IF=$(route -n get default 2> /dev/null | awk '/interface:/ { print $2 }')
     log "tcpdump -i any did not start; using ${TCPDUMP_IF:-en0}"
-    sudo tcpdump -i "${TCPDUMP_IF:-en0}" -n -U -w "$OUT/net/dns.pcap" port 53 >> "$OUT/logs/tcpdump.txt" 2>&1 &
+    sudo tcpdump -i "${TCPDUMP_IF:-en0}" -n -l port 53 > "$OUT/net/dns.txt" 2>> "$OUT/logs/tcpdump.txt" &
     sleep 3
 fi
-result dns-capture INFO "tcpdump on interface $TCPDUMP_IF, port 53, whole runner"
+# A known lookup, so the report shows that the capture works.
+dscacheutil -q host -a name github.com > /dev/null 2>&1
+result dns-capture INFO "tcpdump on interface $TCPDUMP_IF, port 53, whole runner ($(head -n 1 "$OUT/logs/tcpdump.txt"))"
 
 # --- 5. app runs -------------------------------------------------------------------------------
 STATUS=0
@@ -421,8 +424,6 @@ set_scheme light
 sleep 2
 sudo pkill -INT -x tcpdump
 sleep 2
-sudo tcpdump -n -r "$OUT/net/dns.pcap" > "$OUT/net/dns.txt" 2> /dev/null
-sudo chown "$(id -u):$(id -g)" "$OUT/net/dns.pcap" 2> /dev/null
 
 if [ "$LOGGER_OK" = 1 ]; then
     result fake-browser INFO "test library loaded into the app (DYLD_INSERT_LIBRARIES); it records browser hand-offs and starts no browser"

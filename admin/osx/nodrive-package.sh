@@ -9,6 +9,7 @@
 #
 # 1. copies the built .app to a staging folder (ditto keeps framework symlinks),
 # 2. adds the licence texts under Contents/Resources/licenses,
+#    and makes the bundle self-contained (admin/osx/nodrive-bundle-fixup.py --fix, then --check),
 # 3. signs it AD-HOC only (codesign --sign -), inside-out, without hardened runtime and without a
 #    timestamp. This is not real signing: there is no certificate, no Team ID, no notarisation.
 #    arm64 macOS needs at least an ad-hoc signature to run the code at all.
@@ -89,6 +90,13 @@ else
     done
 fi
 echo "Licence files: $(ls "$LIC" | wc -l | tr -d ' ')"
+
+# --- self-contained bundle ---------------------------------------------------------------------
+# Our own libraries sit in Contents/MacOS and the build's macdeployqt step cannot resolve them;
+# add bundle-relative run paths, drop the build machine's, then check every dependency.
+echo "Making the bundle self-contained..."
+python3 "$REPO/admin/osx/nodrive-bundle-fixup.py" --fix "$STAGED_APP"
+python3 "$REPO/admin/osx/nodrive-bundle-fixup.py" --check "$STAGED_APP"
 
 # --- ad-hoc signing, inside-out ----------------------------------------------------------------
 xattr -cr "$STAGED_APP"
