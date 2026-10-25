@@ -1,0 +1,63 @@
+# NoDrive branding sweep: hits kept on purpose in shared and Linux files (Linux lane).
+# Format: path-glob<TAB>regex<TAB>class<TAB>reason   (regex "*" = any hit in those files)
+# Classes: internal | server-required | not-shipped | dead-code (all "internal") | legal.
+# Only true internal identifiers and legal text belong here; user-visible hits are fixed
+# by tools/rebrand.py instead. Checked by tools/check-branding.py.
+
+# --- Legal --------------------------------------------------------------------------------
+translations/client_*.ts	^\[OCC::LegalNotice\]	legal	Upstream copyright line of the Legal Notice dialog, kept as legal text. NoDrive hides the dialog's button (NOTICE.md); the line is never shown.
+src/gui/legalnotice.cpp	Copyright .*(Nextcloud|ownCloud) GmbH	legal	Upstream copyright line in the (unreachable) Legal Notice dialog; legal text is kept unchanged.
+nodrive/licenses/*	*	legal	Licence texts and third-party notices shipped as files next to the app; naming the copyright holders is required by the licences.
+
+# --- Server protocol ----------------------------------------------------------------------
+src/*	https?://(own|next)cloud\.org/ns	server-required	WebDAV XML namespace of the server (oc: / nc: properties); the server only answers to these exact URIs.
+src/common/utility.cpp	mirall/%2	server-required	User agent: Nextcloud server 35 recognises desktop clients by "mirall/<version>" (IRequest::USER_AGENT_CLIENT_DESKTOP). The app-name part says NoDrive.
+src/libsync/networkjobs.cpp	^nextcloud/$	server-required	Path segment used to detect servers installed under /nextcloud/ (URL handling), not shown.
+
+# --- Internal identifiers -----------------------------------------------------------------
+src/*	^(com\.)?nextcloud\.[a-z0-9_.]+$	internal	Qt logging category name; appears only in debug logs and --logdebug rules.
+src/libsync/logger.cpp	^nextcloud\.\*\.debug=true$	internal	Logging rule that enables the internal nextcloud.* logging categories.
+src/*	^com\.nextcloud\.desktopclient(\.[a-z]+)?$	internal	QML module URI (module name used by import statements), never shown.
+src/*	^org\.owncloud\.PluginFactory$	internal	Qt plugin interface id of the sync plugins (internal identifier).
+shell_integration/dolphin/*	^(com\.owncloud\.ovarlayiconplugin|ownclouddolphinoverlayplugin\.json)$	internal	KDE plugin id and metadata file name of the Dolphin overlay plugin (internal identifiers).
+src/*	^(OWNCLOUD|NEXTCLOUD)_[A-Z0-9_]+$	internal	Name of an environment variable read for debugging or tuning; never shown.
+src/*	^(\.?(owncloud|nextcloud)(sync|permissions)\.log|\*owncloud\.log\.\*|nextcloud\.log|nextcloud-debug-archive-temp\.zip)$	internal	Internal log and probe file names (the probe files are hidden, temporary and excluded from sync).
+src/libsync/settings/migration.cpp	(owncloud|nextcloud)\.cfg	internal	Legacy config paths used only by account migration, which NoDrive switches off (DISABLE_ACCOUNT_MIGRATION ON).
+src/libsync/configfile.h	^(Nextcloud|Owncloud)$	internal	Unbranded/legacy app names used to find old config folders for migration (switched off).
+src/libsync/configfile.cpp	^Nextcloud$	internal	Compares APPLICATION_NAME with the unbranded name to pick a default; never shown.
+src/libsync/theme.cpp	^Nextcloud$	internal	Theme::isBranded() compares the app name with the unbranded name; never shown.
+src/libsync/theme.cpp	^nextcloudTheme::aboutInfo\(\)$	internal	Translation context name, not displayed.
+src/libsync/theme.cpp	^colored/wizard-nextcloud\.png$	internal	Resource file name; the file now holds the NoDrive logo (tools/make-icons.py, icons-manifest).
+src/libsync/clientsideencryption.cpp	^Nextcloud$	internal	Organisation (O) field of the end-to-end-encryption certificate request sent to the server; not shown in the app.
+src/libsync/creds/*	^owncloud-(authentication-failed|need-retry)$	internal	QNetworkRequest attribute keys (internal).
+src/libsync/propagatedownload.cpp	(owncloud-custom-soft-error-string|Retrying through owncloud)	internal	Request attribute key and a debug log message.
+src/libsync/vfs/xattr/xattrwrapper_linux.cpp	user\.nextcloud\.hydrate_exec	internal	Extended file attribute name used by the openvfs hydration helper (OS-level identifier).
+src/libsync/vfs/cfapi/shellext/customstateprovider.cpp	^\.owncloudsync\.log$	internal	Legacy probe file name that the Explorer extension ignores.
+src/common/syncjournaldb.cpp	possibleUpgradeFromMirall	internal	Debug log message.
+src/gui/application.cpp	ending in \.owncloud	internal	Warning in the debug log about legacy .owncloud link files.
+src/gui/connectionvalidator.cpp	Application: Nextcloud found	internal	Debug log message.
+src/cmd/cmd.cpp	^owncloud$	internal	Legacy owncloud:// URL scheme accepted on the command line (mapped to http).
+src/gui/systray.cpp	^Open Nextcloud main window	internal	tr() disambiguation comment for translators; not displayed.
+src/gui/cloudproviders/cloudproviderwrapper.cpp	^Open Nextcloud main window	internal	tr() disambiguation comment for translators; not displayed.
+src/gui/manifest-mingw.rc	owncloud\.exe\.manifest-mingw	internal	Resource file name, used only by MinGW builds.
+shell_integration/nautilus/syncstate.py	^Nextcloud$	internal	Placeholder that shell_integration/nautilus/setappname.sh replaces with APPLICATION_SHORTNAME (NoDrive) at configure time.
+shell_integration/nautilus/setappname.sh	*	internal	Build hook that replaces the placeholder name with APPLICATION_SHORTNAME.
+
+# --- Build logic and variable names -------------------------------------------------------
+NEXTCLOUD.cmake	(NEXTCLOUD_DEV|STREQUAL "Nextcloud"|Nextcloud-macOS-icon\.svg)	internal	Upstream build logic that tests the unbranded name; NoDrive's values are set afterwards by nodrive/NODRIVE.cmake.
+nodrive/NODRIVE.cmake	(MIRALL_VERSION_SUFFIX|NEXTCLOUD_BACKGROUND_COLOR)	internal	Upstream CMake variable names that NoDrive sets.
+NextcloudCPack.cmake	(MIRALL_|NEXTCLOUD\.cmake)	internal	CMake variable/file names in the CPack setup (CPack is not used for NoDrive packages).
+CPackOptions.cmake.in	(MIRALL_|NEXTCLOUD\.cmake|OWNCLOUD_OSX_BUNDLE)	internal	CMake variable/file names in the CPack setup (CPack is not used for NoDrive packages).
+admin/linux/build-appimage.sh	MIRALL_VERSION_	internal	CMake variable names passed to the build.
+src/common/vfspluginmetadata.json.in	MIRALL_VERSION_STRING	internal	CMake variable name (filled with the NoDrive version).
+src/gui/version.rc.in	MIRALL_VERSION	internal	CMake variable names (filled with the NoDrive version).
+theme.qrc.in	wizard-nextcloud	internal	Resource file names; the files now hold the NoDrive logo (tools/make-icons.py, icons-manifest).
+craftmaster.ini	*	internal	Build-time KDE Craft settings (blueprints, binary cache) used only on the CI build machine, never by the app.
+
+# --- Not shipped / not built --------------------------------------------------------------
+src/gui/updater/*	*	dead-code	Updater code; not built (BUILD_UPDATER OFF in nodrive/NODRIVE.cmake).
+src/libsync/theme.cpp	docs\.nextcloud\.com	dead-code	#else branch for an empty APPLICATION_HELP_URL; NODRIVE.cmake stops the configure when it is empty, so this is never compiled.
+admin/linux/flatpak/*	*	not-shipped	Upstream Flatpak manifest and metainfo; NoDrive ships no Flatpak.
+admin/test/*	*	not-shipped	Upstream CI test helper script.
+theme/colored/AppIcon.icon/*	*	not-shipped	Icon Composer icon; not used (MACOS_USE_ICON_COMPOSER OFF in NODRIVE.cmake).
+theme/nextcloud.VisualElementsManifest.xml	*	not-shipped	Upstream tile manifest; the build installs theme/nodrive.VisualElementsManifest.xml (${APPLICATION_EXECUTABLE}).
