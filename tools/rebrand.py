@@ -172,6 +172,17 @@ def step_overlay(ctx: Context) -> None:
         "include(${CMAKE_SOURCE_DIR}/nodrive/NODRIVE.cmake)\n",
         what="include nodrive/NODRIVE.cmake",
     )
+    # NextcloudCPack.cmake (included from CMakeLists.txt before add_subdirectory(src))
+    # includes NEXTCLOUD.cmake a second time, which would reset every name and id
+    # to Nextcloud's. Re-apply the overlay right after that second include.
+    ctx.replace(
+        "NextcloudCPack.cmake",
+        'include("${CMAKE_SOURCE_DIR}/NEXTCLOUD.cmake")\n',
+        'include("${CMAKE_SOURCE_DIR}/NEXTCLOUD.cmake")\n'
+        "# NoDrive: the line above resets the names to upstream's; apply the overlay again.\n"
+        'include("${CMAKE_SOURCE_DIR}/nodrive/NODRIVE.cmake")\n',
+        what="re-apply nodrive/NODRIVE.cmake after the CPack include of NEXTCLOUD.cmake",
+    )
 
 
 # --------------------------------------------------------------------------
