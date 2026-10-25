@@ -48,7 +48,7 @@ NEXTCLOUD.cmake	(NEXTCLOUD_DEV|STREQUAL "Nextcloud"|Nextcloud-macOS-icon\.svg)	i
 nodrive/NODRIVE.cmake	(MIRALL_VERSION_SUFFIX|NEXTCLOUD_BACKGROUND_COLOR)	internal	Upstream CMake variable names that NoDrive sets.
 NextcloudCPack.cmake	(MIRALL_|NEXTCLOUD\.cmake)	internal	CMake variable/file names in the CPack setup (CPack is not used for NoDrive packages).
 CPackOptions.cmake.in	(MIRALL_|NEXTCLOUD\.cmake|OWNCLOUD_OSX_BUNDLE)	internal	CMake variable/file names in the CPack setup (CPack is not used for NoDrive packages).
-admin/linux/build-appimage.sh	MIRALL_VERSION_	internal	CMake variable names passed to the build.
+admin/linux/build-appimage.sh	MIRALL_(HUMAN_)?VERSION_	internal	CMake variable and version.h macro names used by the build script (the value is the NoDrive version).
 src/common/vfspluginmetadata.json.in	MIRALL_VERSION_STRING	internal	CMake variable name (filled with the NoDrive version).
 src/gui/version.rc.in	MIRALL_VERSION	internal	CMake variable names (filled with the NoDrive version).
 theme.qrc.in	wizard-nextcloud	internal	Resource file names; the files now hold the NoDrive logo (tools/make-icons.py, icons-manifest).
