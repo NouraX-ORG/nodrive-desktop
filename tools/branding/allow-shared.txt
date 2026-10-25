@@ -61,3 +61,7 @@ admin/linux/flatpak/*	*	not-shipped	Upstream Flatpak manifest and metainfo; NoDr
 admin/test/*	*	not-shipped	Upstream CI test helper script.
 theme/colored/AppIcon.icon/*	*	not-shipped	Icon Composer icon; not used (MACOS_USE_ICON_COMPOSER OFF in NODRIVE.cmake).
 theme/nextcloud.VisualElementsManifest.xml	*	not-shipped	Upstream tile manifest; the build installs theme/nodrive.VisualElementsManifest.xml (${APPLICATION_EXECUTABLE}).
+
+# --- Packaged AppImage (check-branding.py --artifact, paths inside squashfs-root) ---------
+usr/share/doc/nodrive/*	*	legal	Licence texts and THIRD-PARTY-NOTICES.txt shipped in the AppImage (from nodrive/licenses); naming the copyright holders is required by the licences.
+usr/share/nodrive/i18n/client_*.qm	^\[OCC::LegalNotice\]	legal	Upstream copyright line of the Legal Notice dialog in the compiled translations; NoDrive hides the dialog's button (NOTICE.md), the line is never shown.

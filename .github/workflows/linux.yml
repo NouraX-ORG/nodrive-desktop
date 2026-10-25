@@ -212,10 +212,12 @@ jobs:
           if [ -f "$root/usr/share/doc/nodrive/COPYING.txt" ] && [ -f "$root/usr/share/doc/nodrive/THIRD-PARTY-NOTICES.txt" ]; then
             ok licences "usr/share/doc/nodrive: $(ls "$root/usr/share/doc/nodrive" | tr '\n' ' ')"
           else bad licences "usr/share/doc/nodrive is missing COPYING.txt or THIRD-PARTY-NOTICES.txt"; fi
+          # Sweep of the packaged app: text files, compiled translations (.qm) and every
+          # URL inside the binaries. An unclassified hit fails the job.
           if python3 tools/check-branding.py --artifact "$root" --lane linux --report smoke/artifact-sweep.md --list > smoke/logs/artifact-sweep.txt; then
-            ok artifact-sweep "$(tail -n 1 smoke/logs/artifact-sweep.txt)"
+            ok artifact-sweep "$(grep -m1 'hits (' smoke/logs/artifact-sweep.txt | sed 's/^check-branding //' || true); $(tail -n 1 smoke/logs/artifact-sweep.txt)"
           else
-            printf '%s\tINFO\t%s\n' artifact-sweep "$(tail -n 1 smoke/logs/artifact-sweep.txt) (see artifact-sweep.md)" >> smoke/results.tsv
+            bad artifact-sweep "$(tail -n 1 smoke/logs/artifact-sweep.txt) (see artifact-sweep.md)"
           fi
           tail -n 30 smoke/logs/artifact-sweep.txt
           exit $status

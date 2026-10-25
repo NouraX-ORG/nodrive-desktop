@@ -534,7 +534,8 @@ def classify(res: Result, allow: list[Allow], lanes: dict) -> None:
                 continue
             if a.regex is not None and not a.regex.search(h.text):
                 continue
-            if h.lane not in LANE_OF_ALLOW[a.owner]:
+            # Package (artifact) paths are not lane-owned source files.
+            if h.lane != "artifact" and h.lane not in LANE_OF_ALLOW[a.owner]:
                 res.errors.append(f"{a.source}:{a.lineno}: lane '{a.owner}' may not classify {h.path} (owned by {h.lane})")
                 continue
             a.used += 1
@@ -548,6 +549,56 @@ def classify(res: Result, allow: list[Allow], lanes: dict) -> None:
 
 URL_RE = re.compile(rb"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]{4,}")
 ALLOWED_URLS = re.compile(r"^https?://(own|next)cloud\.org/ns\b", re.I)
+
+
+QM_MAGIC = bytes.fromhex("3CB86418CAEF9C95CD211CBF60A1BDDD")
+
+
+def qm_texts(data: bytes):
+    """(context, text) for every translation and source text in a compiled Qt .qm file.
+
+    Used when lconvert is not installed. Format (qttools src/linguist/shared/qm.cpp):
+    16-byte magic, then blocks <tag:1><length:4 BE><data>; the Messages block (0x69)
+    holds items <tag:1>...: 1 end of message, 3 translation (UTF-16BE, length 0xFFFFFFFF
+    = empty), 6 source text, 7 context, 8 comment (UTF-8, length-prefixed), 5 obsolete
+    (4 bytes).
+    """
+    if not data.startswith(QM_MAGIC):
+        return
+    pos = len(QM_MAGIC)
+    while pos + 5 <= len(data):
+        tag, length = data[pos], int.from_bytes(data[pos + 1:pos + 5], "big")
+        block = data[pos + 5:pos + 5 + length]
+        pos += 5 + length
+        if tag != 0x69:
+            continue
+        i, context, texts = 0, "", []
+        while i < len(block):
+            t = block[i]
+            i += 1
+            if t == 1:  # end of message
+                for text in texts:
+                    yield context, text
+                context, texts = "", []
+            elif t == 5:
+                i += 4
+            elif t in (2, 3, 4, 6, 7, 8):
+                n = int.from_bytes(block[i:i + 4], "big")
+                i += 4
+                if n == 0xFFFFFFFF:
+                    continue
+                raw = block[i:i + n]
+                i += n
+                if t in (2, 3, 4):
+                    value = raw.decode("utf-16-be", "replace")
+                else:
+                    value = raw.decode("utf-8", "replace")
+                if t in (4, 7):
+                    context = value
+                elif t in (2, 3, 6):
+                    texts.append(value)
+            else:
+                break  # unknown tag: stop reading this block
 
 
 def scan_artifact(art: Path, patterns, res: Result) -> None:
@@ -572,6 +623,13 @@ def scan_artifact(art: Path, patterns, res: Result) -> None:
             for n, item, prefix, _src in ts_texts(out.stdout):
                 kws = match_keywords(item, patterns)
                 if kws:
+                    res.hits.append(Hit(rel, n, "artifact-qm", (prefix + " ".join(item.split()))[:240], kws, "artifact"))
+            res.files_scanned["artifact-qm"] += 1
+        elif ext == ".qm":
+            for n, (ctx_name, item) in enumerate(qm_texts(p.read_bytes()), 1):
+                kws = match_keywords(item, patterns)
+                if kws:
+                    prefix = f"[{ctx_name}] " if ctx_name else ""
                     res.hits.append(Hit(rel, n, "artifact-qm", (prefix + " ".join(item.split()))[:240], kws, "artifact"))
             res.files_scanned["artifact-qm"] += 1
         else:
