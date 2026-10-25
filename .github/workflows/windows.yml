@@ -1,0 +1,360 @@
+# SPDX-FileCopyrightText: 2026 Nourax
+# SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# NoDrive for Windows: KDE Craft build, unit tests and MSI (test builds only:
+# Actions artifacts, no releases, no signing). Based on upstream's
+# .github/upstream-workflows/windows-build-and-test.yml. Needs no secrets.
+#
+# Jobs
+#   branding  ubuntu, ~1 min. Rebrand / sweep gates. The shared tools run as soon
+#             as they are on this branch (tools/rebrand.py, tools/check-branding.py).
+#   deps      Craft + all client dependencies (Qt, OpenSSL, ...), mostly from the
+#             Craft binary cache. The Craft tree is cached with a unique key per
+#             run and saved even when the step fails or hits its time limit, so the
+#             next run resumes where this one stopped (restore-keys prefix match).
+#             A complete tree carries a marker and is not saved again.
+#   build     Restores the complete tree from "deps", builds the client from this
+#             checkout, makes the MSI, uploads it, then runs the unit tests.
+#
+# Runner: windows-2022, as upstream. windows-latest (Windows Server 2025) only has
+# Visual Studio 2026, while Craft's windows-msvc2022_64-cl target and the
+# prebuilt Craft cache it downloads need Visual Studio 2022 (see docs/build-windows.md).
+
+name: Windows
+
+on:
+  push:
+    branches: [main, platform/windows]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CRAFT_TARGET: windows-msvc2022_64-cl
+  PYTHON_VERSION: '3.12'
+  CRAFTMASTER_URL: https://invent.kde.org/packaging/craftmaster.git
+  CRAFTMASTER_REVISION: 8a19d8fcab223b8b27126d98a46ed824b5948665
+  # Bump to start all Windows Craft caches from scratch.
+  CRAFT_CACHE_VERSION: v1
+  # Must be identical for restore and save. Build trees, downloads and temp
+  # files are left out to keep the cache small (the repo has 10 GB for all caches).
+  CRAFT_CACHE_PATHS: |
+    CraftMaster
+    craft-clone
+    windows-msvc2022_64-cl
+    !windows-msvc2022_64-cl/build
+    !windows-msvc2022_64-cl/download
+    !windows-msvc2022_64-cl/tmp
+  CRAFT_DEPS_MARKER: windows-msvc2022_64-cl/etc/nodrive-craft-deps.txt
+
+jobs:
+  branding:
+    name: Branding checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Windows rebrand plugin is applied
+        run: python3 tools/rebrand.d/windows.py --check
+
+      - name: Shared rebrand is applied
+        run: |
+          if [ -f tools/rebrand.py ]; then
+            python3 tools/rebrand.py --check
+          else
+            echo "::notice::tools/rebrand.py is not on this branch yet; skipped"
+          fi
+
+      - name: Branding sweep (Windows lane)
+        run: |
+          if [ -f tools/check-branding.py ]; then
+            python3 tools/check-branding.py --lane windows --report branding-windows.md
+          else
+            echo "::notice::tools/check-branding.py is not on this branch yet; skipped"
+          fi
+
+      - name: Upload sweep report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: branding-windows
+          path: branding-windows.md
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # One-off evidence for the runner choice above (informational, never fails the run).
+  toolchain-probe:
+    name: windows-latest toolchain probe (info)
+    runs-on: windows-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Look for the toolchain Craft's msvc2022 target needs
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          "Installed Visual Studio:"; & $vswhere -products * -property displayName
+          foreach ($v in @(18, 17, 16)) {
+            "Craft query: VS [$v,$($v+1)) with Microsoft.VisualStudio.Component.VC.v143.x86.x64 ->"
+            & $vswhere -property installationPath -nologo -latest -products * -version "[$v,$($v+1))" -requires Microsoft.VisualStudio.Component.VC.v143.x86.x64
+          }
+          "Craft fallback: VS [17,18) with VC.Tools.x86.x64 ->"
+          & $vswhere -property installationPath -nologo -latest -products * -version "[17,18)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+          "VS 2026 with the 14.44 (v143) toolset component ->"
+          & $vswhere -property installationPath -nologo -latest -products * -requires Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64
+
+  deps:
+    name: Craft dependencies
+    runs-on: windows-2022
+    timeout-minutes: 355
+    outputs:
+      cache-key: ${{ steps.result.outputs.cache-key }}
+    env:
+      CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
+      CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
+      CRAFT_MASTER_OVERRIDE: ${{ github.workspace }}\admin\win\nodrive-craftmaster.ini
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Resolve Craft revisions and the cache key
+        id: rev
+        shell: python
+        run: |
+          import configparser, hashlib, os, subprocess
+          files = [os.environ["CRAFT_MASTER_CONFIG"], os.environ["CRAFT_MASTER_OVERRIDE"]]
+          cfg = configparser.RawConfigParser(allow_no_value=True)
+          cfg.optionxform = str
+          digest = hashlib.sha256()
+          for f in files:
+              data = open(f, "rb").read()
+              digest.update(data.replace(b"\r\n", b"\n"))
+              cfg.read_string(data.decode("utf-8"), source=f)
+          craft_rev = cfg.get("General", "CraftRevision")
+          kde_ref = cfg.get("BlueprintSettings", "craft/craft-blueprints-kde.revision")
+          nc_ref = cfg.get("BlueprintSettings", "craft/craft-blueprints-nextcloud.revision")
+          def remote(repo, ref):
+              out = subprocess.run(["git", "ls-remote", repo, f"refs/heads/{ref}"], check=True,
+                                   capture_output=True, text=True).stdout.split()
+              if not out:
+                  raise SystemExit(f"Could not resolve {ref} in {repo}")
+              return out[0]
+          kde_rev = remote("https://github.com/nextcloud/craft-blueprints-kde.git", kde_ref)
+          nc_rev = remote("https://github.com/nextcloud/craft-blueprints-nextcloud.git", nc_ref)
+          e = os.environ
+          base = (f"win-craft-{e['CRAFT_CACHE_VERSION']}-{e['CRAFT_TARGET']}-py{e['PYTHON_VERSION']}"
+                  f"-cm{e['CRAFTMASTER_REVISION'][:10]}-ini{digest.hexdigest()[:12]}")
+          prefix = f"{base}-{craft_rev[:10]}-{kde_rev[:10]}-{nc_rev[:10]}"
+          print(f"craft {craft_rev}\nkde {kde_ref} {kde_rev}\nnextcloud {nc_ref} {nc_rev}\nprefix {prefix}")
+          with open(e["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"kde_ref={kde_ref}\nnextcloud_ref={nc_ref}\nbase={base}\nprefix={prefix}\n")
+
+      - name: Restore Craft tree
+        id: restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ steps.rev.outputs.prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            ${{ steps.rev.outputs.prefix }}-
+            ${{ steps.rev.outputs.base }}-
+
+      - name: Check the restored tree
+        id: state
+        shell: pwsh
+        env:
+          PREFIX: ${{ steps.rev.outputs.prefix }}
+          MATCHED: ${{ steps.restore.outputs.cache-matched-key }}
+        run: |
+          $complete = $false
+          if (Test-Path -LiteralPath $env:CRAFT_DEPS_MARKER) {
+            $complete = ((Get-Content -LiteralPath $env:CRAFT_DEPS_MARKER -Raw).Trim() -eq $env:PREFIX)
+          }
+          "Restored: '$env:MATCHED'; complete for this key: $complete"
+          Get-PSDrive -PSProvider FileSystem | Where-Object Used | Format-Table Name, @{n='UsedGB';e={[math]::Round($_.Used/1GB,1)}}, @{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}
+          "complete=$($complete.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Install Craft and the client dependencies
+        id: install
+        if: steps.state.outputs.complete != 'true'
+        # Leaves time inside the job limit to save the cache; the next run resumes.
+        timeout-minutes: 290
+        shell: pwsh
+        env:
+          KDE_REF: ${{ steps.rev.outputs.kde_ref }}
+          NEXTCLOUD_REF: ${{ steps.rev.outputs.nextcloud_ref }}
+          PREFIX: ${{ steps.rev.outputs.prefix }}
+        run: |
+          if (-not (Test-Path -LiteralPath "$env:CRAFT_MASTER_LOCATION\.git")) {
+            & cmd /C "git clone -q $env:CRAFTMASTER_URL `"$env:CRAFT_MASTER_LOCATION`" 2>&1"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $have = git -C "$env:CRAFT_MASTER_LOCATION" rev-list --all | Select-String -SimpleMatch $env:CRAFTMASTER_REVISION -Quiet
+          if (-not $have) { git -C "$env:CRAFT_MASTER_LOCATION" fetch -q origin }
+          git -C "$env:CRAFT_MASTER_LOCATION" checkout -q -f $env:CRAFTMASTER_REVISION
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          function craft() {
+            python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" --config "$env:CRAFT_MASTER_CONFIG" --config-override "$env:CRAFT_MASTER_OVERRIDE" --target $env:CRAFT_TARGET -c $args
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+          craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-kde.git|$env:KDE_REF|"
+          craft --add-blueprint-repository "https://github.com/nextcloud/craft-blueprints-nextcloud.git|$env:NEXTCLOUD_REF|"
+          craft craft
+          craft --install-deps nextcloud-client
+          Set-Content -LiteralPath $env:CRAFT_DEPS_MARKER -Value $env:PREFIX -Encoding utf8
+          Get-PSDrive -PSProvider FileSystem | Where-Object Used | Format-Table Name, @{n='UsedGB';e={[math]::Round($_.Used/1GB,1)}}, @{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}
+
+      - name: Save Craft tree (also after a failure or time-out)
+        if: always() && (steps.install.outcome == 'success' || steps.install.outcome == 'failure' || steps.install.outcome == 'cancelled')
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ steps.restore.outputs.cache-primary-key }}
+
+      - name: Result
+        id: result
+        shell: pwsh
+        env:
+          COMPLETE: ${{ steps.state.outputs.complete }}
+          INSTALL: ${{ steps.install.outcome }}
+          MATCHED: ${{ steps.restore.outputs.cache-matched-key }}
+          PRIMARY: ${{ steps.restore.outputs.cache-primary-key }}
+        run: |
+          if ($env:COMPLETE -eq 'true') { $key = $env:MATCHED }
+          elseif ($env:INSTALL -eq 'success') { $key = $env:PRIMARY }
+          else { "Dependencies are not complete yet (install: $env:INSTALL)"; exit 1 }
+          "Complete Craft tree: $key"
+          "cache-key=$key" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  build:
+    name: Build, MSI and unit tests
+    needs: [branding, deps]
+    runs-on: windows-2022
+    timeout-minutes: 300
+    env:
+      CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
+      CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
+      CRAFT_MASTER_OVERRIDE: ${{ github.workspace }}\admin\win\nodrive-craftmaster.ini
+      CRAFT_ROOT: ${{ github.workspace }}\windows-msvc2022_64-cl
+      BUILD_DIR: ${{ github.workspace }}\windows-msvc2022_64-cl\build\nextcloud-client\work\build
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Restore Craft tree
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CRAFT_CACHE_PATHS }}
+          key: ${{ needs.deps.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Install Inkscape (SVG converter required by CMake)
+        shell: pwsh
+        run: choco install inkscape -y --no-progress
+
+      - name: Prepare
+        shell: pwsh
+        run: |
+          "$env:CRAFT_ROOT\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # The Nextcloud blueprint's package blacklist drops every bin\*.exe except
+          # nextcloud(cmd).exe; keep NoDrive's executables too (CI copy only).
+          $bl = Get-ChildItem -LiteralPath "$env:CRAFT_ROOT\etc\blueprints\locations" -Recurse -File -Filter blacklist.txt |
+            Where-Object { $_.FullName -like '*\nextcloud-client\blacklist.txt' } | Select-Object -First 1
+          if (-not $bl) { throw 'nextcloud-client\blacklist.txt not found in the Craft blueprints' }
+          $text = Get-Content -LiteralPath $bl.FullName -Raw
+          if ($text -notmatch 'nodrive\|nodrivecmd\|') {
+            $text = $text.Replace('(?!(nextcloud|nextcloudcmd|', '(?!(nodrive|nodrivecmd|nextcloud|nextcloudcmd|')
+            Set-Content -LiteralPath $bl.FullName -Value $text -NoNewline -Encoding utf8
+          }
+          Select-String -LiteralPath $bl.FullName -Pattern '\.exe'
+
+      - name: Compile
+        timeout-minutes: 150
+        shell: pwsh
+        run: |
+          function craft() {
+            python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" --config "$env:CRAFT_MASTER_CONFIG" --config-override "$env:CRAFT_MASTER_OVERRIDE" --target $env:CRAFT_TARGET -c $args
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          craft --options "nextcloud-client.srcDir=$env:GITHUB_WORKSPACE" --options "nextcloud-client.args=-DBUILD_WIN_MSI=ON -DMIRALL_VERSION_BUILD=$env:GITHUB_RUN_NUMBER" nextcloud-client
+
+      - name: Collect files (Craft portable package)
+        timeout-minutes: 30
+        shell: pwsh
+        run: |
+          function craft() {
+            python "$env:CRAFT_MASTER_LOCATION\CraftMaster.py" --config "$env:CRAFT_MASTER_CONFIG" --config-override "$env:CRAFT_MASTER_OVERRIDE" --target $env:CRAFT_TARGET -c $args
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          craft --options "nextcloud-client.srcDir=$env:GITHUB_WORKSPACE" --options "nextcloud-client.args=-DBUILD_WIN_MSI=ON -DMIRALL_VERSION_BUILD=$env:GITHUB_RUN_NUMBER" --package nextcloud-client
+
+      - name: Build the MSI
+        id: msi
+        timeout-minutes: 30
+        shell: pwsh
+        run: ./admin/win/ci/make-msi-ci.ps1 -CraftRoot "$env:CRAFT_ROOT" -SourceDir "$env:GITHUB_WORKSPACE" -OutDir "$env:RUNNER_TEMP\out"
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-msi
+          path: ${{ runner.temp }}\out\*.msi
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Artifact sweep (once main has tools/check-branding.py)
+        shell: pwsh
+        env:
+          COLLECT_DIR: ${{ steps.msi.outputs.collect-dir }}
+        run: |
+          if (Test-Path tools/check-branding.py) { python tools/check-branding.py --artifact "$env:COLLECT_DIR" --lane windows; exit $LASTEXITCODE }
+          "::notice::tools/check-branding.py is not on this branch yet; skipped"
+
+      - name: Unit tests
+        timeout-minutes: 75
+        shell: pwsh
+        run: |
+          $skip = 'tools/branding/ctest-skip-windows.txt'
+          $ctestArgs = @('--output-on-failure', '--timeout', '300')
+          if (Test-Path $skip) {
+            $names = Get-Content $skip | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object { ($_ -split "`t")[0].Trim() } | Where-Object { $_ }
+            if ($names) { $ctestArgs += @('-E', ('^(' + (($names | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$')); "Skipping: $($names -join ', ')" }
+          }
+          Set-Location $env:BUILD_DIR
+          & ctest @ctestArgs
+          exit $LASTEXITCODE
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-ctest-log
+          path: ${{ env.BUILD_DIR }}\Testing\Temporary\LastTest*.log
+          if-no-files-found: ignore
+          retention-days: 30

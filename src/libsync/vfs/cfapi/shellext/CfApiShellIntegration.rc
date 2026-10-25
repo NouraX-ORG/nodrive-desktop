@@ -34,12 +34,12 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "Nextcloud GmbH"
-            VALUE "FileDescription", "Nextcloud CfApi shell extension"
+            VALUE "CompanyName", "Nourax"
+            VALUE "FileDescription", "NoDrive CfApi shell extension"
             VALUE "FileVersion", NCEXT_VERSION_STRING
             VALUE "InternalName", "NCOverlays"
-            VALUE "LegalCopyright", "Copyright (C) 2023 Nextcloud GmbH"
-            VALUE "ProductName", "Nextcloud shell extension"
+            VALUE "LegalCopyright", "(c) 2026"
+            VALUE "ProductName", "NoDrive shell extension"
             VALUE "ProductVersion", NCEXT_VERSION_STRING
         END
     END

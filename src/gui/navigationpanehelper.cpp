@@ -68,7 +68,7 @@ void NavigationPaneHelper::updateCloudStorageRegistry()
             [&entriesToRemove, &currentAppName](HKEY key, const QString &subKey) {
                 const auto appName = Utility::registryGetKeyValue(key, subKey, QStringLiteral("ApplicationName"));
                 qCDebug(lcNavPane) << "Searching for user with subKey:" << subKey << "for appName:" << appName.toString();
-                if (appName.toString() == currentAppName || appName.toString() == unbrandedApplicationName) {
+                if (appName.toString() == currentAppName) { // NoDrive: keep other apps' entries (side by side)
                     QUuid clsid{ subKey };
                     Q_ASSERT(!clsid.isNull());
                     entriesToRemove.append(clsid);
