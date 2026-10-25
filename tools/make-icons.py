@@ -29,6 +29,7 @@ import argparse
 import base64
 import hashlib
 import io
+import re
 import sys
 from pathlib import Path
 
@@ -58,13 +59,44 @@ class Out:
     def put(self, rel: str, data: bytes) -> None:
         if rel in self.files:
             raise SystemExit(f"duplicate output {rel}")
-        self.files[rel] = data
         p = ROOT / rel
-        if not p.exists() or p.read_bytes() != data:
+        old = p.read_bytes() if p.exists() else None
+        if old is not None and old != data and same_image(rel, old, data):
+            # Same pixels, different encoding (Pillow wheels on other platforms
+            # bundle a different zlib): keep the committed file.
+            data = old
+        self.files[rel] = data
+        if old != data:
             self.changed.append(rel)
             if not self.check:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_bytes(data)
+
+
+_SVG_PNG = re.compile(rb"data:image/png;base64,([A-Za-z0-9+/=]+)")
+
+
+def _pixels(data: bytes) -> list[tuple]:
+    """Decoded RGBA pixels of every frame (every size of an .ico)."""
+    im = Image.open(io.BytesIO(data))
+    if im.format == "ICO":
+        return [(s, im.ico.getimage(s).convert("RGBA").tobytes()) for s in sorted(im.ico.sizes())]
+    return [(im.size, im.convert("RGBA").tobytes())]
+
+
+def same_image(rel: str, a: bytes, b: bytes) -> bool:
+    """True when two encodings of an output show exactly the same pixels."""
+    try:
+        if rel.endswith(".svg"):
+            pa, pb = _SVG_PNG.findall(a), _SVG_PNG.findall(b)
+            if len(pa) != len(pb) or _SVG_PNG.sub(b"", a) != _SVG_PNG.sub(b"", b):
+                return False
+            return all(_pixels(base64.b64decode(x)) == _pixels(base64.b64decode(y)) for x, y in zip(pa, pb))
+        if rel.endswith((".png", ".bmp", ".ico")):
+            return _pixels(a) == _pixels(b)
+    except Exception:  # noqa: BLE001 - unreadable old file: treat as different
+        return False
+    return False
 
 
 def png_bytes(im: Image.Image) -> bytes:

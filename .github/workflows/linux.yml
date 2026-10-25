@@ -50,8 +50,7 @@ jobs:
       - name: No unclassified Nextcloud hit (tools/check-branding.py)
         run: python tools/check-branding.py --lane linux --report branding-linux.md
 
-      - name: Icons are reproducible (tools/make-icons.py --check, informational)
-        continue-on-error: true
+      - name: Icons are reproducible (tools/make-icons.py --check, same pixels)
         run: |
           python -m pip install --disable-pip-version-check --quiet "pillow==12.2.0"
           python tools/make-icons.py --check
