@@ -36,9 +36,10 @@ It also covers `nextcloud hub`, `nextcloud gmbh`, every `*.nextcloud.*` link and
 | **User-visible leftovers** | n/a | **0** |
 
 The raw count went up because the rebrand added credits and tooling (README,
-NOTICE, docs, tools, our CI). None of these files ship. The docs commit that added
-this file adds 253 more lines with a keyword, all in `README.md`, `NOTICE.md`
-and `docs/` (class N1); the raw sweep on that commit gives 10569 lines.
+NOTICE, docs, tools, our CI). None of these files ship. The two docs commits that
+added this file (`304720e206` and the docs fix after it) add 256 more lines with a
+keyword, all in `README.md`, `NOTICE.md` and `docs/` (class N1); the raw sweep
+after them gives 10572 lines.
 
 Other checks:
 - Transliterations and misspellings (Cyrillic, Arabic, Persian, Hebrew, Japanese,
@@ -141,9 +142,11 @@ mode, Arabic and German. The reviewed sets are committed in `docs/screenshots/`
 | Windows (40189812456) | 20: installer en/de, first start, 4 variants x 4 screens, app icon | Clean: "NoDrive Setup" with the N logo, tray "Exit NoDrive" / "NoDrive beenden" / Arabic, N logo in taskbar and tray |
 | macOS (40189812446) | 21: 4 variants x 5 screens, icon click | Clean: menu bar "NoDrive", N logo in Dock and menu bar, `#2563EB` buttons, dark mode |
 
-Gap (not a failure): Settings (General, Advanced, Network), Info/About, Log Output
-and Activity cannot be captured before sign-in, because "Settings" opens the
-wizard until an account exists. They were reviewed in code instead: Info shows
+Gap (not a failure): no platform has a screenshot of Settings (General, Advanced,
+Network), Info/About, the Log Output window or the Activity window. Settings opens
+from the tray menu even before sign-in (`Systray::openSettings` ->
+`ownCloudGui::slotShowSettings`), but the smoke tests do not capture it yet.
+These screens were reviewed in code instead: Info shows
 "NoDrive Desktop Client Version ...", the legal button is hidden, the updater
 section is compiled out, "Usage Documentation" opens `https://drive.nourax.org`,
 the switch colour is `#2563EB` (unit test), and the global ignore list
@@ -184,7 +187,7 @@ the switch colour is `#2563EB` (unit test), and the global ignore list
 |---|---|---|
 | 1 | B1: optionally rename the log base name to `nodrive.log` (the allowlist reason was reworded in the docs commit) | shared |
 | 2 | B2: optionally hide the `nextcloud.gui.singleinstance` info line in release console output | shared |
-| 3 | Settings and Info screenshots after sign-in (owner test; CI cannot sign in) | all |
+| 3 | Add Settings (General, Advanced, Network) and Info screenshots, in light, dark, German and Arabic, to the three smoke tests (reachable from the tray menu before sign-in); until then the owner looks at them | shared + windows + macos |
 | 4 | Optional: end-to-end-encryption certificate request `O=Nextcloud` -> Nourax (I9) | shared |
 | 5 | Optional: the Windows-only fallback dark palette uses `#2A82DA` (from a third-party dark style, not a Nextcloud colour) for highlights; consider `#3B82F6` | shared |
 | 6 | `conflictHelpUrl()` builds `https://drive.nourax.org/conflicts.html`, which probably does not exist (not a branding issue) | shared |

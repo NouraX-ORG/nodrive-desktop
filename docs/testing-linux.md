@@ -56,7 +56,7 @@ Folder `docs/screenshots/linux/<variant>/`. Variants: `en-light`, `de-light`, `a
 | `03-proxy-settings.png` | Proxy settings dialog of the wizard |
 | `04-sign-in.png` | After "Log in": "Switch to your browser" |
 
-These are all the screens the app shows without an account: "Settings" in the tray menu opens the same wizard until an account exists.
+Not captured yet: the Settings window (General, Network, Info). "Settings" in the tray menu opens it even without an account (`Systray::openSettings` -> `ownCloudGui::slotShowSettings`); only a click on the tray icon itself brings the wizard back. These screens were reviewed in code instead ([branding-sweep.md](branding-sweep.md), section 5), and adding them to the smoke test is a to-do. Until then they are part of the owner tests.
 
 Notes:
 - The window frame and title bar come from the test's window manager (openbox, theme Onyx), not from NoDrive.

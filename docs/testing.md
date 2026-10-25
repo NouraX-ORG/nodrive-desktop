@@ -64,6 +64,7 @@ be opened) and one stale translation that is never looked up (dead code). See
 | Sync folder and a conflict | pending owner test | pending owner test | pending owner test |
 | Files on demand (if it loads) | pending owner test | pending owner test | not in this build |
 | Explorer sidebar "NoDrive" / Finder badges | n/a | pending owner test | pending owner test |
+| Settings (General, Network, Info/About) and Activity show no Nextcloud name, logo or link | pending owner test | pending owner test | pending owner test |
 | Sign out | pending owner test | pending owner test | pending owner test |
 | Dark mode | pending owner test | pending owner test | pending owner test |
 | Second language | pending owner test | pending owner test | pending owner test |
@@ -168,6 +169,12 @@ section 5). Variants: `en-light` (English), `de-light` (German), `ar-light`
 
 Count: Linux 16, Windows 20, macOS 22.
 
-These are all the screens the app shows without an account: until an account
-exists, "Settings" in the tray menu opens the same wizard. Settings, Activity and
-About after sign-in are part of the owner tests.
+Not captured yet: the Settings window (General, Network, Info/About). "Settings"
+in the tray menu opens it even without an account (only a click on the tray icon
+itself brings the wizard back), but the smoke tests do not take it yet. These
+screens were reviewed in code instead ([branding-sweep.md](branding-sweep.md),
+section 5): Info shows "NoDrive Desktop Client Version ...", the Legal Notice
+button is hidden, "Usage Documentation" opens `https://drive.nourax.org`, and the
+switch colour is `#2563EB`. Adding them to the three smoke tests is a to-do; until
+then, Settings, Activity and About are part of the owner tests (look at each
+page once, before and after sign-in).
