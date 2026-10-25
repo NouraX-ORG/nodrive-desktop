@@ -99,7 +99,9 @@ inner() {
     case "$variant" in
         en-light) lang=en_US.UTF-8; language=en; scheme=light ;;
         de-light) lang=de_DE.UTF-8; language=de; scheme=light ;;
-        ar-light) lang=ar_EG.UTF-8; language=ar; scheme=light; extra=(--reverse) ;;
+        # No --reverse: Qt XORs -reverse with the translation's own direction, and
+        # the Arabic Qt catalogue already switches the layout to right-to-left.
+        ar-light) lang=ar_EG.UTF-8; language=ar; scheme=light ;;
         en-dark) lang=en_US.UTF-8; language=en; scheme=dark ;;
         *) log "unknown variant $variant"; return 2 ;;
     esac
@@ -253,7 +255,14 @@ log "Xvfb ${SCREEN_W}x${SCREEN_H}, openbox, stalonetray"
 Xvfb :99 -screen 0 "${SCREEN_W}x${SCREEN_H}x24" -nolisten tcp > "$OUT/logs/xvfb.txt" 2>&1 &
 XVFB=$!
 for ((i = 0; i < 50; i++)); do xdpyinfo -display :99 > /dev/null 2>&1 && break; sleep 0.2; done
-openbox > "$OUT/logs/openbox.txt" 2>&1 &
+# Neutral window decorations (openbox's default theme has a blue title bar,
+# which is the window manager's, not the app's).
+sed 's#<name>Clearlooks</name>#<name>Onyx</name>#' /etc/xdg/openbox/rc.xml > "$WORK/openbox-rc.xml" 2> /dev/null
+if grep -q '<name>Onyx</name>' "$WORK/openbox-rc.xml" 2> /dev/null && [ -d /usr/share/themes/Onyx ]; then
+    openbox --config-file "$WORK/openbox-rc.xml" > "$OUT/logs/openbox.txt" 2>&1 &
+else
+    openbox > "$OUT/logs/openbox.txt" 2>&1 &
+fi
 sleep 1
 xsetroot -solid '#4B5563'
 stalonetray --geometry 1x1-0+0 --icon-size 32 --kludges force_icons_size --window-type dock -bg '#1F2937' \
@@ -278,7 +287,7 @@ sudo chown "$(id -u):$(id -g)" "$OUT/net/dns.pcap" 2> /dev/null
 
 # Version / help output: must name NoDrive, never Nextcloud.
 if grep -q "NoDrive" "$OUT/logs/version.txt" && ! grep -qi "nextcloud" "$OUT/logs/version.txt" "$OUT/logs/help.txt"; then
-    result "cli-version" PASS "$(head -n 1 "$OUT/logs/version.txt")"
+    result "cli-version" PASS "$(grep -m1 'NoDrive version' "$OUT/logs/version.txt"); --help names no Nextcloud"
 else
     result "cli-version" FAIL "see logs/version.txt and logs/help.txt"
     STATUS=1

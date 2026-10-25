@@ -196,9 +196,9 @@ jobs:
           chmod +x "$app"
           ( cd "$RUNNER_TEMP" && "$app" --appimage-extract > /dev/null )
           root="$RUNNER_TEMP/squashfs-root"
-          ls -R "$root" | head -n 400 > smoke/logs/appimage-tree.txt
+          ls -R "$root" > smoke/logs/appimage-tree.txt
           desktop=$(ls "$root"/usr/share/applications/*.desktop)
-          name=$(grep -m1 '^Name=' "$desktop"); icon=$(grep -m1 '^Icon=' "$desktop"); exe=$(grep -m1 '^Exec=' "$desktop")
+          name=$(grep -m1 '^Name=' "$desktop" || true); icon=$(grep -m1 '^Icon=' "$desktop" || true); exe=$(grep -m1 '^Exec=' "$desktop" || true)
           cp "$desktop" smoke/logs/
           if [ "$(basename "$desktop")" = org.nourax.nodrive.desktop.nodrive.desktop ] && [ "$name" = "Name=NoDrive Desktop" ] && [ "$icon" = Icon=NoDrive ]; then
             ok desktop-file "$(basename "$desktop"): $name, $icon, $exe"
