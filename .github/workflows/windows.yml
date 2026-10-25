@@ -2,20 +2,34 @@
 # SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
-# NoDrive for Windows: KDE Craft build, unit tests and MSI (test builds only:
-# Actions artifacts, no releases, no signing). Based on upstream's
+# NoDrive for Windows: branding gate, KDE Craft build, unit tests, MSI, and an
+# install / start / screenshot / uninstall test on a fresh runner (test builds
+# only: Actions artifacts, no releases, no signing). Based on upstream's
 # .github/upstream-workflows/windows-build-and-test.yml. Needs no secrets.
 #
 # Jobs
-#   branding  ubuntu, ~1 min. Rebrand / sweep gates. The shared tools run as soon
-#             as they are on this branch (tools/rebrand.py, tools/check-branding.py).
+#   branding  ubuntu, ~1 min. tools/rebrand.py --check (shared rebrand and the
+#             Windows plugin tools/rebrand.d/windows.py are applied),
+#             tools/check-branding.py --lane windows (no unclassified Nextcloud
+#             hit), tools/make-icons.py --check.
 #   deps      Craft + all client dependencies (Qt, OpenSSL, ...), mostly from the
 #             Craft binary cache. The Craft tree is cached with a unique key per
 #             run and saved even when the step fails or hits its time limit, so the
 #             next run resumes where this one stopped (restore-keys prefix match).
 #             A complete tree carries a marker and is not saved again.
 #   build     Restores the complete tree from "deps", builds the client from this
-#             checkout, makes the MSI, uploads it, then runs the unit tests.
+#             checkout, makes the MSI (artifact nodrive-windows-msi), sweeps the
+#             packaged files (tools/check-branding.py --artifact), then runs the
+#             unit tests.
+#   install-test  windows-2022, fresh runner: tools/screenshots/windows.ps1 installs
+#             the MSI silently, checks names, registry keys, Explorer integration
+#             and the config folder, starts the app in English, German, Arabic and
+#             dark mode, takes screenshots, records the URL "Log in" hands to the
+#             browser, logs DNS (fails on a Nextcloud host), uninstalls silently and
+#             checks that it is gone. Artifact nodrive-windows-screenshots.
+#
+# A test-only run can reuse the MSI of an earlier run:
+#   Actions -> Windows -> Run workflow -> reuse_run = <run id>
 #
 # Runner: windows-2022, as upstream. windows-latest (Windows Server 2025) only has
 # Visual Studio 2026, while Craft's windows-msvc2022_64-cl target and the
@@ -27,13 +41,20 @@ on:
   push:
     branches: [main, platform/windows]
   workflow_dispatch:
+    inputs:
+      reuse_run:
+        description: "Run id whose nodrive-windows-msi artifact the install test uses (skips deps and build)"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
   contents: read
+  actions: read # download-artifact from an earlier run (reuse_run)
 
 env:
   CRAFT_TARGET: windows-msvc2022_64-cl
@@ -67,24 +88,16 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Windows rebrand plugin is applied
-        run: python3 tools/rebrand.d/windows.py --check
+      - name: Rebrand is complete (tools/rebrand.py --check, includes rebrand.d/windows.py)
+        run: python3 tools/rebrand.py --check
 
-      - name: Shared rebrand is applied
-        run: |
-          if [ -f tools/rebrand.py ]; then
-            python3 tools/rebrand.py --check
-          else
-            echo "::notice::tools/rebrand.py is not on this branch yet; skipped"
-          fi
+      - name: No unclassified Nextcloud hit (tools/check-branding.py --lane windows)
+        run: python3 tools/check-branding.py --lane windows --report branding-windows.md
 
-      - name: Branding sweep (Windows lane)
+      - name: Icons are reproducible (tools/make-icons.py --check)
         run: |
-          if [ -f tools/check-branding.py ]; then
-            python3 tools/check-branding.py --lane windows --report branding-windows.md
-          else
-            echo "::notice::tools/check-branding.py is not on this branch yet; skipped"
-          fi
+          python3 -m pip install --disable-pip-version-check --quiet "pillow==12.2.0"
+          python3 tools/make-icons.py --check
 
       - name: Upload sweep report
         if: always()
@@ -97,6 +110,7 @@ jobs:
 
   deps:
     name: Craft dependencies
+    if: ${{ !inputs.reuse_run }}
     runs-on: windows-2022
     timeout-minutes: 355
     outputs:
@@ -228,8 +242,11 @@ jobs:
   build:
     name: Build, MSI and unit tests
     needs: [branding, deps]
+    if: ${{ !inputs.reuse_run }}
     runs-on: windows-2022
     timeout-minutes: 300
+    outputs:
+      msi-name: ${{ steps.msi.outputs.msi-name }}
     env:
       CRAFT_MASTER_LOCATION: ${{ github.workspace }}\CraftMaster
       CRAFT_MASTER_CONFIG: ${{ github.workspace }}\craftmaster.ini
@@ -316,19 +333,21 @@ jobs:
       - name: Upload MSI
         uses: actions/upload-artifact@v7
         with:
-          name: windows-msi
+          name: nodrive-windows-msi
           path: ${{ runner.temp }}\out\*.msi
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
 
-      - name: Artifact sweep (once main has tools/check-branding.py)
+      - name: Packaged-files sweep (tools/check-branding.py --artifact)
+        # Text files, compiled translations (.qm) and the URLs inside every
+        # binary of the collected app folder; an unclassified hit fails the job.
         shell: pwsh
         env:
           COLLECT_DIR: ${{ steps.msi.outputs.collect-dir }}
         run: |
-          if (Test-Path tools/check-branding.py) { python tools/check-branding.py --artifact "$env:COLLECT_DIR" --lane windows; exit $LASTEXITCODE }
-          "::notice::tools/check-branding.py is not on this branch yet; skipped"
+          python tools/check-branding.py --artifact "$env:COLLECT_DIR" --lane windows --report "$env:RUNNER_TEMP\logs\artifact-sweep-collect.md"
+          exit $LASTEXITCODE
 
       - name: Unit tests
         # Also when packaging failed, so every run reports the test results.
@@ -346,11 +365,92 @@ jobs:
           & ctest @ctestArgs
           exit $LASTEXITCODE
 
-      - name: Upload test log
+      - name: Upload test log and sweep report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-ctest-log
-          path: ${{ env.BUILD_DIR }}\Testing\Temporary\LastTest*.log
+          name: nodrive-windows-build-logs
+          path: |
+            ${{ env.BUILD_DIR }}\Testing\Temporary\LastTest*.log
+            ${{ runner.temp }}\logs\
           if-no-files-found: ignore
+          retention-days: 30
+
+  install-test:
+    name: Install, start, screenshots, uninstall
+    needs: [branding, build]
+    # Also after failed unit tests, as long as the MSI was built (or reused).
+    if: ${{ !cancelled() && needs.branding.result == 'success' && (needs.build.outputs.msi-name != '' || inputs.reuse_run) }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download the MSI (this run)
+        if: ${{ !inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-windows-msi
+          path: msi
+
+      - name: Download the MSI (run ${{ inputs.reuse_run }})
+        if: ${{ inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-windows-msi
+          path: msi
+          run-id: ${{ inputs.reuse_run }}
+          github-token: ${{ github.token }}
+
+      - name: Install, start, screenshots, network check, uninstall (tools/screenshots/windows.ps1)
+        shell: powershell
+        run: |
+          $msi = Get-ChildItem -Path msi -Filter *.msi | Select-Object -First 1
+          if (-not $msi) { throw 'no MSI in the artifact' }
+          "MSI: $($msi.Name) ($([math]::Round($msi.Length / 1MB, 1)) MB)"
+          & ./tools/screenshots/windows.ps1 -Msi $msi.FullName -Out smoke -Root $env:GITHUB_WORKSPACE
+          exit $LASTEXITCODE
+
+      - name: Sweep of the files inside the MSI (tools/check-branding.py --artifact)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $dirFile = 'smoke/admin-image-app-dir.txt'
+          if (-not (Test-Path $dirFile)) { "artifact-sweep`tFAIL`tno administrative image" | Add-Content smoke/results.tsv; exit 1 }
+          $dir = (Get-Content $dirFile -Raw).Trim()
+          python tools/check-branding.py --artifact "$dir" --lane windows --report smoke/artifact-sweep.md --list > smoke/logs/artifact-sweep.txt
+          $code = $LASTEXITCODE
+          $sum = (Select-String -Path smoke/logs/artifact-sweep.txt -Pattern 'hits \(' | Select-Object -First 1).Line
+          $last = Get-Content smoke/logs/artifact-sweep.txt -Tail 1
+          "artifact-sweep`t$(if ($code -eq 0) { 'PASS' } else { 'FAIL' })`t$sum; $last" | Add-Content smoke/results.tsv -Encoding utf8
+          Get-Content smoke/logs/artifact-sweep.txt -Tail 30
+          exit $code
+
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path smoke/results.tsv) {
+            $lines = @('## NoDrive Windows install and smoke test', '', '| Check | Result | Evidence |', '|---|---|---|')
+            $lines += Get-Content smoke/results.tsv | Where-Object { $_ } | ForEach-Object { $c = $_ -split "`t", 3; "| $($c[0]) | $($c[1]) | $($c[2] -replace '\|', '\|') |" }
+            $lines | Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8
+            Get-Content smoke/results.tsv
+          }
+          if (Test-Path smoke/net/network-report.md) { Get-Content smoke/net/network-report.md | Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8 }
+
+      - name: Upload screenshots, logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-windows-screenshots
+          path: |
+            smoke/
+            !smoke/admin-image/
+          if-no-files-found: warn
           retention-days: 30

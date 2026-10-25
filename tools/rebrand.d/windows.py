@@ -14,12 +14,16 @@ can never silently drop a change. See docs/upstream-updates.md.
 
 What it changes (plan section 2.4, 5 and 11.3, Windows lane):
 
-1. ``src/libsync/vfs/cfapi/shellext/CfApiShellIntegration.rc``: the version
-   resource of the CfApi shell extension DLL hard-codes "Nextcloud GmbH" and
-   "Nextcloud ... shell extension" (shown in Explorer, file Properties ->
-   Details). Use the product name and vendor instead, and "(c) <year>" like
-   the main executable (``src/gui/version.rc.in``). The SPDX source header of
-   the file is not touched.
+1. Version resources of the shell extension DLLs. Explorer shows them in the
+   file's Properties -> Details ("Company", "File description", "Product
+   name", "Copyright"). Upstream hard-codes "Nextcloud GmbH" and "Nextcloud ...
+   shell extension". They get the product name and vendor instead, and
+   "(c) <year>" like the main executable (``src/gui/version.rc.in``).
+   - ``src/libsync/vfs/cfapi/shellext/CfApiShellIntegration.rc`` (UTF-8)
+   - ``shell_integration/windows/NCContextMenu/NCContextMenu.rc``,
+     ``NCOverlays/NCOverlay.rc``, ``NCUtil/NCUtil.rc`` (UTF-16 LE with BOM,
+     as upstream keeps them; the encoding and line endings stay as they are)
+   The SPDX source headers of these files are not touched.
 2. ``src/gui/navigationpanehelper.cpp``: a branded build deletes every Explorer
    navigation pane entry whose ApplicationName is "Nextcloud", which removes the
    real Nextcloud client's sidebar entries. NoDrive must live side by side with
@@ -33,45 +37,88 @@ What it changes (plan section 2.4, 5 and 11.3, Windows lane):
 from __future__ import annotations
 
 import argparse
-import json
-import re
 import sys
 from pathlib import Path
 
 LANE = "windows"
 
-# Fallbacks, used only while tools/branding/ids.json is not on this branch yet.
-DEFAULT_NAME = "NoDrive"
-DEFAULT_VENDOR = "Nourax"
 COPYRIGHT_YEAR = "2026"
 
 RC = "src/libsync/vfs/cfapi/shellext/CfApiShellIntegration.rc"
+RC_CONTEXT_MENU = "shell_integration/windows/NCContextMenu/NCContextMenu.rc"
+RC_OVERLAYS = "shell_integration/windows/NCOverlays/NCOverlay.rc"
+RC_UTIL = "shell_integration/windows/NCUtil/NCUtil.rc"
 NAVPANE = "src/gui/navigationpanehelper.cpp"
 MSI_CMAKE = "admin/win/msi/CMakeLists.txt"
 
+UTF16_LE_BOM = b"\xff\xfe"
+
 
 def _product(ids: dict) -> tuple[str, str]:
-    product = ids.get("product", {}) if isinstance(ids, dict) else {}
-    cmake = ids.get("cmake", {}) if isinstance(ids, dict) else {}
-    name = product.get("name") or cmake.get("APPLICATION_NAME") or DEFAULT_NAME
-    vendor = product.get("vendor") or cmake.get("APPLICATION_VENDOR") or DEFAULT_VENDOR
-    return name, vendor
+    product = ids.get("product", {})
+    return product["name"], product["vendor"]
+
+
+def _error(message: str) -> Exception:
+    rebrandlib = sys.modules.get("rebrandlib")
+    return rebrandlib.RebrandError(message) if rebrandlib else RuntimeError(message)
+
+
+def _replace_utf16(ctx, rel: str, pairs: list[tuple[str, str]], what: str) -> bool:
+    """Exact replacements in a UTF-16 LE file with BOM (same rules as ctx.replace)."""
+    data = ctx.read_bytes(rel)
+    if data is None:
+        raise _error(f"{rel}: file not found")
+    if not data.startswith(UTF16_LE_BOM):
+        raise _error(f"{rel}: expected UTF-16 LE with BOM (upstream changed the encoding?)")
+    text = data[len(UTF16_LE_BOM):].decode("utf-16-le")
+    new_text = text
+    for old, new in pairs:
+        if new in new_text:
+            continue
+        n = new_text.count(old)
+        if n != 1:
+            raise _error(f"{rel}: anchor found {n} times, expected 1 (upstream changed?):\n  old: {old!r}")
+        new_text = new_text.replace(old, new)
+    if new_text == text:
+        return False
+    return ctx.write(rel, UTF16_LE_BOM + new_text.encode("utf-16-le"), what=what)
 
 
 def apply(ctx) -> None:
-    name, vendor = _product(getattr(ctx, "ids", {}) or {})
+    name, vendor = _product(ctx.ids)
+    company = ('VALUE "CompanyName", "Nextcloud GmbH"', f'VALUE "CompanyName", "{vendor}"')
 
-    # 1. CfApi shell extension version resource.
+    def copyright_of(year: str) -> tuple[str, str]:
+        return (f'VALUE "LegalCopyright", "Copyright (C) {year} Nextcloud GmbH"',
+                f'VALUE "LegalCopyright", "(c) {COPYRIGHT_YEAR}"')
+
+    # 1. Version resources of the shell extension DLLs.
     rc_values = [
-        ('VALUE "CompanyName", "Nextcloud GmbH"', f'VALUE "CompanyName", "{vendor}"'),
+        company,
         ('VALUE "FileDescription", "Nextcloud CfApi shell extension"',
          f'VALUE "FileDescription", "{name} CfApi shell extension"'),
-        ('VALUE "LegalCopyright", "Copyright (C) 2023 Nextcloud GmbH"',
-         f'VALUE "LegalCopyright", "(c) {COPYRIGHT_YEAR}"'),
+        copyright_of("2023"),
         ('VALUE "ProductName", "Nextcloud shell extension"', f'VALUE "ProductName", "{name} shell extension"'),
     ]
     for old, new in rc_values:
         ctx.replace(RC, old, new, what=f"CfApi version resource: {new.split(',')[0]}")
+
+    _replace_utf16(ctx, RC_CONTEXT_MENU, [company, copyright_of("2023")],
+                   what="context menu DLL version resource: company, copyright")
+    _replace_utf16(ctx, RC_OVERLAYS, [
+        company,
+        ('VALUE "FileDescription", "Nextcloud shell extension"', f'VALUE "FileDescription", "{name} shell extension"'),
+        copyright_of("2023"),
+        ('VALUE "ProductName", "Nextcloud shell extension"', f'VALUE "ProductName", "{name} shell extension"'),
+    ], what="overlay DLL version resource: company, description, copyright, product")
+    _replace_utf16(ctx, RC_UTIL, [
+        company,
+        ('VALUE "FileDescription", "Nextcloud shell extension util"',
+         f'VALUE "FileDescription", "{name} shell extension util"'),
+        copyright_of("2025"),
+        ('VALUE "ProductName", "Nextcloud shell extension"', f'VALUE "ProductName", "{name} shell extension"'),
+    ], what="shell extension util version resource: company, description, copyright, product")
 
     # 2. Explorer navigation pane: never remove the real Nextcloud client's entries.
     ctx.replace(
@@ -98,87 +145,7 @@ def apply(ctx) -> None:
 
 
 # --------------------------------------------------------------------------
-# Stand-alone runner. Uses tools/rebrandlib.py when it is on this branch; else a
-# small built-in context with the same semantics (see rebrandlib's docstring).
-
-
-class _RebrandError(Exception):
-    pass
-
-
-class _MiniContext:
-    def __init__(self, root: Path, check: bool, verbose: bool):
-        self.root = root
-        self.check = check
-        self.verbose = verbose
-        ids_path = root / "tools" / "branding" / "ids.json"
-        self.ids = json.loads(ids_path.read_text(encoding="utf-8")) if ids_path.exists() else {}
-        self.lane = LANE
-        self.changes: list[tuple[str, str]] = []
-        self._text: dict[str, str] = {}
-        self._dirty: set[str] = set()
-
-    def read(self, rel: str) -> str:
-        if rel not in self._text:
-            p = self.root / rel
-            if not p.exists():
-                raise _RebrandError(f"{rel}: file not found")
-            self._text[rel] = p.read_bytes().decode("utf-8")
-        return self._text[rel]
-
-    def _set(self, rel: str, text: str, what: str) -> None:
-        self._text[rel] = text
-        self._dirty.add(rel)
-        self.changes.append((rel, f"[{self.lane}] {what}"))
-        if self.verbose:
-            print(f"  {'would change' if self.check else 'changed'} {rel}: {what}")
-
-    def replace(self, rel: str, old: str, new: str, count: int | None = 1, what: str | None = None) -> bool:
-        text = self.read(rel)
-        if new and new in text:
-            return False
-        n = text.count(old)
-        if n == 0 and not new:
-            return False
-        if n == 0:
-            raise _RebrandError(f"{rel}: anchor not found and replacement not present (upstream changed?):\n  old: {old[:160]!r}")
-        if count is not None and n != count:
-            raise _RebrandError(f"{rel}: anchor found {n} times, expected {count}:\n  old: {old[:160]!r}")
-        self._set(rel, text.replace(old, new), what or f"replace {old[:60]!r}")
-        return True
-
-    def regex_sub(self, rel: str, pattern: str, repl, expect: int | None = 1, flags: int = 0, what: str | None = None) -> bool:
-        text = self.read(rel)
-        new_text, n = re.subn(pattern, repl, text, flags=flags)
-        if n == 0 or new_text == text:
-            return False
-        if expect is not None and n != expect:
-            raise _RebrandError(f"{rel}: pattern matched {n} times, expected {expect}: {pattern!r}")
-        self._set(rel, new_text, what or f"regex {pattern[:60]!r} x{n}")
-        return True
-
-    def require(self, rel: str, text: str) -> None:
-        if text not in self.read(rel):
-            raise _RebrandError(f"{rel}: required text missing: {text[:160]!r}")
-
-    def flush(self) -> None:
-        if self.check:
-            return
-        for rel in sorted(self._dirty):
-            (self.root / rel).write_bytes(self._text[rel].encode("utf-8"))
-        self._dirty.clear()
-
-
-def _make_context(root: Path, check: bool, verbose: bool):
-    tools = root / "tools"
-    if (tools / "rebrandlib.py").exists() and (tools / "branding" / "ids.json").exists():
-        sys.path.insert(0, str(tools))
-        import rebrandlib  # type: ignore
-
-        ctx = rebrandlib.Context(root, check=check, verbose=verbose)
-        ctx.lane = LANE
-        return ctx, (rebrandlib.RebrandError, _RebrandError)
-    return _MiniContext(root, check, verbose), (_RebrandError,)
+# Stand-alone runner (tools/rebrand.py runs this plugin together with the others).
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -188,11 +155,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-q", "--quiet", action="store_true")
     args = parser.parse_args(argv)
 
-    ctx, errors = _make_context(args.root.resolve(), args.check, not args.quiet)
+    root = args.root.resolve()
+    sys.path.insert(0, str(root / "tools"))
+    import rebrandlib  # noqa: E402  (tools/rebrandlib.py)
+
+    ctx = rebrandlib.Context(root, check=args.check, verbose=not args.quiet)
+    ctx.lane = LANE
     try:
         apply(ctx)
         ctx.flush()
-    except errors as exc:  # type: ignore[misc]
+    except rebrandlib.RebrandError as exc:
         print(f"windows.py: ERROR: {exc}", file=sys.stderr)
         return 2
 

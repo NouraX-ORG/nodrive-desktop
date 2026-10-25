@@ -1,16 +1,18 @@
 # Building NoDrive for Windows
 
 Windows builds run only in GitHub Actions (`.github/workflows/windows.yml`). The
-result is an unsigned MSI, uploaded as the Actions artifact `windows-msi`. There
-are no releases and no code signing yet.
+result is an unsigned MSI, uploaded as the Actions artifact `nodrive-windows-msi`.
+There are no releases and no code signing yet. Test results and screenshots:
+[testing-windows.md](testing-windows.md).
 
 ## How the workflow works
 
 | Job | Runner | What it does |
 |---|---|---|
-| `branding` | `ubuntu-latest` | `python3 tools/rebrand.d/windows.py --check`; `tools/rebrand.py --check` and `tools/check-branding.py --lane windows` as soon as they are on the branch |
+| `branding` | `ubuntu-latest` | `tools/rebrand.py --check` (shared rebrand and `tools/rebrand.d/windows.py` are applied), `tools/check-branding.py --lane windows` (no unclassified Nextcloud hit), `tools/make-icons.py --check` |
 | `deps` | `windows-2022` | KDE Craft (CraftMaster pinned in the workflow) and every client dependency (`craft --install-deps nextcloud-client`). Most packages come from the prebuilt Craft cache that upstream publishes for `stable-35.0-qt-6.11.2` |
-| `build` | `windows-2022` | Builds the client from the checkout with Craft (`-DBUILD_WIN_MSI=ON`, `-DMIRALL_VERSION_BUILD=<run number>`), collects the files (`craft --package`, portable packager), builds the MSI with `admin/win/ci/make-msi-ci.ps1`, uploads it, then runs `ctest` |
+| `build` | `windows-2022` | Builds the client from the checkout with Craft (`-DBUILD_WIN_MSI=ON`, `-DMIRALL_VERSION_BUILD=<run number>`), collects the files (`craft --package`, portable packager), builds the MSI with `admin/win/ci/make-msi-ci.ps1`, uploads it (`nodrive-windows-msi`), sweeps the collected files (`tools/check-branding.py --artifact`), then runs `ctest` (skip list: `tools/branding/ctest-skip-windows.txt`) |
+| `install-test` | `windows-2022` (fresh) | `tools/screenshots/windows.ps1`: MSI checks, silent install, start in four variants with screenshots, DNS log, silent uninstall; then the sweep of the files inside the MSI. Artifact `nodrive-windows-screenshots`. A test-only run can reuse an MSI: *Actions → Windows → Run workflow → reuse_run = &lt;run id&gt;* |
 
 Craft settings: the upstream `craftmaster.ini` is used as it is, and
 `admin/win/nodrive-craftmaster.ini` is read after it (`CraftMaster --config-override`)
@@ -79,5 +81,6 @@ makes no changes and exits 1 if something is missing):
 | File | Change |
 |---|---|
 | `src/libsync/vfs/cfapi/shellext/CfApiShellIntegration.rc` | version resource: company `Nourax`, product `NoDrive shell extension`, description `NoDrive CfApi shell extension`, copyright `(c) 2026` (like the main executable) |
+| `shell_integration/windows/NCContextMenu/NCContextMenu.rc`, `NCOverlays/NCOverlay.rc`, `NCUtil/NCUtil.rc` | the same for the context-menu, overlay and util DLLs (Explorer shows these in the file's Properties). These files are UTF-16 LE with BOM; the plugin keeps the encoding and line endings |
 | `src/gui/navigationpanehelper.cpp` | only remove our own Explorer navigation pane entries, never the real Nextcloud client's (side by side) |
 | `admin/win/msi/CMakeLists.txt` | MSI file name: no `--` when the version suffix already starts with `-` (`-nourax.1`), no trailing `-` when it is empty |

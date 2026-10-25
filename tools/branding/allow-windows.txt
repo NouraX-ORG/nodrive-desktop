@@ -18,3 +18,8 @@ src/gui/navigationpanehelper.h	^Nextcloud$	dead-code	unbrandedApplicationName is
 admin/win/nsi/README.md	*	not-shipped	NSIS installer notes; NoDrive ships an MSI (docs/build-windows.md) and nothing from admin/win/nsi is packaged.
 admin/win/tools/NCNavRemove/*	*	not-shipped	Migration tool, built only with BUILD_WIN_TOOLS, which the NoDrive build leaves off; not in the MSI.
 cmake/modules/NSIS.template.in	*	not-shipped	CPack NSIS installer template; NoDrive ships an MSI and never builds the NSIS installer (Packager/PackageType = PortablePackager in admin/win/nodrive-craftmaster.ini).
+
+# --- Packaged app (check-branding.py --artifact on the collected folder or the MSI's admin image) ---
+licenses/*	*	legal	Licence texts and THIRD-PARTY-NOTICES.txt shipped in C:\Program Files\NoDrive\licenses (copied from nodrive/licenses by admin/win/ci/make-msi-ci.ps1); naming the copyright holders is required by the licences.
+i18n/client_*.qm	^\[OCC::LegalNotice\]	legal	Upstream copyright line of the Legal Notice dialog in the compiled translations; NoDrive hides the dialog's button (NOTICE.md), the line is never shown.
+i18n/client_*.qm	^\[OCC::OwncloudSetupWizard\] .*Nextcloud.*%1$	dead-code	Stale message "creating folder on Nextcloud: %1" (he, br): its source text no longer exists in src/, so Qt never looks it up; the source-tree sweep classifies the same .ts entries as dead code.

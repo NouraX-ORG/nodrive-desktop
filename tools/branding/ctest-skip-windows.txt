@@ -1,0 +1,4 @@
+# Unit tests skipped in .github/workflows/windows.yml (ctest -E).
+# One entry per line: <ctest test name><TAB><reason>. Empty reason = error.
+# Keep this list as short as possible; prefer fixing the test through tools/rebrand.py (Linux lane).
+UpdateChannelTest	Update channels exist only in unbranded builds: ConfigFile::currentUpdateChannel() returns the default channel when Theme::isBranded(), and NoDrive builds no updater (BUILD_UPDATER OFF). Same skip as tools/branding/ctest-skip-linux.txt.
