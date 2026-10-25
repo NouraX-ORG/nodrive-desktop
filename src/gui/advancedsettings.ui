@@ -207,7 +207,7 @@
          <item>
           <widget class="QLabel" name="labelInterval">
            <property name="text">
-            <string>seconds (if &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; is unavailable)</string>
+            <string>seconds (if Client Push is unavailable)</string>
            </property>
            <property name="textFormat">
             <enum>Qt::TextFormat::RichText</enum>

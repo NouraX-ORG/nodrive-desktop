@@ -32,17 +32,17 @@ QtObject {
     readonly property color wizardRowBorder: darkMode ? "#3c454c" : "#e1e8ee"
     readonly property color wizardRowDisabledBackground: darkMode ? "#252729" : "#fafafa"
     readonly property color wizardRowDisabledBorder: darkMode ? "#343a3f" : "#edf1f4"
-    readonly property color wizardSelectedBackground: darkMode ? "#263b4a" : "#eef5fb"
-    readonly property color wizardSelectedBorder: darkMode ? "#365b73" : "#d8e7f1"
-    readonly property color wizardRadioAccent: darkMode ? "#4da3d4" : "#0076b5"
+    readonly property color wizardSelectedBackground: darkMode ? Qt.rgba(0.231, 0.510, 0.965, 0.18) : Qt.rgba(0.145, 0.388, 0.922, 0.10)
+    readonly property color wizardSelectedBorder: darkMode ? "#3B82F6" : "#3B82F6"
+    readonly property color wizardRadioAccent: darkMode ? "#3B82F6" : "#2563EB"
     readonly property color wizardRadioDisabled: darkMode ? "#65727a" : "#b7c0c7"
     readonly property color wizardSecondaryButtonBackground: darkMode ? "#303b43" : "#e7eef4"
     readonly property color wizardSecondaryButtonPressed: darkMode ? "#394852" : "#dce8f0"
     readonly property color wizardSecondaryButtonBorder: darkMode ? "#4a5963" : "#d5e0e7"
     readonly property color wizardDisabledButtonBackground: darkMode ? "#292f33" : "#eef3f7"
     readonly property color wizardDisabledButtonBorder: darkMode ? "#39434a" : "#dde7ee"
-    readonly property color wizardPrimaryButtonBackground: "#2b659a"
-    readonly property color wizardPrimaryButtonPressed: "#245783"
+    readonly property color wizardPrimaryButtonBackground: "#2563EB"
+    readonly property color wizardPrimaryButtonPressed: "#3B82F6"
     readonly property color wizardWarningBorder: darkMode ? "#d99832" : "#b36b00"
     readonly property color wizardWarningText: darkMode ? "#f2b84b" : "#8a5200"
     readonly property color wizardErrorBorder: darkMode ? "#e06c75" : "#d84b4b"
@@ -56,9 +56,9 @@ QtObject {
     readonly property int errorBoxStripeWidth: 4
 
     // InfoBox colors
-    readonly property color infoBoxBackgroundColor: Qt.rgba(0, 0.51, 0.79, 0.1)
+    readonly property color infoBoxBackgroundColor: Qt.rgba(0.145, 0.388, 0.922, 0.1)
     readonly property int infoBoxBorderWidth: 1
-    readonly property color infoBoxBorderColor: Qt.rgba(0, 0.51, 0.79, 1)
+    readonly property color infoBoxBorderColor: Qt.rgba(0.145, 0.388, 0.922, 1)
 
     // Fonts
     // We are using pixel size because this is cross platform comparable, point size isn't
