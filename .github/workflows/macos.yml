@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Nourax
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
-# NoDrive for macOS: build, unit tests, .app and .dmg (macOS lane, plans/desktop-plan.md 9.5).
+# NoDrive for macOS: branding gate, build, unit tests, .app and .dmg, smoke test with screenshots
+# (macOS lane, plans/desktop-plan.md 9.5).
 #
 # Based on upstream .github/upstream-workflows/macos-craft-ci.yml + macos-build-and-test.yml
 # (KDE Craft on GitHub-hosted runners). Differences:
@@ -22,13 +23,20 @@ on:
   push:
     branches: [main, platform/macos]
   workflow_dispatch:
+    inputs:
+      reuse_run:
+        description: "Run id whose nodrive-macos-dmg artifact the smoke test uses (skips the build)"
+        required: false
+        default: ""
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
   contents: read
+  actions: read # download-artifact from an earlier run (reuse_run)
 
 defaults:
   run:
@@ -54,52 +62,37 @@ env:
 
 jobs:
   branding:
-    name: Branding checks
+    name: Branding gate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
 
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      # Hooks for the shared branding tools (Linux lane). They switch on by themselves once the
-      # files are on this branch.
-      - name: Rebrand is applied (tools/rebrand.py --check)
-        run: |
-          if [ -f tools/rebrand.py ]; then
-            python3 tools/rebrand.py --check
-          else
-            echo "::notice::tools/rebrand.py is not on this branch yet; check skipped"
-          fi
+      # tools/rebrand.py also runs every lane plugin, including tools/rebrand.d/macos.py.
+      - name: Rebrand is complete (tools/rebrand.py --check)
+        run: python3 tools/rebrand.py --check
 
-      - name: macOS rebrand plugin is applied (tools/rebrand.d/macos.py --check)
-        run: |
-          if [ -f tools/rebrand.d/macos.py ]; then
-            python3 tools/rebrand.d/macos.py --check
-          else
-            echo "::notice::tools/rebrand.d/macos.py not found; check skipped"
-          fi
-
-      - name: Branding sweep (tools/check-branding.py --lane macos)
-        run: |
-          if [ -f tools/check-branding.py ]; then
-            python3 tools/check-branding.py --lane macos --report branding-macos.md
-          else
-            echo "::notice::tools/check-branding.py is not on this branch yet; sweep skipped"
-          fi
+      - name: No unclassified Nextcloud hit (tools/check-branding.py --lane macos)
+        run: python3 tools/check-branding.py --lane macos --report branding-macos.md
 
       - name: Upload branding report
-        if: always() && hashFiles('branding-macos.md') != ''
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: branding-macos
+          name: nodrive-macos-branding-report
           path: branding-macos.md
+          if-no-files-found: ignore
           retention-days: 30
 
   deps:
     name: Craft dependencies (resumable cache)
+    if: ${{ !inputs.reuse_run }}
     runs-on: macos-latest
     # Below GitHub's 6 h job limit, so the cache save at the end always gets to run.
     timeout-minutes: 355
@@ -217,6 +210,7 @@ jobs:
   build:
     name: Build, test and package (classic sync, arm64)
     needs: [branding, deps]
+    if: ${{ !inputs.reuse_run }}
     runs-on: macos-latest
     timeout-minutes: 240
     env:
@@ -301,38 +295,31 @@ jobs:
       - name: Upload .dmg
         uses: actions/upload-artifact@v7
         with:
+          name: nodrive-macos-dmg
           path: ${{ steps.package.outputs.dmg }}
-          archive: false
+          compression-level: 0 # the .dmg is already compressed (UDZO)
           retention-days: 30
           if-no-files-found: error
 
       - name: Upload .app (zip)
         uses: actions/upload-artifact@v7
         with:
+          name: nodrive-macos-app
           path: ${{ steps.package.outputs.zip }}
-          archive: false
+          compression-level: 0
           retention-days: 30
           if-no-files-found: error
-
-      # Hook for the shared sweep tool (Linux lane): runs once check-branding.py supports --artifact.
-      - name: Branding sweep of the package (tools/check-branding.py --artifact)
-        run: |
-          help=""
-          if [ -f tools/check-branding.py ]; then help="$(python3 tools/check-branding.py --help 2>&1 || true)"; fi
-          case "$help" in
-            *--artifact*) python3 tools/check-branding.py --artifact "${{ steps.package.outputs.staged-app }}" --lane macos ;;
-            *) echo "::notice::tools/check-branding.py --artifact is not available on this branch yet; sweep skipped" ;;
-          esac
 
       - name: Unit tests (ctest)
         # Also runs when packaging failed, so test results are always reported.
         if: always() && steps.build.outcome == 'success'
         timeout-minutes: 60
         run: |
-          skip=""
-          if [ -f tools/branding/ctest-skip-macos.txt ]; then
-            skip="$(grep -v -E '^[[:space:]]*(#|$)' tools/branding/ctest-skip-macos.txt | cut -f1 | paste -s -d '|' - || true)"
-          fi
+          skip=$(sed '/^#/d' tools/branding/ctest-skip-macos.txt | awk -F'\t' '
+            NF && $1 != "" {
+              if ($2 == "") { print "ctest-skip-macos.txt: no reason for " $1 > "/dev/stderr"; exit 1 }
+              printf "%s%s", sep, $1; sep = "|"
+            }')
           args=(--output-on-failure --timeout 300 --output-junit "$RUNNER_TEMP/ctest-macos.xml")
           if [ -n "$skip" ]; then
             echo "Skipping: $skip"
@@ -346,7 +333,7 @@ jobs:
         if: always() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
-          name: macos-test-results
+          name: nodrive-macos-test-results
           path: |
             ${{ runner.temp }}/ctest-macos.xml
             ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest*.log
@@ -357,7 +344,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: macos-build-logs
+          name: nodrive-macos-build-logs
           path: |
             ${{ env.BUILD_DIR }}/CMakeCache.txt
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeConfigureLog.yaml
@@ -365,3 +352,84 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
           include-hidden-files: true
+
+  smoke:
+    name: Install from the .dmg, start, screenshots, network check
+    needs: [branding, build]
+    if: ${{ !cancelled() && needs.branding.result == 'success' && (needs.build.result == 'success' || inputs.reuse_run) }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Download the .dmg (this run)
+        if: ${{ !inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-macos-dmg
+          path: dmg
+
+      - name: Download the .dmg (run ${{ inputs.reuse_run }})
+        if: ${{ inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-macos-dmg
+          path: dmg
+          run-id: ${{ inputs.reuse_run }}
+          github-token: ${{ github.token }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the test tools
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet "pillow==12.2.0"
+          sw_vers
+          xcrun swiftc --version | head -n 1
+          ls -l dmg
+
+      - name: Smoke test and screenshots (tools/screenshots/macos.sh)
+        run: bash tools/screenshots/macos.sh dmg/*.dmg smoke
+
+      - name: Branding sweep of the installed app (check-branding.py --artifact)
+        if: ${{ !cancelled() }}
+        run: |
+          app=/Applications/NoDrive.app
+          if [ ! -d "$app" ]; then echo "::error::$app is not installed"; exit 1; fi
+          mkdir -p smoke/logs
+          if python3 tools/check-branding.py --artifact "$app" --lane macos --report smoke/artifact-sweep.md --list > smoke/logs/artifact-sweep.txt; then
+            printf 'artifact-sweep\tPASS\t%s\n' "$(tail -n 1 smoke/logs/artifact-sweep.txt)" >> smoke/results.tsv
+            status=0
+          else
+            printf 'artifact-sweep\tFAIL\t%s\n' "$(tail -n 1 smoke/logs/artifact-sweep.txt) (see artifact-sweep.md)" >> smoke/results.tsv
+            status=1
+          fi
+          grep -E '^UNCLASSIFIED' smoke/logs/artifact-sweep.txt | head -n 40 || true
+          tail -n 5 smoke/logs/artifact-sweep.txt
+          exit $status
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## NoDrive macOS smoke test"
+            echo
+            echo "| Check | Result | Evidence |"
+            echo "|---|---|---|"
+            [ -f smoke/results.tsv ] && awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }' smoke/results.tsv
+            echo
+            [ -f smoke/net/network-report.md ] && head -n 80 smoke/net/network-report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -f smoke/results.tsv ] && cat smoke/results.tsv || true
+
+      - name: Upload screenshots, network logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-macos-screenshots
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 30

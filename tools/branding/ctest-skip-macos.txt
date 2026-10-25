@@ -4,3 +4,4 @@
 # ctest tests skipped in .github/workflows/macos.yml (macOS lane).
 # One test per line: <exact ctest test name><TAB><reason>. Lines starting with # are ignored.
 # An entry without a reason is an error. Keep this list as short as possible.
+UpdateChannelTest	Update channels exist only in unbranded builds: ConfigFile::currentUpdateChannel() returns the default channel when Theme::isBranded(), and NoDrive builds no updater (BUILD_UPDATER OFF). Same test and reason as tools/branding/ctest-skip-linux.txt.

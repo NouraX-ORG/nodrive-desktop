@@ -1,0 +1,34 @@
+# NoDrive branding sweep: hits kept on purpose in macOS files (macOS lane).
+# Format: path-glob<TAB>regex<TAB>class<TAB>reason   (regex "*" = any hit in those files)
+# Classes: internal | server-required | not-shipped | dead-code (all "internal") | legal.
+# Source-tree entries may only name macOS-lane files (tools/branding/lanes.json). User-visible
+# hits are fixed by tools/rebrand.d/macos.py instead. Checked by tools/check-branding.py.
+
+# --- Legal --------------------------------------------------------------------------------
+shell_integration/MacOSX/*	SPDX-FileCopyrightText: .*Nextcloud GmbH	legal	Upstream copyright header, kept unchanged.
+
+# --- Not built: File Provider ("files on demand") module --------------------------------------
+# The CI build is classic sync only (Craft option nextcloud-client.buildFileProviderModule=False,
+# so BUILD_FILE_PROVIDER_MODULE is OFF): shell_integration/MacOSX/CMakeLists.txt then builds only
+# the FinderSyncExt and FinderSyncBroker targets. Owner to-do when File Provider is switched on:
+# rebrand these files (texts, domain symbol) in tools/rebrand.d/macos.py.
+shell_integration/MacOSX/NextcloudFileProviderKit/*	*	not-shipped	NextcloudFileProviderKit Swift package (and its docs, logo and tests): used only by the File Provider extensions, which this build does not compile.
+shell_integration/MacOSX/NextcloudIntegration/FileProviderExt/*	*	not-shipped	File Provider extension: not built while BUILD_FILE_PROVIDER_MODULE is OFF (classic sync build).
+shell_integration/MacOSX/NextcloudIntegration/FileProviderUIExt/*	*	not-shipped	File Provider UI extension (share/lock dialogs and their texts): not built while BUILD_FILE_PROVIDER_MODULE is OFF.
+
+# --- Xcode project: internal build names -------------------------------------------------------
+shell_integration/MacOSX/NextcloudIntegration/NextcloudIntegration.xcodeproj/project.pbxproj	(NextcloudFileProviderKit|NextcloudDev|NextcloudIntegration)	internal	Xcode target, group, path and Swift package names inside the build project; never shown. The built extensions take their names and ids from OC_APPLICATION_NAME and OC_APPLICATION_REV_DOMAIN (NoDrive values, passed by CMake).
+shell_integration/MacOSX/NextcloudIntegration/NextcloudIntegration.xcodeproj/project.pbxproj	ORGANIZATIONNAME = "Nextcloud GmbH"	internal	Xcode project attribute used only by Xcode's new-file templates; not part of any built product.
+shell_integration/MacOSX/NextcloudIntegration/NextcloudIntegration.xcodeproj/project.pbxproj	com\.nextcloud\.\$\(PRODUCT_NAME	not-shipped	Bundle id of the Xcode-only "desktopclient" host app used when developing the extensions in Xcode; CMake never builds this target.
+shell_integration/MacOSX/NextcloudIntegration/FinderSyncExt/FinderSyncXPCManager.m	^com\.nextcloud\.FinderSync\.XPCQueue$	internal	Name of an internal dispatch queue inside the Finder extension (shows only in debuggers and crash logs).
+
+# --- macOS packaging --------------------------------------------------------------------------
+cmake/modules/MacOSXBundleInfo.plist.in	MIRALL_VERSION	internal	CMake variable names, filled with the NoDrive version at configure time.
+admin/osx/*	(MIRALL_VERSION|OWNCLOUD_OSX_BUNDLE)	internal	CMake variable names (NoDrive version, path of NoDrive.app).
+admin/osx/post_install.sh.cmake	*	not-shipped	Post-install script of upstream's .pkg installer; NoDrive ships only a .dmg (admin/osx/nodrive-package.sh), so it never runs.
+admin/osx/mac-crafter/*	*	not-shipped	mac-crafter, upstream's developer build tool, and its README; NoDrive CI builds with KDE Craft (admin/osx/nodrive-craft.sh) and does not ship it.
+
+# --- Packaged app (check-branding.py --artifact NoDrive.app, paths inside the bundle) ----------
+Contents/Resources/licenses/*	*	legal	Licence texts and THIRD-PARTY-NOTICES.txt shipped inside NoDrive.app (from nodrive/licenses); naming the copyright holders is required by the licences.
+Contents/Resources/Translations/client_*.qm	^\[OCC::LegalNotice\]	legal	Upstream copyright line of the Legal Notice dialog in the compiled translations; NoDrive hides the dialog's button (NOTICE.md), the line is never shown.
+Contents/Resources/Translations/client_*.qm	^\[OCC::OwncloudSetupWizard\] .*Nextcloud.*%1$	dead-code	Stale message "creating folder on Nextcloud: %1" (he, br): its source text no longer exists in src/, so Qt never looks it up; the source-tree sweep classifies the same .ts entries as dead code.
