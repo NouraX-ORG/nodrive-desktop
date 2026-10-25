@@ -1,0 +1,244 @@
+# SPDX-FileCopyrightText: 2026 Nourax
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# NoDrive for Linux: branding gate, build + unit tests, AppImage, smoke test.
+# Based on upstream's linux-gcc-compile-tests.yml and linux-appimage.yml
+# (kept for reference in .github/upstream-workflows/). Uses no secrets.
+# Results are Actions artifacts only: no releases, no tags.
+name: Linux
+
+on:
+  push:
+    branches: [main, platform/linux]
+  workflow_dispatch:
+    inputs:
+      reuse_run:
+        description: "Run id whose nodrive-linux-appimage artifact the smoke test uses (skips both builds)"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read # download-artifact from an earlier run (reuse_run)
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  branding:
+    name: Branding gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Rebrand is complete (tools/rebrand.py --check)
+        run: python tools/rebrand.py --check
+
+      - name: No unclassified Nextcloud hit (tools/check-branding.py)
+        run: python tools/check-branding.py --lane linux --report branding-linux.md
+
+      - name: Icons are reproducible (tools/make-icons.py --check, informational)
+        continue-on-error: true
+        run: |
+          python -m pip install --disable-pip-version-check --quiet "pillow==12.2.0"
+          python tools/make-icons.py --check
+
+      - name: Upload branding report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-linux-branding-report
+          path: branding-linux.md
+          if-no-files-found: ignore
+          retention-days: 30
+
+  build-test:
+    name: Build and unit tests
+    needs: branding
+    if: ${{ !inputs.reuse_run }}
+    runs-on: ubuntu-latest
+    container: ghcr.io/nextcloud/continuous-integration-client-qt6:client-sid-6.10.2-4
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_BUILD_TYPE=Debug -DQT_MAJOR_VERSION=6 -DQUICK_COMPILER=ON \
+            -DBUILD_TESTING=1 -DMIRALL_VERSION_BUILD=${{ github.run_number }}
+
+      - name: Compile
+        run: cmake --build build
+
+      - name: Unit tests (ctest under Xvfb)
+        run: |
+          skip=$(sed '/^#/d' tools/branding/ctest-skip-linux.txt | awk -F'\t' '
+            NF && $1 != "" {
+              if ($2 == "") { print "ctest-skip-linux.txt: no reason for " $1 > "/dev/stderr"; exit 1 }
+              printf "%s^%s$", sep, $1; sep = "|"
+            }')
+          echo "skipped tests: ${skip:-none}"
+          useradd -m -s /bin/bash test
+          chown -R test:test build
+          cd build
+          su -c "xvfb-run -a ctest --output-on-failure --timeout 900 --output-junit ctest-junit.xml ${skip:+-E '$skip'}" test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-linux-test-results
+          path: |
+            build/ctest-junit.xml
+            build/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+          retention-days: 30
+
+  appimage:
+    name: AppImage
+    needs: branding
+    if: ${{ !inputs.reuse_run }}
+    runs-on: ubuntu-latest
+    container: ghcr.io/nextcloud/continuous-integration-client-appimage-qt6:client-appimage-el9-6.11.2-4
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Configure, compile and package
+        id: build
+        run: |
+          BUILDNR=${{ github.run_number }} BUILD_UPDATER=OFF DESKTOP_CLIENT_ROOT=$(pwd) \
+            EXECUTABLE_NAME=nodrive APPNAME=NoDrive QT_BASE_DIR=/root/linux-gcc-x86_64 \
+            /bin/bash -c "./admin/linux/build-appimage.sh"
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-linux-appimage
+          path: ${{ steps.build.outputs.APPIMAGE_NAME }}
+          if-no-files-found: error
+          compression-level: 0 # squashfs is already compressed
+          retention-days: 30
+
+  smoke:
+    name: Start under Xvfb, screenshots, network check
+    needs: [branding, appimage]
+    if: ${{ !cancelled() && needs.branding.result == 'success' && (needs.appimage.result == 'success' || inputs.reuse_run) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Download the AppImage (this run)
+        if: ${{ !inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-linux-appimage
+          path: appimage
+
+      - name: Download the AppImage (run ${{ inputs.reuse_run }})
+        if: ${{ inputs.reuse_run }}
+        uses: actions/download-artifact@v8
+        with:
+          name: nodrive-linux-appimage
+          path: appimage
+          run-id: ${{ inputs.reuse_run }}
+          github-token: ${{ github.token }}
+
+      - name: Install the test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            xvfb openbox stalonetray xdotool wmctrl imagemagick x11-utils x11-xserver-utils \
+            tcpdump strace dbus python3-dbus python3-gi python3-pil \
+            fonts-noto-core fonts-dejavu-core locales > /dev/null
+          for p in libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+                   libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
+                   libegl1 libopengl0 libgl1; do
+            sudo apt-get install -y -qq --no-install-recommends "$p" > /dev/null || echo "optional package $p not installed"
+          done
+          sudo locale-gen en_US.UTF-8 de_DE.UTF-8 ar_EG.UTF-8 > /dev/null
+
+      - name: Smoke test and screenshots (tools/screenshots/linux.sh)
+        run: |
+          ls -l appimage
+          bash tools/screenshots/linux.sh appimage/NoDrive-*.AppImage smoke
+
+      - name: Package checks (name, icon, licences, artifact sweep)
+        if: ${{ !cancelled() }}
+        run: |
+          set -u
+          ok() { printf '%s\tPASS\t%s\n' "$1" "$2" >> smoke/results.tsv; }
+          bad() { printf '%s\tFAIL\t%s\n' "$1" "$2" >> smoke/results.tsv; status=1; }
+          status=0
+          app=$(ls "$GITHUB_WORKSPACE"/appimage/NoDrive-*.AppImage)
+          chmod +x "$app"
+          ( cd "$RUNNER_TEMP" && "$app" --appimage-extract > /dev/null )
+          root="$RUNNER_TEMP/squashfs-root"
+          ls -R "$root" | head -n 400 > smoke/logs/appimage-tree.txt
+          desktop=$(ls "$root"/usr/share/applications/*.desktop)
+          name=$(grep -m1 '^Name=' "$desktop"); icon=$(grep -m1 '^Icon=' "$desktop"); exe=$(grep -m1 '^Exec=' "$desktop")
+          cp "$desktop" smoke/logs/
+          if [ "$(basename "$desktop")" = org.nourax.nodrive.desktop.nodrive.desktop ] && [ "$name" = "Name=NoDrive Desktop" ] && [ "$icon" = Icon=NoDrive ]; then
+            ok desktop-file "$(basename "$desktop"): $name, $icon, $exe"
+          else
+            bad desktop-file "$(basename "$desktop"): $name, $icon, $exe"
+          fi
+          want=$(sha256sum theme/colored/512-NoDrive-icon.png | cut -d' ' -f1)
+          got=$(sha256sum "$root"/usr/share/icons/hicolor/512x512/apps/NoDrive.png | cut -d' ' -f1)
+          if [ "$want" = "$got" ]; then ok app-icon "usr/share/icons/hicolor/512x512/apps/NoDrive.png sha256 $got = theme/colored/512-NoDrive-icon.png (tools/make-icons.py)"
+          else bad app-icon "NoDrive.png sha256 $got, expected $want"; fi
+          if [ -f "$root/usr/share/doc/nodrive/COPYING.txt" ] && [ -f "$root/usr/share/doc/nodrive/THIRD-PARTY-NOTICES.txt" ]; then
+            ok licences "usr/share/doc/nodrive: $(ls "$root/usr/share/doc/nodrive" | tr '\n' ' ')"
+          else bad licences "usr/share/doc/nodrive is missing COPYING.txt or THIRD-PARTY-NOTICES.txt"; fi
+          if python3 tools/check-branding.py --artifact "$root" --lane linux --report smoke/artifact-sweep.md --list > smoke/logs/artifact-sweep.txt; then
+            ok artifact-sweep "$(tail -n 1 smoke/logs/artifact-sweep.txt)"
+          else
+            printf '%s\tINFO\t%s\n' artifact-sweep "$(tail -n 1 smoke/logs/artifact-sweep.txt) (see artifact-sweep.md)" >> smoke/results.tsv
+          fi
+          tail -n 30 smoke/logs/artifact-sweep.txt
+          exit $status
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## NoDrive Linux smoke test"
+            echo
+            echo "| Check | Result | Evidence |"
+            echo "|---|---|---|"
+            [ -f smoke/results.tsv ] && awk -F'\t' '{ printf "| %s | %s | %s |\n", $1, $2, $3 }' smoke/results.tsv
+            echo
+            [ -f smoke/net/network-report.md ] && head -n 80 smoke/net/network-report.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -f smoke/results.tsv ] && cat smoke/results.tsv || true
+
+      - name: Upload screenshots, network logs and results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-linux-screenshots
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 30

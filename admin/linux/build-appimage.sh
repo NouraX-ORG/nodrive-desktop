@@ -140,13 +140,9 @@ rm ./"${APPIMAGE}"
 LD_LIBRARY_PATH="$PWD/appimagetool-squashfs-root/usr/lib":$LD_LIBRARY_PATH PATH="$PWD/appimagetool-squashfs-root/usr/bin":$PATH appimagetool -n ./squashfs-root "${APPIMAGE}"
 
 #move AppImage
-export COMMIT=${GITHUB_SHA:=${DRONE_COMMIT}}
-if [ ! -z "$COMMIT" ]
-then
-    export APPIMAGE_NAME="${EXECUTABLE_NAME}-${SUFFIX}-${COMMIT}-x86_64.AppImage"
-else
-    export APPIMAGE_NAME="${EXECUTABLE_NAME}-${SUFFIX}-x86_64.AppImage"
-fi
+# NoDrive: <AppName>-<version>-<build>-x86_64.AppImage
+NODRIVE_VERSION=$(sed -n 's/^#define MIRALL_HUMAN_VERSION_STRING "\(.*\)"$/\1/p' ${DESKTOP_CLIENT_ROOT}/build-client/version.h)
+export APPIMAGE_NAME="${APPNAME}-${NODRIVE_VERSION:-unknown}-${BUILDNR}-x86_64.AppImage"
 mv *.AppImage ${DESKTOP_CLIENT_ROOT}/$APPIMAGE_NAME
 
 # tell GitHub Actions the name of our appimage

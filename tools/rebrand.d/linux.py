@@ -38,6 +38,25 @@ def apply(ctx):
         "cp ${DESKTOP_CLIENT_ROOT}/nodrive/licenses/* AppDir/usr/share/doc/${EXECUTABLE_NAME}/\n",
         what="ship nodrive/licenses in usr/share/doc",
     )
+    # File name: <AppName>-<version>-<build>-x86_64.AppImage (plan section 2.3)
+    # instead of upstream's <executable>-<branch>-<commit>-x86_64.AppImage.
+    # MIRALL_HUMAN_VERSION_STRING is the version without " (build N)".
+    ctx.replace(
+        SCRIPT,
+        "#move AppImage\n"
+        "export COMMIT=${GITHUB_SHA:=${DRONE_COMMIT}}\n"
+        "if [ ! -z \"$COMMIT\" ]\n"
+        "then\n"
+        "    export APPIMAGE_NAME=\"${EXECUTABLE_NAME}-${SUFFIX}-${COMMIT}-x86_64.AppImage\"\n"
+        "else\n"
+        "    export APPIMAGE_NAME=\"${EXECUTABLE_NAME}-${SUFFIX}-x86_64.AppImage\"\n"
+        "fi\n",
+        "#move AppImage\n"
+        "# NoDrive: <AppName>-<version>-<build>-x86_64.AppImage\n"
+        "NODRIVE_VERSION=$(sed -n 's/^#define MIRALL_HUMAN_VERSION_STRING \"\\(.*\\)\"$/\\1/p' ${DESKTOP_CLIENT_ROOT}/build-client/version.h)\n"
+        "export APPIMAGE_NAME=\"${APPNAME}-${NODRIVE_VERSION:-unknown}-${BUILDNR}-x86_64.AppImage\"\n",
+        what="AppImage file name NoDrive-<version>-<build>-x86_64.AppImage",
+    )
     # KDE plugin metadata of the Dolphin overlay plugin (shown in plugin lists).
     ctx.replace(
         "shell_integration/dolphin/ownclouddolphinoverlayplugin.json",
