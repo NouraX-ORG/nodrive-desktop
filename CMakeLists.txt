@@ -49,6 +49,9 @@ set( CFAPI_SHELLEXT_THUMBNAIL_HANDLER_DISPLAY_NAME "${APPLICATION_NAME} Thumbnai
 # URI Handler Scheme for Local File Editing
 set( APPLICATION_URI_HANDLER_SCHEME "nc")
 
+# NoDrive branding overlay. Generated values; see docs/branding.md.
+include(${CMAKE_SOURCE_DIR}/nodrive/NODRIVE.cmake)
+
 # Default suffix if the theme doesn't define one
 if(NOT DEFINED APPLICATION_VIRTUALFILE_SUFFIX)
     set(APPLICATION_VIRTUALFILE_SUFFIX "${APPLICATION_SHORTNAME}_virtual" CACHE STRING "Virtual file suffix (not including the .)")

@@ -5,8 +5,9 @@
 
 set -xe
 
-export APPNAME=${APPNAME:-Nextcloud}
-export EXECUTABLE_NAME=${EXECUTABLE_NAME:-nextcloud}
+export APPNAME=${APPNAME:-NoDrive}
+export EXECUTABLE_NAME=${EXECUTABLE_NAME:-nodrive}
+export APPLICATION_ICON_NAME=${APPLICATION_ICON_NAME:-NoDrive}
 export BUILD_UPDATER=${BUILD_UPDATER:-OFF}
 export BUILDNR=${BUILDNR:-0000}
 export DESKTOP_CLIENT_ROOT=${DESKTOP_CLIENT_ROOT:-/home/user}
@@ -73,6 +74,10 @@ rm -rf usr/share/nemo-python/
 mkdir -p AppDir/usr/share
 mv usr/share/${EXECUTABLE_NAME} AppDir/usr/share/${EXECUTABLE_NAME}
 
+# NoDrive: licence texts and third-party notices (see NOTICE.md)
+mkdir -p AppDir/usr/share/doc/${EXECUTABLE_NAME}
+cp ${DESKTOP_CLIENT_ROOT}/nodrive/licenses/* AppDir/usr/share/doc/${EXECUTABLE_NAME}/
+
 # Move sync exclude to right location. It has to end up inside AppDir
 # (not just /app), otherwise it is never packed into the AppImage and
 # ConfigFile::excludeFileFromSystem()'s AppImage fallback finds nothing
@@ -94,7 +99,7 @@ rm ./${APPIMAGE_NAME}
 cp -r ./squashfs-root ./linuxdeploy-squashfs-root
 
 export LD_LIBRARY_PATH=${QT_BASE_DIR}/lib:${QT_BASE_DIR}/lib64:/app/usr/lib64:/app/usr/lib:/usr/local/lib/x86_64-linux-gnu:/usr/local/lib:/usr/local/lib64
-./linuxdeploy-squashfs-root/AppRun --desktop-file=${DESKTOP_FILE} --icon-file=usr/share/icons/hicolor/512x512/apps/Nextcloud.png --library=${OPENVFS_VFS_PLUGIN} --executable=usr/bin/${EXECUTABLE_NAME} --appdir=AppDir
+./linuxdeploy-squashfs-root/AppRun --desktop-file=${DESKTOP_FILE} --icon-file=usr/share/icons/hicolor/512x512/apps/${APPLICATION_ICON_NAME}.png --library=${OPENVFS_VFS_PLUGIN} --executable=usr/bin/${EXECUTABLE_NAME} --appdir=AppDir
 
 mv AppDir/usr/lib/*sync_vfs_openvfs.so AppDir/usr/plugins
 mv /root/linux-gcc-x86_64/bin/openvfs  /root/linux-gcc-x86_64/bin/openvfs_stat AppDir/usr/bin
@@ -118,7 +123,7 @@ export QML_SOURCES_PATHS=${DESKTOP_CLIENT_ROOT}/src/gui
 	--library=/usr/lib64/libOpenGL.so.0 --library=/usr/lib64/libGLX.so.0 --library=/usr/lib64/libEGL.so.1 --library=/usr/lib64/libGLdispatch.so.0 --library=/usr/lib64/libdrm.so.2 --library=/usr/lib64/libgbm.so.1 \
 	--library=/root/linux-gcc-x86_64/lib/libuuid.so.1 --library=/root/linux-gcc-x86_64/lib/libgpg-error.so.0 --library=/root/linux-gcc-x86_64/lib/libz.so.1 --library=/root/linux-gcc-x86_64/lib/libpcre2-8.so.0 --library=/root/linux-gcc-x86_64/lib/libexpat.so.1 \
 	--library=/root/linux-gcc-x86_64/lib/libfreetype.so.6 --library=/root/linux-gcc-x86_64/lib/libglib-2.0.so.0 --library=/root/linux-gcc-x86_64/lib/libopenvfs.so \
-	--icon-file=usr/share/icons/hicolor/512x512/apps/Nextcloud.png --executable=usr/bin/${EXECUTABLE_NAME} --appdir=AppDir --output appimage
+	--icon-file=usr/share/icons/hicolor/512x512/apps/${APPLICATION_ICON_NAME}.png --executable=usr/bin/${EXECUTABLE_NAME} --appdir=AppDir --output appimage
 
 # Workaround issue #103 and #7231
 export APPIMAGETOOL=appimagetool-x86_64.AppImage
