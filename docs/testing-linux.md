@@ -6,7 +6,7 @@ How the Linux build is tested, and the results. CI file: `.github/workflows/linu
 
 | Job | What it does |
 |---|---|
-| Branding gate | `tools/rebrand.py --check` (the rebrand is complete) and `tools/check-branding.py --lane linux` (no unclassified Nextcloud name, link, colour or logo in shared and Linux files) |
+| Branding gate | `tools/rebrand.py --check` (the rebrand is complete) and `tools/check-branding.py --lane linux` (no unclassified Nextcloud name, link, colour or logo in shared and Linux files; colours are also found when written as numbers, for example `rgb(0,130,201)` in an SVG or `QColor(0, 103, 158)` in code) |
 | Build and unit tests | Debug build with tests in upstream's public Qt CI image, then `ctest` under Xvfb as a normal user. Skipped tests and the reason for each: `tools/branding/ctest-skip-linux.txt` |
 | AppImage | `admin/linux/build-appimage.sh` (as upstream, NoDrive names) → artifact `nodrive-linux-appimage` |
 | Smoke test | `tools/screenshots/linux.sh`: starts the AppImage under Xvfb with a fresh HOME, takes the screenshots below, clicks "Log in" with a fake browser that only records the URL, and logs DNS (tcpdump) and the app's `connect()` calls (strace). Then checks the package: `.desktop` file, icon, licence files, and `check-branding.py --artifact` over the unpacked AppImage (text files, compiled translations, URLs inside the binaries). Artifact `nodrive-linux-screenshots` |
@@ -22,10 +22,11 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Starts | CI | PASS | 8 starts (4 variants × 2 runs), wizard window 720×420 every time (`results.tsv`: `launch-*`) |
 | Shows NoDrive's name | CI | PASS | Window title "NoDrive", "Log in to NoDrive", `NoDrive version 35.0.0-nourax.1 (build N)`, `--help` without "Nextcloud"; `.desktop` file `org.nourax.nodrive.desktop.nodrive.desktop` with `Name=NoDrive Desktop` |
 | Shows NoDrive's icon | CI | PASS | Nourax logo in the tray and the title bar (screenshots); `usr/share/icons/hicolor/512x512/apps/NoDrive.png` has the same SHA-256 as `theme/colored/512-NoDrive-icon.png` from `tools/make-icons.py` |
-| Shows NoDrive's colours | CI | PASS | Pixel check finds the "Log in" button in `#2563EB` in every variant |
+| Shows NoDrive's colours | CI | PASS | Pixel check finds the "Log in" button in `#2563EB` in every variant; unit test `NoDriveBrandingTest` draws a switched-on Settings switch and finds `#2563EB` (upstream: Nextcloud's `#00679E`) |
 | Server fixed, no server-entry screen | CI | PASS | First page has no address field, no "Sign up" / "Self-host" (screenshots 01); unit test `NoDriveBrandingTest` (`serverUrlEditable() == false`, server `https://drive.nourax.org`); provisioning tests check that another `--serverurl` is refused |
 | Sign-in opens the browser at drive.nourax.org | CI | PASS | The app handed `https://drive.nourax.org/login/v2/flow/<token>` to the browser in all 4 variants (token redacted in the logs). The page itself is not loaded in CI |
 | No Nextcloud service contacted | CI | PASS | DNS names during the whole test: only `drive.nourax.org` and the runner's own GitHub hosts. The app connected only to drive.nourax.org (after "Log in") and the local DNS resolver (`net/network-report.md`) |
+| No Nextcloud file in a sync folder | CI | PASS | The folder watcher's probe files are `.nodrivesync.log` and `.nodrivepermissions.log` (upstream: `.nextcloudsync.log`, which stayed hidden in every sync folder). `NoDriveBrandingTest` checks that the new and the old names are excluded from sync; `check-branding.py` fails if the old names appear anywhere except the exclude list |
 | Dark mode (before sign-in) | CI | PASS | Wizard background `#202124` with the desktop set to dark (XDG portal `color-scheme` = prefer dark) |
 | Second language: German | CI | PASS | Screenshots `de-light` |
 | Right-to-left: Arabic | CI | PASS, with a note | Layout is mirrored (buttons, menus). Several new wizard texts have no Arabic translation upstream yet and show in English |
