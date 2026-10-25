@@ -72,21 +72,32 @@ def main_executable(app: Path, f: Path) -> Path:
     return app / "Contents" / "MacOS" / "NoDrive"
 
 
-def expand(path: str, f: Path, exe: Path) -> str:
-    return path.replace("@loader_path", str(f.parent)).replace("@executable_path", str(exe.parent))
+def expand(path: str, loader: Path, exe: Path) -> str:
+    return path.replace("@loader_path", str(loader.parent)).replace("@executable_path", str(exe.parent))
 
 
 def resolve(dep: str, f: Path, rpaths: list[str], exe: Path, exe_rpaths: list[str]) -> Path | None:
+    """Where dyld finds dep for f: f's own run paths, then the main executable's (load chain)."""
     if dep.startswith("@rpath/"):
         tail = dep[len("@rpath/"):]
-        for rp in rpaths + exe_rpaths:  # own run paths, then the main executable's (load chain)
-            base = expand(rp, f, exe) if rp.startswith("@loader_path") or rp.startswith("@executable_path") else rp
-            candidate = Path(base) / tail
+        for rp, loader in [(r, f) for r in rpaths] + [(r, exe) for r in exe_rpaths]:
+            candidate = Path(expand(rp, loader, exe)) / tail
             if candidate.exists():
                 return candidate
         return None
     candidate = Path(expand(dep, f, exe))
     return candidate if candidate.exists() else None
+
+
+def bundled_tail(app: Path, path: str) -> str | None:
+    """Shortest trailing part of path that exists in Contents/Frameworks or Contents/MacOS."""
+    parts = Path(path).parts
+    for k in range(1, len(parts)):
+        tail = "/".join(parts[-k:])
+        for d in (app / "Contents" / "Frameworks", app / "Contents" / "MacOS"):
+            if (d / tail).exists():
+                return tail
+    return None
 
 
 def machos(app: Path) -> list[Path]:
@@ -107,6 +118,22 @@ def fix(app: Path) -> int:
                 run("install_name_tool", "-delete_rpath", rp, str(f))
                 print(f"  {f.relative_to(app)}: removed run path {rp}")
                 changed += 1
+    # 1b. dependencies by absolute path outside the bundle (build machine): use @rpath/<name>
+    #     when that library is in the bundle; step 2 then adds the run path.
+    for f in files:
+        ident, deps, _ = load_commands(f)
+        for dep in deps:
+            if dep == ident or dep.startswith("@") or dep.startswith(SYSTEM_PREFIXES):
+                continue
+            if Path(dep).resolve().is_relative_to(app):
+                continue
+            tail = bundled_tail(app, dep)
+            if tail is None:
+                print(f"  {f.relative_to(app)}: {dep} is not in the bundle", file=sys.stderr)
+                continue
+            run("install_name_tool", "-change", dep, f"@rpath/{tail}", str(f))
+            print(f"  {f.relative_to(app)}: {dep} -> @rpath/{tail}")
+            changed += 1
     # 2. unresolved @rpath dependencies: add a run path to the folder that holds the library
     for f in files:
         exe = main_executable(app, f)
