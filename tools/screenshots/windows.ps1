@@ -710,7 +710,7 @@ $fake = Join-Path $FakeDir 'fakebrowser.ps1'
 "@, $Utf8)
 $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
 foreach ($b in @('msedge.exe', 'chrome.exe', 'firefox.exe', 'iexplore.exe', 'MicrosoftEdge.exe', 'launchwinapp.exe', 'OpenWith.exe')) {
-    New-Item -Path "$ifeo\$b" -Force | Out-Null
+    if (-not (Test-Path -LiteralPath "$ifeo\$b")) { New-Item -Path "$ifeo\$b" | Out-Null }
     Set-ItemProperty -Path "$ifeo\$b" -Name Debugger -Value "`"$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$fake`""
 }
 $handler = Reg-Value 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' 'ProgId'
@@ -718,13 +718,16 @@ Result 'browser-default' 'INFO' "default https handler: '$handler'; fake browser
 
 # Show every notification-area icon on the taskbar (no overflow), so the tray icon can be clicked,
 # and no toast notifications over the screenshots (Windows announces new startup apps).
-Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' -Name EnableAutoTray -Value 0 -Type DWord
-New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications' -Force | Out-Null
-Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications' -Name ToastEnabled -Value 0 -Type DWord
-Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Seconds 3
-if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 5 }
-Minimize-Consoles
+Step 'desktop-setup' {
+    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' -Name EnableAutoTray -Value 0 -Type DWord
+    $push = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications'
+    if (-not (Test-Path -LiteralPath $push)) { New-Item -Path $push | Out-Null }
+    Set-ItemProperty -Path $push -Name ToastEnabled -Value 0 -Type DWord
+    Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 3
+    if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 5 }
+    Minimize-Consoles
+}
 
 # Arabic: Qt mirrors the layout when its own Arabic catalogue is loaded; else --reverse.
 $qtAr = @(Get-ChildItem -LiteralPath $InstallDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -in 'qt_ar.qm', 'qtbase_ar.qm' } | ForEach-Object { $_.FullName.Substring($InstallDir.Length + 1) })
