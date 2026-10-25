@@ -221,6 +221,19 @@ public static class NdWin {
 
     public static void Move(int x, int y) { SetCursorPos(x, y); }
 
+    public static void Minimize(IntPtr h) { ShowWindow(h, 6); }
+
+    // Moves the mouse over the notification area: Explorer then drops the icons of
+    // processes that have ended (they stay as "ghost" icons until hovered).
+    public static void SweepTray() {
+        foreach (NdWindow w in TopWindows(false)) {
+            if (w.Class != "Shell_TrayWnd") continue;
+            int y = w.Y + w.H / 2;
+            for (int x = w.X + w.W - 1; x > w.X + w.W / 2; x -= 6) { SetCursorPos(x, y); System.Threading.Thread.Sleep(8); }
+        }
+        SetCursorPos(1, 1);
+    }
+
     public static void Click(int x, int y, bool right) {
         SetCursorPos(x, y);
         System.Threading.Thread.Sleep(300);
@@ -418,6 +431,14 @@ function Redact([string] $path) {
     }
 }
 
+# The runner's own console window (hosted compute agent) would sit behind every screenshot.
+function Minimize-Consoles {
+    foreach ($w in [NdWin]::TopWindows($false)) {
+        if ($w.Class -eq 'ConsoleWindowClass') { [NdWin]::Minimize($w.Handle); Log "minimised console window '$($w.Title)'" }
+    }
+    Start-Sleep -Milliseconds 500
+}
+
 function Stop-NoDrive([System.Diagnostics.Process] $proc) {
     if ($proc -and -not $proc.HasExited -and (Test-Path -LiteralPath $Exe)) {
         try {
@@ -492,7 +513,8 @@ Step 'msi-properties' {
     $props = @{}
     foreach ($r in (Msi-Rows $db 'SELECT `Property`, `Value` FROM `Property`')) { $props[$r[0]] = $r[1] }
     $shortcuts = @()
-    foreach ($r in (Msi-Rows $db 'SELECT `Name`, `Directory_` FROM `Shortcut`')) { $shortcuts += "$($r[0]) in $($r[1])" }
+    # Shortcut names may be stored as "SHORT~1|Long name".
+    foreach ($r in (Msi-Rows $db 'SELECT `Name`, `Directory_` FROM `Shortcut`')) { $shortcuts += "$(($r[0] -split '\|')[-1]) in $($r[1])" }
     $info = "ProductName=$($props['ProductName']); Manufacturer=$($props['Manufacturer']); ProductVersion=$($props['ProductVersion']); UpgradeCode=$($props['UpgradeCode']); ARPHELPLINK=$($props['ARPHELPLINK']); ARPURLINFOABOUT=$($props['ARPURLINFOABOUT']); shortcuts: $($shortcuts -join ', ')"
     $ok = ($props['ProductName'] -eq $AppName) -and ($props['Manufacturer'] -eq $Vendor) -and
         ($props['UpgradeCode'] -eq "{$($Win.WIN_MSI_UPGRADE_CODE)}") -and ($props['ARPHELPLINK'] -like "$Server*") -and
@@ -518,6 +540,7 @@ Step 'msi-properties' {
 }
 
 # Installer UI (first page), English and German, then cancel before anything is changed.
+Minimize-Consoles
 foreach ($ui in @(@{ Tag = 'en'; Args = @() }, @{ Tag = 'de'; Args = @('TRANSFORMS=:1031') })) {
     Step "installer-ui-$($ui.Tag)" {
         $argsUi = @('/i', "`"$Msi`"") + $ui.Args + @('/l*v', "`"$(Join-Path $Out "logs\installer-ui-$($ui.Tag).log")`"")
@@ -693,11 +716,15 @@ foreach ($b in @('msedge.exe', 'chrome.exe', 'firefox.exe', 'iexplore.exe', 'Mic
 $handler = Reg-Value 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' 'ProgId'
 Result 'browser-default' 'INFO' "default https handler: '$handler'; fake browser via Image File Execution Options for msedge, chrome, firefox, iexplore, OpenWith"
 
-# Show every notification-area icon on the taskbar (no overflow), so the tray icon can be clicked.
+# Show every notification-area icon on the taskbar (no overflow), so the tray icon can be clicked,
+# and no toast notifications over the screenshots (Windows announces new startup apps).
 Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' -Name EnableAutoTray -Value 0 -Type DWord
+New-Item -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications' -Force | Out-Null
+Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications' -Name ToastEnabled -Value 0 -Type DWord
 Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 3
 if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 5 }
+Minimize-Consoles
 
 # Arabic: Qt mirrors the layout when its own Arabic catalogue is loaded; else --reverse.
 $qtAr = @(Get-ChildItem -LiteralPath $InstallDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -in 'qt_ar.qm', 'qtbase_ar.qm' } | ForEach-Object { $_.FullName.Substring($InstallDir.Length + 1) })
@@ -759,7 +786,9 @@ foreach ($v in $Variants) {
             if (-not $sl.WaitForExit(60000)) { $sl.Kill(); throw "--set-language $($v.Lang) did not exit" }
 
             $log = Join-Path $Out "logs\app-$tag.log"
-            $argList = @('--logdebug', '--logflush', '--logfile', "`"$log`"") + $v.Extra
+            $workLog = Join-Path $Work "app-$tag.log"
+            $argList = @('--logdebug', '--logflush', '--logfile', "`"$workLog`"") + $v.Extra
+            [NdWin]::SweepTray()
             Log "start $tag ($($v.Lang), dark=$($v.Dark) $($v.Extra -join ' '))"
             $proc = Start-Process -FilePath $Exe -ArgumentList $argList -PassThru
             $NetPids.Add($proc.Id)
@@ -807,7 +836,12 @@ foreach ($v in $Variants) {
                     $ncDirs = @((Join-Path $env:APPDATA 'Nextcloud'), (Join-Path $env:LOCALAPPDATA 'Nextcloud')) | Where-Object { Test-Path -LiteralPath $_ }
                     $okCfg = (Test-Path -LiteralPath $cfg) -and @($ncDirs).Count -eq 0
                     Result 'config-folder' $(if ($okCfg) { 'PASS' } else { 'FAIL' }) ("$cfg exists: $(Test-Path -LiteralPath $cfg); $($listing.Count) entries in $ConfDir; Nextcloud folders in AppData: $(@($ncDirs).Count)")
-                    $pipes = @([IO.Directory]::GetFiles('\\.\pipe\') | ForEach-Object { Split-Path -Leaf $_ } | Where-Object { $_ -match "(?i)^($ExeName|nextcloud)-" })
+                    $pipes = @([IO.Directory]::GetFiles('\\.\pipe\') | ForEach-Object { $_.Substring(9) } | Where-Object { $_ -match "(?i)^($ExeName|nextcloud)-" })
+                    $runKey = Get-Item -LiteralPath 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run'
+                    $runValues = @($runKey.GetValueNames() | ForEach-Object { "$_ = $($runKey.GetValue($_))" })
+                    $ourRun = $runKey.GetValue($AppName)
+                    $okRun = ($ourRun -like "*$InstallDir\$ExeName.exe*") -and -not ($runValues -match $ForbiddenText)
+                    Result 'autostart' $(if ($okRun) { 'PASS' } else { 'FAIL' }) ("HKCU\...\CurrentVersion\Run: $($runValues -join '; ')")
                     Result 'named-pipe' $(if ($pipes -contains "$ExeName-$env:USERNAME" -and -not ($pipes -match '(?i)^nextcloud')) { 'PASS' } else { 'FAIL' }) ("Explorer integration pipe(s): $($pipes -join ', ')")
                 }
 
@@ -885,8 +919,13 @@ foreach ($v in $Variants) {
                     }
                 }
             } finally {
+                if (Test-Path -LiteralPath $workLog) { Copy-Item -LiteralPath $workLog -Destination $log -Force }
                 Stop-NoDrive $proc
+                if (Test-Path -LiteralPath $workLog) {
+                    [IO.File]::AppendAllText($log, "`r`n--- after --quit (the app re-opened its log file) ---`r`n" + [IO.File]::ReadAllText($workLog), $Utf8)
+                }
                 Redact $log
+                [NdWin]::SweepTray()
             }
         }
     }

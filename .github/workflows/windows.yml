@@ -342,11 +342,15 @@ jobs:
       - name: Packaged-files sweep (tools/check-branding.py --artifact)
         # Text files, compiled translations (.qm) and the URLs inside every
         # binary of the collected app folder; an unclassified hit fails the job.
+        # Craft's bin folder is on PATH here, so check-branding.py finds Qt's lconvert
+        # and reads the .qm files with it; PYTHONUTF8 makes Python decode its XML
+        # output as UTF-8 (the default code page cp1252 cannot).
         shell: pwsh
         env:
           COLLECT_DIR: ${{ steps.msi.outputs.collect-dir }}
+          PYTHONUTF8: '1'
         run: |
-          python tools/check-branding.py --artifact "$env:COLLECT_DIR" --lane windows --report "$env:RUNNER_TEMP\logs\artifact-sweep-collect.md"
+          & "$env:pythonLocation\python.exe" tools/check-branding.py --artifact "$env:COLLECT_DIR" --lane windows --report "$env:RUNNER_TEMP\logs\artifact-sweep-collect.md"
           exit $LASTEXITCODE
 
       - name: Unit tests
