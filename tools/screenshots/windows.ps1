@@ -223,6 +223,15 @@ public static class NdWin {
 
     public static void Minimize(IntPtr h) { ShowWindow(h, 6); }
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint action, uint param, string value, uint flags);
+    [DllImport("user32.dll")] static extern bool SetSysColors(int n, int[] elements, int[] colours);
+
+    // Removes the wallpaper and paints the desktop in one plain colour.
+    public static void PlainDesktop(int r, int g, int b) {
+        SetSysColors(1, new int[] { 1 }, new int[] { r | (g << 8) | (b << 16) });   // COLOR_DESKTOP
+        SystemParametersInfo(0x0014, 0, "", 3);                                        // SPI_SETDESKWALLPAPER, update + broadcast
+    }
+
     // Moves the mouse over the notification area: Explorer then drops the icons of
     // processes that have ended (they stay as "ghost" icons until hovered).
     public static void SweepTray() {
@@ -539,8 +548,26 @@ Step 'msi-properties' {
     else { Result 'msi-strings' 'FAIL' ("$($allHits.Count) MSI rows name Nextcloud (logs\msi-strings-hits.txt): " + (($allHits | Select-Object -First 3) -join ' || ')) }
 }
 
+# Quiet desktop for the screenshots: plain neutral background and no desktop icons
+# (the runner image has many), every notification-area icon on the taskbar (no
+# overflow, so the tray icon can be clicked), no toast notifications, and the
+# runner's console window minimised.
+Step 'desktop-setup' {
+    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' -Name EnableAutoTray -Value 0 -Type DWord
+    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name HideIcons -Value 1 -Type DWord
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Colors' -Name Background -Value '75 85 99'
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Wallpaper -Value ''
+    $push = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications'
+    if (-not (Test-Path -LiteralPath $push)) { New-Item -Path $push | Out-Null }
+    Set-ItemProperty -Path $push -Name ToastEnabled -Value 0 -Type DWord
+    Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 3
+    if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 5 }
+    [NdWin]::PlainDesktop(0x4B, 0x55, 0x63)
+    Minimize-Consoles
+}
+
 # Installer UI (first page), English and German, then cancel before anything is changed.
-Minimize-Consoles
 foreach ($ui in @(@{ Tag = 'en'; Args = @() }, @{ Tag = 'de'; Args = @('TRANSFORMS=:1031') })) {
     Step "installer-ui-$($ui.Tag)" {
         $argsUi = @('/i', "`"$Msi`"") + $ui.Args + @('/l*v', "`"$(Join-Path $Out "logs\installer-ui-$($ui.Tag).log")`"")
@@ -715,19 +742,6 @@ foreach ($b in @('msedge.exe', 'chrome.exe', 'firefox.exe', 'iexplore.exe', 'Mic
 }
 $handler = Reg-Value 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' 'ProgId'
 Result 'browser-default' 'INFO' "default https handler: '$handler'; fake browser via Image File Execution Options for msedge, chrome, firefox, iexplore, OpenWith"
-
-# Show every notification-area icon on the taskbar (no overflow), so the tray icon can be clicked,
-# and no toast notifications over the screenshots (Windows announces new startup apps).
-Step 'desktop-setup' {
-    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer' -Name EnableAutoTray -Value 0 -Type DWord
-    $push = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications'
-    if (-not (Test-Path -LiteralPath $push)) { New-Item -Path $push | Out-Null }
-    Set-ItemProperty -Path $push -Name ToastEnabled -Value 0 -Type DWord
-    Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
-    Start-Sleep -Seconds 3
-    if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe; Start-Sleep -Seconds 5 }
-    Minimize-Consoles
-}
 
 # Arabic: Qt mirrors the layout when its own Arabic catalogue is loaded; else --reverse.
 $qtAr = @(Get-ChildItem -LiteralPath $InstallDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -in 'qt_ar.qm', 'qtbase_ar.qm' } | ForEach-Object { $_.FullName.Substring($InstallDir.Length + 1) })
