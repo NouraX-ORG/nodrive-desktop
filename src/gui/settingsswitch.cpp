@@ -48,7 +48,8 @@ void SettingsSwitch::paintEvent(QPaintEvent *event)
     const auto y = (height() - trackHeight) / 2.0;
     const QRectF trackRect{x, y, trackWidth, trackHeight};
 
-    auto trackColor = isChecked() ? QColor(0, 103, 158) : QColor(107, 107, 107);
+    // NoDrive: switched-on track in Nourax primary #2563EB (upstream: #00679E).
+    auto trackColor = isChecked() ? QColor(0x25, 0x63, 0xEB) : QColor(107, 107, 107);
     auto knobColor = QColor(255, 255, 255);
     auto knobShadowColor = QColor(0, 0, 0, 38);
     if (!isEnabled()) {

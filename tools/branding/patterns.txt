@@ -14,3 +14,13 @@ colour #00679e	00679e
 colour #0071ad	0071ad
 colour #1cafff	1cafff
 colour rgba(0,0.51,0.79)	rgba\(\s*0\s*,\s*0?\.51\s*,\s*0?\.79
+# The same colours written as numbers: rgb()/rgba() in SVG and CSS, QColor(...),
+# brace or call arguments, as decimal, 0x bytes or 0-1 fractions. The opening
+# bracket keeps SVG path data out. check-branding.py also searches code outside
+# string literals for every "colour" pattern, so QColor(0, 103, 158) is found.
+colour 0,130,201 (#0082c9)	[({]\s*(?:0|0x0+)\s*,\s*(?:130|0x82)\s*,\s*(?:201|0xc9)\b
+colour 0,103,158 (#00679e)	[({]\s*(?:0|0x0+)\s*,\s*(?:103|0x67)\s*,\s*(?:158|0x9e)\b
+colour 0,113,173 (#0071ad)	[({]\s*(?:0|0x0+)\s*,\s*(?:113|0x71)\s*,\s*(?:173|0xad)\b
+colour 28,175,255 (#1cafff)	[({]\s*(?:28|0x1c)\s*,\s*(?:175|0xaf)\s*,\s*(?:255|0xff)\b
+colour 0,0.51,0.79 (#0082c9)	[({]\s*0(?:\.0*)?\s*,\s*0?\.5(?:1|09)\d*\s*,\s*0?\.7(?:9|88)\d*
+colour 0,0.40,0.62 (#00679e)	[({]\s*0(?:\.0*)?\s*,\s*0?\.40\d*\s*,\s*0?\.6(?:2|19)\d*

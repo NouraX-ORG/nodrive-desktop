@@ -28,6 +28,8 @@ Where it searches (spec section 6, step 2):
   qml         string literals in QML files (src/, theme/)
   ui          <string> texts in Qt Designer .ui files
   code        string literals in shipped source (src/, shell_integration/)
+  code-colour code and QML outside comments and string literals, for the
+              "colour" patterns only (colours written as QColor(0, 103, 158))
   strings     Apple .strings / .stringsdict / .xcstrings files
   packaging   installer, packaging and template files (admin/, systemd/,
               *.desktop.in, cmake/modules/*.in, *.plist, *.wxs, theme/*.xml,
@@ -282,6 +284,69 @@ def py_literals(text: str):
     yield from c_literals(text, hash_comments=True, slash_comments=False)
 
 
+def c_code_lines(text: str, hash_comments: bool = False, slash_comments: bool = True):
+    """(line, code) of C-like code with comments and string literals blanked out.
+
+    The counterpart of c_literals(): colours are often written as code, for example
+    QColor(0, 103, 158) or Qt.rgba(0, 0.51, 0.79, 1), which no string literal shows.
+    Line numbers are kept (blanked text keeps its newlines).
+    """
+    out, last, i, n = [], 0, 0, len(text)
+
+    def blank(a: int, b: int) -> None:
+        nonlocal last
+        out.append(text[last:a])
+        out.append(re.sub(r"[^\n]", " ", text[a:b]))
+        last = b
+
+    while i < n:
+        c = text[i]
+        if not slash_comments and c == "/":
+            i += 1
+        elif c == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif c == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            blank(i, j)
+            i = j
+        elif hash_comments and c == "#":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            blank(i, j)
+            i = j
+        elif c == "R" and text.startswith('R"', i) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+            m = re.match(r'R"([^(\s]{0,16})\(', text[i:])
+            if not m:
+                i += 1
+                continue
+            end = text.find(")" + m.group(1) + '"', i + m.end())
+            end = n if end < 0 else end + len(m.group(1)) + 2
+            blank(i, end)
+            i = end
+        elif c in "\"'":
+            q = c
+            if text.startswith(q * 3, i):  # Swift / Python triple-quoted
+                end = text.find(q * 3, i + 3)
+                end = n if end < 0 else end + 3
+                blank(i, end)
+                i = end
+                continue
+            j = i + 1
+            while j < n and text[j] != q and text[j] != "\n":
+                j += 2 if text[j] == "\\" else 1
+            j = min(j + 1, n)
+            blank(i, j)
+            i = j
+        else:
+            i += 1
+    out.append(text[last:])
+    yield from all_lines("".join(out))
+
+
 def ui_strings(text: str):
     for m in re.finditer(r"<string(?:\s[^>]*)?>(.*?)</string>", text, re.S):
         yield _line_at(text, m.start()), html.unescape(m.group(1))
@@ -513,6 +578,15 @@ def scan_tree(root: Path, lanes_wanted: set[str], patterns, res: Result) -> None
                 if m and m.group(1) in overlay_vars:
                     h.cls, h.reason, h.rule = "internal", f"upstream default of {m.group(1)}; overridden by nodrive/NODRIVE.cmake", "auto:overlay"
             res.hits.append(h)
+        # Colours written as code (QColor(0, 103, 158), Qt.rgba(...)) are outside
+        # any string literal: search the code itself for the colour patterns.
+        if scope in ("code", "qml"):
+            colour_patterns = [(label, rx) for label, rx in patterns if label.startswith("colour")]
+            py = ext == ".py"
+            for n, line in c_code_lines(text, hash_comments=py, slash_comments=not py):
+                kws = match_keywords(line, colour_patterns)
+                if kws:
+                    res.hits.append(Hit(rel, n, "code-colour", " ".join(line.split())[:240], kws, lane))
 
     # theme images that are neither in theme.qrc nor installed are not shipped
     if shipped_theme is not None:

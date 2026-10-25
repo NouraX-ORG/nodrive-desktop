@@ -41,7 +41,8 @@ CustomStateProvider::GetItemProperties(hstring const &itemPath)
 
         if (itemPathSplit.size() > 0) {
             const auto itemName = itemPathSplit.last();
-            return !itemName.startsWith(QStringLiteral(".sync_")) && !itemName.startsWith(QStringLiteral(".owncloudsync.log"));
+            return !itemName.startsWith(QStringLiteral(".sync_")) && !itemName.startsWith(QStringLiteral(".owncloudsync.log"))
+                && !itemName.startsWith(QStringLiteral(".nodrivesync.log")); // NoDrive: folder-watcher probe file
         }
 
         return true;

@@ -151,6 +151,11 @@ static CSYNC_EXCLUDE_TYPE _csync_excluded_common(const QString &path, bool exclu
         if (bname.startsWith(QLatin1String(".nextcloudpermissions.log"), Qt::CaseInsensitive)) { // ".nextcloudpermissions.log*"
             return CSYNC_FILE_SILENTLY_EXCLUDED;
         }
+        // NoDrive: the folder-watcher probe files (src/gui/folder.cpp); the upstream names above stay excluded.
+        if (bname.startsWith(QLatin1String(".nodrivesync.log"), Qt::CaseInsensitive)
+            || bname.startsWith(QLatin1String(".nodrivepermissions.log"), Qt::CaseInsensitive)) {
+            return CSYNC_FILE_SILENTLY_EXCLUDED;
+        }
     }
 
     // check the strlen and ignore the file if its name is longer than 254 chars.

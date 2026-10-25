@@ -21,7 +21,8 @@ src/*	^com\.nextcloud\.desktopclient(\.[a-z]+)?$	internal	QML module URI (module
 src/*	^org\.owncloud\.PluginFactory$	internal	Qt plugin interface id of the sync plugins (internal identifier).
 shell_integration/dolphin/*	^(com\.owncloud\.ovarlayiconplugin|ownclouddolphinoverlayplugin\.json)$	internal	KDE plugin id and metadata file name of the Dolphin overlay plugin (internal identifiers).
 src/*	^(OWNCLOUD|NEXTCLOUD)_[A-Z0-9_]+$	internal	Name of an environment variable read for debugging or tuning; never shown.
-src/*	^(\.?(owncloud|nextcloud)(sync|permissions)\.log|\*owncloud\.log\.\*|nextcloud\.log|nextcloud-debug-archive-temp\.zip)$	internal	Internal log and probe file names (the probe files are hidden, temporary and excluded from sync).
+src/csync/csync_exclude.cpp	^\.(owncloud|nextcloud)(sync|permissions)\.log$	internal	Probe file names of upstream builds, kept on the exclude list so such a file is never uploaded. NoDrive itself creates .nodrivesync.log and .nodrivepermissions.log in the sync folder (tools/rebrand.py); any other use of the old names fails this gate.
+src/*	^(\*owncloud\.log\.\*|nextcloud\.log|nextcloud-debug-archive-temp\.zip)$	internal	Internal log file names in the app's own log and temp folders (seen only inside a debug archive made for support, never in a sync folder).
 src/libsync/settings/migration.cpp	(owncloud|nextcloud)\.cfg	internal	Legacy config paths used only by account migration, which NoDrive switches off (DISABLE_ACCOUNT_MIGRATION ON).
 src/libsync/configfile.h	^(Nextcloud|Owncloud)$	internal	Unbranded/legacy app names used to find old config folders for migration (switched off).
 src/libsync/configfile.cpp	^Nextcloud$	internal	Compares APPLICATION_NAME with the unbranded name to pick a default; never shown.

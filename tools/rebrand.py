@@ -15,7 +15,8 @@ What it does (plan: plans/desktop-plan.md, sections 1-8 and 11.4):
  2. patches the few places that no CMake option reaches (theme link colour
     and repository link, wizard sign-up/self-host links and buttons, the
     server-entry page, the server lock, the hidden legal-notice button and
-    the privacy link, three English literals, Style.qml colours);
+    the privacy link, three English literals, Style.qml colours, the Settings
+    switch colour, SVG glyph colours, the folder-watcher probe file names);
  3. rewrites the four translatable messages that name Nextcloud in every
     translations/client_*.ts file;
  4. replaces trademarked Nextcloud glyphs with neutral upstream glyphs and
@@ -391,13 +392,89 @@ def step_style(ctx: Context) -> None:
     ]
     for old, new in pairs:
         ctx.replace(rel, old, new, what=f"colour {old.split(':')[0]}")
-    # SVG glyphs drawn in Nextcloud blues (shapes untouched, only the hex code)
-    for svg in ("theme/colored/external.svg", "theme/colored/info.svg", "theme/colored/sync.svg"):
+    # Upstream SVG glyphs drawn in Nextcloud blues: shapes untouched, only the colour
+    # value changes, whether written as a hex code or as rgb(r,g,b). wizard-files.svg
+    # is compiled into the app (theme.qrc.in); folder.svg and wizard-groupware.svg
+    # are not, but they are recoloured too (sweep round 1, F2).
+    primary, light = ctx.ids["colors"]["primary"], ctx.ids["colors"]["primary_light"]
+    for svg in ("theme/colored/external.svg", "theme/colored/info.svg", "theme/colored/sync.svg",
+                "theme/colored/folder.svg", "theme/colored/wizard-files.svg", "theme/colored/wizard-groupware.svg"):
         text = ctx.read(svg)
-        new = re.sub(r"#0082c9|#0071ad|#00679e", "#2563EB", text, flags=re.I)
-        new = re.sub(r"#1cafff", "#3B82F6", new, flags=re.I)
+        new = re.sub(r"#0082c9|#0071ad|#00679e", primary, text, flags=re.I)
+        new = re.sub(r"#1cafff", light, new, flags=re.I)
+        new = re.sub(r"rgb\(\s*0\s*,\s*(?:130\s*,\s*201|113\s*,\s*173|103\s*,\s*158)\s*\)", primary, new, flags=re.I)
+        new = re.sub(r"rgb\(\s*28\s*,\s*175\s*,\s*255\s*\)", light, new, flags=re.I)
         if new != text:
             ctx.write(svg, new, "Nextcloud blue -> Nourax primary")
+
+
+def _qcolor(hex_colour: str) -> str:
+    """'#2563EB' -> 'QColor(0x25, 0x63, 0xEB)'."""
+    m = re.fullmatch(r"#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})", hex_colour)
+    if not m:
+        raise RebrandError(f"not a #RRGGBB colour: {hex_colour!r}")
+    return "QColor(" + ", ".join(f"0x{part.upper()}" for part in m.groups()) + ")"
+
+
+def step_settings_switch(ctx: Context) -> None:
+    """On/off switches in Settings > General and Advanced (sweep round 1, F1).
+
+    Upstream draws a switched-on track in #00679E to match Nextcloud's server UI
+    (upstream commit 80cd769cc9). No theme option reaches it.
+    """
+    primary = ctx.ids["colors"]["primary"]
+    ctx.replace(
+        "src/gui/settingsswitch.cpp",
+        "    auto trackColor = isChecked() ? QColor(0, 103, 158) : QColor(107, 107, 107);\n",
+        f"    // NoDrive: switched-on track in Nourax primary {primary} (upstream: #00679E).\n"
+        f"    auto trackColor = isChecked() ? {_qcolor(primary)} : QColor(107, 107, 107);\n",
+        what=f"switch colour -> Nourax primary {primary}",
+    )
+
+
+def step_probe_files(ctx: Context) -> None:
+    """Folder-watcher probe files in the root of every sync folder (sweep round 1, F3).
+
+    Upstream creates .nextcloudsync.log (kept, marked hidden) and, for a moment,
+    .nextcloudpermissions.log in each sync folder. NoDrive uses its own names;
+    the old names stay on the exclude list, so they are never uploaded either.
+    """
+    exe = ctx.ids["cmake"]["APPLICATION_EXECUTABLE"]
+    sync_probe, permissions_probe = f".{exe}sync.log", f".{exe}permissions.log"
+    rel = "src/gui/folder.cpp"
+    ctx.replace(rel, 'startNotificatonTest(path() + QLatin1String(".nextcloudsync.log"));',
+                f'startNotificatonTest(path() + QLatin1String("{sync_probe}"));', what=f"probe file -> {sync_probe}")
+    ctx.replace(rel, 'performSetPermissionsTest(path() + QLatin1String(".nextcloudpermissions.log"));',
+                f'performSetPermissionsTest(path() + QLatin1String("{permissions_probe}"));',
+                what=f"probe file -> {permissions_probe}")
+    rel = "src/csync/csync_exclude.cpp"
+    anchor = (
+        '        if (bname.startsWith(QLatin1String(".nextcloudpermissions.log"), Qt::CaseInsensitive)) { // ".nextcloudpermissions.log*"\n'
+        "            return CSYNC_FILE_SILENTLY_EXCLUDED;\n"
+        "        }\n"
+    )
+    ctx.replace(
+        rel,
+        anchor,
+        anchor
+        + "        // NoDrive: the folder-watcher probe files (src/gui/folder.cpp); the upstream names above stay excluded.\n"
+        + f'        if (bname.startsWith(QLatin1String("{sync_probe}"), Qt::CaseInsensitive)\n'
+        + f'            || bname.startsWith(QLatin1String("{permissions_probe}"), Qt::CaseInsensitive)) {{\n'
+        + "            return CSYNC_FILE_SILENTLY_EXCLUDED;\n"
+        + "        }\n",
+        what=f"exclude {sync_probe} and {permissions_probe}",
+    )
+    # Windows Explorer custom states: skip the probe file like upstream skips its old one.
+    rel = "src/libsync/vfs/cfapi/shellext/customstateprovider.cpp"
+    old = '            return !itemName.startsWith(QStringLiteral(".sync_")) && !itemName.startsWith(QStringLiteral(".owncloudsync.log"));\n'
+    ctx.replace(
+        rel,
+        old,
+        old[:-2]
+        + "\n"
+        + f'                && !itemName.startsWith(QStringLiteral("{sync_probe}")); // NoDrive: folder-watcher probe file\n',
+        what=f"Explorer custom states skip {sync_probe}",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -690,8 +767,8 @@ def run_plugins(ctx: Context) -> list[str]:
 
 STEPS = [
     step_overlay, step_theme_cpp, step_unused_theme, step_infosettings, step_wizard, step_server_lock,
-    step_strings, step_style, step_translations, step_glyphs, step_visual_elements,
-    step_licenses, step_tests,
+    step_strings, step_style, step_settings_switch, step_probe_files, step_translations, step_glyphs,
+    step_visual_elements, step_licenses, step_tests,
 ]
 
 
