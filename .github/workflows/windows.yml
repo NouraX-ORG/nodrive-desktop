@@ -95,27 +95,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # One-off evidence for the runner choice above (informational, never fails the run).
-  toolchain-probe:
-    name: windows-latest toolchain probe (info)
-    runs-on: windows-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    steps:
-      - name: Look for the toolchain Craft's msvc2022 target needs
-        shell: pwsh
-        run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          "Installed Visual Studio:"; & $vswhere -products * -property displayName
-          foreach ($v in @(18, 17, 16)) {
-            "Craft query: VS [$v,$($v+1)) with Microsoft.VisualStudio.Component.VC.v143.x86.x64 ->"
-            & $vswhere -property installationPath -nologo -latest -products * -version "[$v,$($v+1))" -requires Microsoft.VisualStudio.Component.VC.v143.x86.x64
-          }
-          "Craft fallback: VS [17,18) with VC.Tools.x86.x64 ->"
-          & $vswhere -property installationPath -nologo -latest -products * -version "[17,18)" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64
-          "VS 2026 with the 14.44 (v143) toolset component ->"
-          & $vswhere -property installationPath -nologo -latest -products * -requires Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64
-
   deps:
     name: Craft dependencies
     runs-on: windows-2022
@@ -281,19 +260,34 @@ jobs:
         shell: pwsh
         run: |
           "$env:CRAFT_ROOT\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          # The Nextcloud blueprint's package blacklist drops every bin\*.exe except
-          # nextcloud(cmd).exe; keep NoDrive's executables too (CI copy only).
-          $bl = Get-ChildItem -LiteralPath "$env:CRAFT_ROOT\etc\blueprints\locations" -Recurse -File -Filter blacklist.txt |
-            Where-Object { $_.FullName -like '*\nextcloud-client\blacklist.txt' } | Select-Object -First 1
-          if (-not $bl) { throw 'nextcloud-client\blacklist.txt not found in the Craft blueprints' }
-          $text = Get-Content -LiteralPath $bl.FullName -Raw
+          # Two fixes to this job's copy of the Nextcloud client blueprint (the
+          # restored cache is not saved again, nothing upstream changes):
+          $bpDir = Get-ChildItem -LiteralPath "$env:CRAFT_ROOT\etc\blueprints\locations" -Recurse -Directory -Filter nextcloud-client |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'nextcloud-client.py') } | Select-Object -First 1
+          if (-not $bpDir) { throw 'nextcloud-client blueprint not found in the Craft root' }
+          # 1. createPackage() calls os.path.join without "import os" (NameError in
+          #    "craft --package"; upstream's CI never packages on Windows).
+          $py = Join-Path $bpDir.FullName 'nextcloud-client.py'
+          $src = Get-Content -LiteralPath $py -Raw
+          if ($src -notmatch '(?m)^import os\r?$') {
+            $src = [regex]::Replace($src, '(?m)^(import info)(\r?\n)', '$1$2import os$2', 1)
+            if ($src -notmatch '(?m)^import os\r?$') { throw "could not add 'import os' to $py" }
+            Set-Content -LiteralPath $py -Value $src -NoNewline -Encoding utf8
+          }
+          # 2. The package blacklist drops every bin\*.exe except nextcloud(cmd).exe;
+          #    keep NoDrive's executables too.
+          $bl = Join-Path $bpDir.FullName 'blacklist.txt'
+          $text = Get-Content -LiteralPath $bl -Raw
           if ($text -notmatch 'nodrive\|nodrivecmd\|') {
             $text = $text.Replace('(?!(nextcloud|nextcloudcmd|', '(?!(nodrive|nodrivecmd|nextcloud|nextcloudcmd|')
-            Set-Content -LiteralPath $bl.FullName -Value $text -NoNewline -Encoding utf8
+            if ($text -notmatch 'nodrive\|nodrivecmd\|') { throw "unexpected executable rule in $bl" }
+            Set-Content -LiteralPath $bl -Value $text -NoNewline -Encoding utf8
           }
-          Select-String -LiteralPath $bl.FullName -Pattern '\.exe'
+          Select-String -LiteralPath $py -Pattern '^import'
+          Select-String -LiteralPath $bl -Pattern '\.exe'
 
       - name: Compile
+        id: compile
         timeout-minutes: 150
         shell: pwsh
         run: |
@@ -337,6 +331,8 @@ jobs:
           "::notice::tools/check-branding.py is not on this branch yet; skipped"
 
       - name: Unit tests
+        # Also when packaging failed, so every run reports the test results.
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         timeout-minutes: 75
         shell: pwsh
         run: |

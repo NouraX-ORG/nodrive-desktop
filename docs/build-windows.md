@@ -42,8 +42,15 @@ the first time the workflow runs there.
 `windows-msvc2022_64-cl` target looks for Visual Studio 2022 (or a newer Visual
 Studio with the `Microsoft.VisualStudio.Component.VC.v143.x86.x64` component), and
 the prebuilt Craft packages are built with MSVC 2022. Upstream uses `windows-2022`
-for the same reason. The workflow's `toolchain-probe` job records what
-`windows-latest` offers.
+for the same reason.
+
+Checked on 2026-10-25 with a one-off probe job on `windows-latest` (run
+[40155445668](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40155445668)):
+only "Visual Studio Enterprise 2026" is installed, and Craft's own `vswhere`
+queries for VS 18, 17 and 16 with `VC.v143.x86.x64`, and for VS 17 with
+`VC.Tools.x86.x64`, all return nothing. VS 2026 has the v143 compiler only as
+`Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64`, which Craft does not
+look for. Switch to `windows-latest` once Craft finds that toolset there.
 
 ### The MSI
 
@@ -55,9 +62,14 @@ generated `make-msi.bat` from `admin/win/msi`. When the Windows SDK's
 `WiSubStg.vbs` and `WiLangId.vbs` are found, the MSI also carries the German,
 French, Italian and Spanish installer languages.
 
-The upstream Craft blueprint's package blacklist keeps only `nextcloud.exe` and
-`nextcloudcmd.exe` in `bin\`. The workflow adds `nodrive.exe` and `nodrivecmd.exe`
-to that list in its own copy of the blueprint (nothing upstream is changed).
+Two fixes are made to the build job's copy of the upstream Craft blueprint
+`nextcloud-client` (nothing upstream is changed, and that copy is not cached):
+
+- `nextcloud-client.py` gets `import os`: its `createPackage()` uses `os.path.join`
+  without importing `os`, so `craft --package` stops with `NameError` at Craft
+  revision `a35a7cc5` (upstream's CI never packages on Windows);
+- its package blacklist keeps only `nextcloud.exe` and `nextcloudcmd.exe` in
+  `bin\`; `nodrive.exe` and `nodrivecmd.exe` are added to that list.
 
 ## Windows-only rebrand steps
 
