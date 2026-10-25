@@ -275,8 +275,8 @@
     <name>AssistantMessageList</name>
     <message>
         <location filename="../src/gui/assistant/qml/AssistantMessageList.qml" line="50"/>
-        <source>Start a conversation with Nextcloud Assistant.</source>
-        <translation>Nextcloud Yardımcısı ile bir görüşme başlat.</translation>
+        <source>Start a conversation with the Assistant.</source>
+        <translation>Yardımcısı ile bir görüşme başlat.</translation>
     </message>
 </context>
 <context>
@@ -342,11 +342,6 @@
         <location filename="../src/gui/assistant/qml/AssistantWindow.qml" line="76"/>
         <source>Send</source>
         <translation>Gönder</translation>
-    </message>
-    <message>
-        <location filename="../src/gui/AssistantWindow.qml" line="19"/>
-        <source>Nextcloud Assistant</source>
-        <translation>Nextcloud Yardımcı</translation>
     </message>
     <message>
         <location filename="../src/gui/AssistantWindow.qml" line="91"/>
@@ -1829,8 +1824,8 @@ Bu işlem şu anda yürütülmekte olan eşitleme işlemlerini durdurur.</transl
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="210"/>
-        <source>seconds (if &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; is unavailable)</source>
-        <translation>saniye (&lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;İstemci itmesi&lt;/a&gt; kullanılamıyorsa)</translation>
+        <source>seconds (if Client Push is unavailable)</source>
+        <translation>saniye (İstemci itmesi kullanılamıyorsa)</translation>
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="250"/>

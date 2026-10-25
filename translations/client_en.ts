@@ -272,7 +272,7 @@
     <name>AssistantMessageList</name>
     <message>
         <location filename="../src/gui/assistant/qml/AssistantMessageList.qml" line="50"/>
-        <source>Start a conversation with Nextcloud Assistant.</source>
+        <source>Start a conversation with the Assistant.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1785,7 +1785,7 @@ This action will abort any currently running synchronization.</source>
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="210"/>
-        <source>seconds (if &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; is unavailable)</source>
+        <source>seconds (if Client Push is unavailable)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

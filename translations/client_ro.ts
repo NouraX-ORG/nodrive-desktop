@@ -1594,7 +1594,7 @@ Această acțiune va opri toate sincronizările în derulare din acest moment.</
     </message>
     <message>
         <location filename="../src/gui/advancedsettings.ui" line="203"/>
-        <source>seconds (if &lt;a href=&quot;https://github.com/nextcloud/notify_push&quot;&gt;Client Push&lt;/a&gt; is unavailable)</source>
+        <source>seconds (if Client Push is unavailable)</source>
         <translation type="unfinished"/>
     </message>
     <message>
