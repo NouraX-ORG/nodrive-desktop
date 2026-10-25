@@ -153,7 +153,7 @@ static os_log_t getFinderSyncLogger(void) {
         os_log_error(_log, "Not connected, cannot build menu.");
 
         NSString *appName = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleDisplayName"]
-            ?: [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"] ?: @"Nextcloud";
+            ?: [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleName"] ?: @"NoDrive";
         NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
         NSMenuItem *item = [menu addItemWithTitle:[NSString stringWithFormat:@"%@ — not connected", appName]
                                           action:nil
