@@ -49,13 +49,16 @@ void saveShot(QWidget *widget, const QString &name)
 {
     // A message box sizes its word-wrapped text when it is shown: without show() the picture is clipped.
     // Shown off screen (no native window), and only message boxes: other widgets are grabbed as before.
-    if (auto *box = qobject_cast<QMessageBox *>(widget); box && !box->isVisible()) {
-        // macOS shows a native alert for a message box and waits for it: use the Qt widget.
-        box->setOption(QMessageBox::DontUseNativeDialog, true);
+    // Not on macOS: there show() opens a native alert and waits for it (the hang of the first try), and the
+    // packaged-app smoke test takes the real screenshots of the question there.
+#ifndef Q_OS_MACOS
+    if (qobject_cast<QMessageBox *>(widget) && !widget->isVisible()) {
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
         widget->setAttribute(Qt::WA_DontShowOnScreen);
         widget->show();
         QCoreApplication::processEvents();
     }
+#endif
     QPixmap shot = widget->grab();
     QVERIFY2(!shot.isNull(), qPrintable(name));
     QVERIFY2(shot.save(screenshotDir() + QLatin1Char('/') + name + QStringLiteral(".png")), qPrintable(name));
