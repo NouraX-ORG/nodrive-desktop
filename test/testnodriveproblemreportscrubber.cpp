@@ -137,6 +137,8 @@ private Q_SLOTS:
         QVERIFY(keep.contains(QStringLiteral("IMG_0001.jpg")));
         QVERIFY(keep.contains(QStringLiteral("Company_Documents_2026_Quarter_Three_Final")));
         QVERIFY(keep.contains(QStringLiteral("da39a3ee5e6b4b0d3255bfef95601890afd80709")));
+        QVERIFY(keep.contains(QStringLiteral("icon@2x.png")));
+        QVERIFY(keep.contains(QStringLiteral("logo@3x.jpg")));
     }
 
     void scrubbingTwiceChangesNothing()
@@ -212,6 +214,10 @@ private Q_SLOTS:
                 { QStringLiteral("Account of %1 added").arg(email), email },
                 { QStringLiteral("/remote.php/dav/files/%1/Documents").arg(email), email },
                 { QStringLiteral("{\"mnemonic\":\"%1\"}").arg(words), words },
+                { QStringLiteral("recovery mnemonic: %1").arg(words), words },
+                { QStringLiteral("{\"ocs\":{\"data\":{\"private-key\":\"%1|%2\"}}}").arg(appPassword, cookie), appPassword },
+                { QStringLiteral("{\"metadataKeys\":{\"0\":\"%1\"},\"version\":\"1.2\"}").arg(longBare), longBare },
+                { QStringLiteral("cf_clearance=%1; path=/; HttpOnly").arg(query), query },
             };
             for (const auto &c : cases) {
                 const auto out = ProblemReportScrubber::scrubText(c.first);

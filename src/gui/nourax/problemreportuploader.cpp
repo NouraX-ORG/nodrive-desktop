@@ -103,6 +103,10 @@ void ProblemReportUploader::uploadFile(int attempt)
 
 void ProblemReportUploader::findShare()
 {
+    if (_knownShare) {
+        done(*_knownShare ? Result::Sent : Result::SavedNotShared);
+        return;
+    }
     const QString folder = QLatin1Char('/') + ProblemReportSettings::remoteFolder();
     const auto job = new ProblemReportShareJob(_account);
     connect(job, &OcsJob::jobFinished, this, [this](const QJsonDocument &reply, int) {

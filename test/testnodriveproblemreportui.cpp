@@ -47,6 +47,11 @@ QString screenshotDir()
 
 void saveShot(QWidget *widget, const QString &name)
 {
+    // A message box sizes its word-wrapped text when it is shown: without show() the picture is clipped.
+    if (!widget->isVisible()) {
+        widget->show();
+    }
+    QCoreApplication::processEvents();
     QPixmap shot = widget->grab();
     QVERIFY2(!shot.isNull(), qPrintable(name));
     QVERIFY2(shot.save(screenshotDir() + QLatin1Char('/') + name + QStringLiteral(".png")), qPrintable(name));

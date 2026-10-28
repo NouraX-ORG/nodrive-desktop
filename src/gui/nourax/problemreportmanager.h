@@ -6,10 +6,13 @@
 // NoDrive problem reports: the one object that ties the pieces together.
 //
 //  - start() (called once from Application) checks how the last run ended, installs the
-//    crash handlers, and asks (or, with the switch on, sends) after a crash or unclean exit;
+//    crash handlers, builds the report of a crash or unclean exit at once (before any log
+//    rotation) and, a few seconds later, asks (or, with the switch on, sends it);
 //  - submit() builds a report on a worker thread and sends it through the signed-in account;
-//  - reports wait in <config>/problem-reports/pending while nobody is signed in or the
-//    network is down, and are sent when an account becomes connected.
+//  - reports wait in <config>/problem-reports/pending while nobody is signed in, the account
+//    is not connected yet or the network is down, and are sent when an account is connected.
+//    A report that waits for the answer to the question lives in pending/awaiting-answer
+//    and is only moved to pending when the user answers Send.
 //
 // No timer, no ping and no request is made while there is nothing to send.
 
@@ -45,7 +48,7 @@ public:
         Sent, ///< uploaded and shared with Support
         SavedNotShared, ///< uploaded, share to Support failed quietly
         SavedLocally, ///< nobody is signed in: waits for the next sign-in
-        TryAgainLater, ///< could not be sent now: waits until an account is connected
+        TryAgainLater, ///< could not be sent now (offline, still connecting): waits until an account is connected
     };
     Q_ENUM(Outcome)
 
@@ -63,6 +66,12 @@ public:
     /// Sends the reports waiting in the pending folder (used when an account becomes connected).
     void sendPending();
 
+    /// The report of a crash or unclean exit: built at once into pending/awaiting-answer (so a log
+    /// rotation cannot take the evidence away), then kept until answerHeldReport().
+    void holdReport(const ProblemReportInfo &info);
+    /// Send moves the held report to the pending folder and sends it; otherwise the held copy is removed.
+    void answerHeldReport(bool send);
+
     [[nodiscard]] bool hasPendingReports() const;
     [[nodiscard]] QString pendingDirectory() const;
     [[nodiscard]] static QString outcomeText(Outcome outcome);
@@ -75,6 +84,9 @@ public:
     void setPendingDirectory(const QString &dir);
     void setSourcesProvider(std::function<ProblemReportSources()> provider);
     void setAccountProvider(std::function<AccountPtr()> provider);
+    /// "Is any account signed in, connected or not?" Without a seam the AccountManager answers
+    /// (or false when an account provider is set).
+    void setAccountExistsProvider(std::function<bool()> provider);
 
 Q_SIGNALS:
     void submissionFinished(quint64 id, OCC::Nourax::ProblemReportManager::Outcome outcome);
@@ -87,8 +99,9 @@ private Q_SLOTS:
 private:
     struct Request {
         quint64 id = 0;
-        bool build = true;
+        bool build = true; ///< the report is built first
         bool showTray = true;
+        bool userAction = true; ///< the user started it (or answered the question): say the outcome even when nothing was uploaded
         ProblemReportInfo info;
         ProblemReportSources sources;
     };
@@ -96,10 +109,15 @@ private:
     void process();
     void onBuilt(const Request &request, const QString &path);
     void sendAll(const Request &request);
-    void sendNext(const AccountPtr &account, QStringList zips, std::optional<Outcome> best, const Request &request);
+    void sendNext(const AccountPtr &account, QStringList zips, std::optional<Outcome> best, std::optional<bool> shared,
+        const Request &request);
     void finish(const Request &request, Outcome outcome, bool uploaded);
     void watchAccount(AccountState *state);
+    void onHeldBuilt(const QString &path);
+    void applyHeldAnswer();
+    [[nodiscard]] QString heldDirectory() const;
     [[nodiscard]] AccountPtr connectedAccount() const;
+    [[nodiscard]] bool anAccountExists() const;
     [[nodiscard]] QString serverHost() const;
     [[nodiscard]] QStringList pendingZips() const;
 
@@ -112,6 +130,14 @@ private:
     QString _pendingDir;
     std::function<ProblemReportSources()> _sourcesProvider;
     std::function<AccountPtr()> _accountProvider;
+    std::function<bool()> _accountExistsProvider;
+
+    // The report of the last crash or unclean exit, built at start-up and kept until the user answers.
+    ProblemReportInfo _heldInfo;
+    QString _heldZip;
+    bool _heldBuilding = false;
+    bool _heldSendNow = false; ///< Send was answered (or the switch is on) and the build is not finished yet
+    bool _heldAnswered = false;
 };
 
 } // namespace OCC::Nourax

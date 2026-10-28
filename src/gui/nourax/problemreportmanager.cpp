@@ -107,6 +107,16 @@ void ProblemReportManager::setAccountProvider(std::function<AccountPtr()> provid
     _accountProvider = std::move(provider);
 }
 
+QString ProblemReportManager::heldDirectory() const
+{
+    return pendingDirectory() + QStringLiteral("/awaiting-answer");
+}
+
+void ProblemReportManager::setAccountExistsProvider(std::function<bool()> provider)
+{
+    _accountExistsProvider = std::move(provider);
+}
+
 QStringList ProblemReportManager::pendingZips() const
 {
     // Oldest first; the names start with the UTC time.
@@ -136,6 +146,17 @@ AccountPtr ProblemReportManager::connectedAccount() const
         }
     }
     return {};
+}
+
+bool ProblemReportManager::anAccountExists() const
+{
+    if (_accountExistsProvider) {
+        return _accountExistsProvider();
+    }
+    if (_accountProvider) {
+        return false;
+    }
+    return !AccountManager::instance()->accounts().isEmpty();
 }
 
 QString ProblemReportManager::serverHost() const
@@ -183,6 +204,11 @@ void ProblemReportManager::start()
     if (_previous.run == RunMarker::PreviousRun::Crash || _previous.run == RunMarker::PreviousRun::Unclean) {
         qCInfo(lcProblemReportManager) << "the last run did not end cleanly:"
                                        << (_previous.run == RunMarker::PreviousRun::Crash ? "crash" : "unclean exit");
+        // Built now, before anything can rotate the logs; the question or the automatic send follows a bit later.
+        ProblemReportInfo info;
+        info.kind = _previous.run == RunMarker::PreviousRun::Crash ? ReportKind::Crash : ReportKind::UncleanExit;
+        info.crashText = _previous.crashText;
+        holdReport(info);
         QTimer::singleShot(promptDelayMs, this, &ProblemReportManager::handleUncleanExit);
     } else if (_previous.run == RunMarker::PreviousRun::OtherBuild) {
         qCInfo(lcProblemReportManager) << "updated since the last run, not a problem";
@@ -203,30 +229,113 @@ void ProblemReportManager::watchAccount(AccountState *state)
 
 void ProblemReportManager::handleUncleanExit()
 {
-    ProblemReportInfo info;
-    info.kind = _previous.run == RunMarker::PreviousRun::Crash ? ReportKind::Crash : ReportKind::UncleanExit;
-    info.crashText = _previous.crashText;
-
     if (ProblemReportSettings::enabled()) {
         _marker->closeCase();
-        submit(info, true);
+        answerHeldReport(true);
         return;
     }
 
     // Switch off: ask once. Either answer closes the case.
     auto *box = createClosedUnexpectedlyPrompt();
     box->setAttribute(Qt::WA_DeleteOnClose);
-    connect(box, &QDialog::finished, this, [this, box, info] {
+    connect(box, &QDialog::finished, this, [this, box] {
         const auto send = box->clickedButton() == static_cast<QAbstractButton *>(box->defaultButton());
         _marker->closeCase();
-        if (send) {
-            submit(info, true);
-        }
+        answerHeldReport(send);
     });
     box->setModal(false);
     box->show();
     box->raise();
     box->activateWindow();
+}
+
+void ProblemReportManager::holdReport(const ProblemReportInfo &info)
+{
+    // Leftovers of a question that was never answered (the app was closed meanwhile): the app's own files.
+    const QDir held(heldDirectory());
+    const auto leftovers = held.entryList(QStringList{ QStringLiteral("*.zip"), QStringLiteral(".building-*.tmp") }, QDir::Files | QDir::Hidden);
+    for (const auto &name : leftovers) {
+        QFile::remove(held.absoluteFilePath(name));
+    }
+
+    _heldInfo = info;
+    _heldInfo.serverHost = serverHost();
+    _heldZip.clear();
+    _heldBuilding = true;
+    _heldAnswered = false;
+
+    const auto dir = heldDirectory();
+    const auto sources = _sourcesProvider ? _sourcesProvider() : ProblemReportSources::live();
+    const auto reportInfo = _heldInfo;
+    QPointer<ProblemReportManager> self(this);
+    QThreadPool::globalInstance()->start([self, reportInfo, sources, dir] {
+        QString error;
+        const auto path = ProblemReportBuilder::build(reportInfo, sources, dir, &error);
+        if (!error.isEmpty()) {
+            qCWarning(lcProblemReportManager) << "could not make the report:" << error;
+        }
+        if (!self) {
+            return;
+        }
+        QMetaObject::invokeMethod(self.data(), [self, path] {
+            if (self) {
+                self->onHeldBuilt(path);
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
+void ProblemReportManager::onHeldBuilt(const QString &path)
+{
+    _heldBuilding = false;
+    _heldZip = path;
+    applyHeldAnswer();
+}
+
+void ProblemReportManager::answerHeldReport(bool send)
+{
+    _heldAnswered = true;
+    _heldSendNow = send;
+    applyHeldAnswer();
+}
+
+void ProblemReportManager::applyHeldAnswer()
+{
+    if (_heldBuilding || !_heldAnswered) {
+        return; // either the build or the answer is still to come
+    }
+    _heldAnswered = false;
+    const auto zip = std::exchange(_heldZip, QString());
+    if (!_heldSendNow) {
+        if (!zip.isEmpty()) {
+            QFile::remove(zip); // the app's own held copy, never a user file
+        }
+        return;
+    }
+    if (zip.isEmpty()) {
+        // The early build failed: build it the normal way once.
+        submit(_heldInfo, true);
+        return;
+    }
+
+    // Send: the held report joins the pending ones and goes out like any other.
+    const auto pending = pendingDirectory();
+    const auto target = ProblemReportBuilder::uniqueZipPath(pending, QFileInfo(zip).fileName());
+    if (!QFile::rename(zip, target)) {
+        qCWarning(lcProblemReportManager) << "could not move the held report to the pending folder";
+        QFile::remove(zip);
+        submit(_heldInfo, true);
+        return;
+    }
+    ProblemReportBuilder::prunePending(pending, ProblemReportSettings::maxPending);
+
+    Request request;
+    request.id = _nextId++;
+    request.build = false;
+    request.showTray = true;
+    request.userAction = true;
+    _queue.enqueue(request);
+    process();
 }
 
 quint64 ProblemReportManager::submit(ProblemReportInfo info, bool showTrayMessage)
@@ -254,6 +363,7 @@ void ProblemReportManager::sendPending()
     request.id = _nextId++;
     request.build = false;
     request.showTray = true;
+    request.userAction = false;
     _queue.enqueue(request);
     process();
 }
@@ -308,13 +418,22 @@ void ProblemReportManager::sendAll(const Request &request)
         return;
     }
     if (!account) {
-        finish(request, Outcome::SavedLocally, false);
+        if (anAccountExists()) {
+            // Signed in, but offline or still connecting (start-up, maintenance): the report waits and
+            // goes out when the account is connected. No interim message: the later send says "Problem report sent".
+            auto quiet = request;
+            quiet.showTray = false;
+            finish(quiet, Outcome::TryAgainLater, false);
+        } else {
+            finish(request, Outcome::SavedLocally, false);
+        }
         return;
     }
-    sendNext(account, zips, std::nullopt, request);
+    sendNext(account, zips, std::nullopt, std::nullopt, request);
 }
 
-void ProblemReportManager::sendNext(const AccountPtr &account, QStringList zips, std::optional<Outcome> best, const Request &request)
+void ProblemReportManager::sendNext(const AccountPtr &account, QStringList zips, std::optional<Outcome> best,
+    std::optional<bool> shared, const Request &request)
 {
     if (zips.isEmpty()) {
         finish(request, best.value_or(Outcome::TryAgainLater), best.has_value());
@@ -322,6 +441,8 @@ void ProblemReportManager::sendNext(const AccountPtr &account, QStringList zips,
     }
     const auto path = zips.takeFirst();
     auto *uploader = new ProblemReportUploader(account, path, this);
+    // One share check/create per batch: what the first report found is true for the rest.
+    uploader->setKnownShare(shared);
     connect(uploader, &ProblemReportUploader::finished, this,
         [this, uploader, account, path, zips, best, request](ProblemReportUploader::Result result, const QString &) {
             uploader->deleteLater();
@@ -340,14 +461,14 @@ void ProblemReportManager::sendNext(const AccountPtr &account, QStringList zips,
             } else {
                 next = Outcome::SavedNotShared;
             }
-            sendNext(account, zips, next, request);
+            sendNext(account, zips, next, result == ProblemReportUploader::Result::Sent, request);
         });
     uploader->start();
 }
 
 void ProblemReportManager::finish(const Request &request, Outcome outcome, bool uploaded)
 {
-    if (request.showTray && (request.build || uploaded)) {
+    if (request.showTray && (request.userAction || uploaded)) {
         Q_EMIT userMessage(outcomeText(outcome));
     }
     if (request.build) {

@@ -18,6 +18,8 @@
 #include <QObject>
 #include <QString>
 
+#include <optional>
+
 namespace OCC::Nourax {
 
 class ProblemReportUploader : public QObject
@@ -33,6 +35,11 @@ public:
     Q_ENUM(Result)
 
     ProblemReportUploader(AccountPtr account, const QString &zipPath, QObject *parent = nullptr);
+
+    /// When an earlier report of the same batch already found out whether the folder is shared with
+    /// Support (true: shared, false: the share failed quietly), the share check/create is skipped:
+    /// one attempt per batch, not one per report.
+    void setKnownShare(std::optional<bool> shared) { _knownShare = shared; }
 
     void start();
 
@@ -51,6 +58,7 @@ private:
     QString _zipPath;
     QByteArray _data;
     QString _uploadedName;
+    std::optional<bool> _knownShare;
     bool _finished = false;
 };
 

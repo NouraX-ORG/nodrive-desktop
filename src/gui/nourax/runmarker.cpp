@@ -154,8 +154,8 @@ void onAbortSignal(int sig)
     char buffer[64];
     char *out = buildSignalMessage(buffer, sig);
     writeFileW(s_crashMarkerPathW, buffer, static_cast<size_t>(out - buffer));
-    std::signal(sig, SIG_DFL);
-    std::raise(sig);
+    // Return, do not re-raise with SIG_DFL: the MSVC raise() would then call _exit(3) and abort() would never
+    // reach Windows Error Reporting (_CALL_REPORTFAULT / __fastfail). After this handler returns, abort() carries on as before.
 }
 
 #else // Unix

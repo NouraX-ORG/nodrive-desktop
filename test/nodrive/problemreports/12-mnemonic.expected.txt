@@ -1,0 +1,2 @@
+recovery mnemonic: <removed>
+sessionPassphrase=<removed>, folder=/Private

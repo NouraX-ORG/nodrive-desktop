@@ -52,15 +52,35 @@ const Re &pemHeaderOnly()
     return re;
 }
 
-// 2/7. Secret JSON fields or key=value pairs.
+// 2/7. Secret JSON fields or key=value pairs. A name may use "-" or "_" (the E2EE OCS API answers "private-key"),
+// and the value may be a string, a flat or one-level nested JSON object ("metadataKeys":{"0":"..."}) or a bare word.
 const Re &secretFields()
 {
     static const Re re(QStringLiteral(
         "(?<![A-Za-z0-9_])([\"']?)"
-        "(privateKey|private_key|mnemonic|metadataKey|metadata_key|encryptedMetadataKey|sessionPassphrase|passphrase|secret"
-        "|clientSecret|client_secret|password|passwd|appPassword|app_password|apppassword|token|accessToken|access_token"
-        "|refreshToken|refresh_token|api_key|apikey)"
-        "\\1(\\s*[:=]\\s*)(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*'|[^\\s,;&\"'}\\]<]+)"),
+        "(private[-_]?keys?|mnemonic|metadata[-_]?keys?|encrypted[-_]?metadata[-_]?keys?|session[-_]?passphrase|passphrase|secret"
+        "|client[-_]?secret|password|passwd|app[-_]?password|apppassword|token|access[-_]?token"
+        "|refresh[-_]?token|api[-_]?key|apikey)"
+        "\\1(\\s*[:=]\\s*)(\"(?:[^\"\\\\]|\\\\.)*\"|'[^']*'|\\{(?:[^{}]|\\{[^{}]*\\})*\\}|[^\\s,;&\"'}\\]<]+)"),
+        Re::CaseInsensitiveOption);
+    return re;
+}
+
+// 2b. A recovery phrase or passphrase that is not quoted may be several words: remove it up to the next
+// separator or the end of the line, not just the first word.
+const Re &multiWordSecrets()
+{
+    static const Re re(QStringLiteral(
+        "(?<![A-Za-z0-9_])([\"']?)(mnemonic|session[-_]?passphrase|passphrase)\\1(\\s*[:=]\\s*)(?![\\s\"'{<])[^\\r\\n,;&\"'}\\]<]+"),
+        Re::CaseInsensitiveOption);
+    return re;
+}
+
+// 3b. A Set-Cookie value that a log printed on its own line: "name=value; path=/; HttpOnly".
+const Re &setCookieContinuation()
+{
+    static const Re re(QStringLiteral(
+        "^(\\s*[A-Za-z0-9_.%-]+=)[^;\\s]*(?=\\s*;\\s*(?:path|domain|expires|max-age|secure|httponly|samesite)\\b)"),
         Re::CaseInsensitiveOption);
     return re;
 }
@@ -124,7 +144,10 @@ const Re &jwt()
 // 10. Email addresses, also as %40 in URLs and as user ids inside DAV paths.
 const Re &email()
 {
-    static const Re re(QStringLiteral("[A-Za-z0-9._%+-]+(?:@|%40)[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"));
+    // Not "icon@2x.png": retina image names are file names, which stay readable.
+    static const Re re(QStringLiteral(
+        "[A-Za-z0-9._%+-]+(?:@|%40)(?!\\d{1,2}x\\.(?i:png|jpe?g|gif|webp|svg|bmp|ico|tiff?|heic|avif)(?![A-Za-z0-9-]))"
+        "[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"));
     return re;
 }
 
@@ -202,13 +225,24 @@ QString ProblemReportScrubber::scrubLine(const QString &line)
             return m.captured(1) + m.captured(2) + removedMarker();
         });
     }
+    if (hasEquals) {
+        s = replaceAll(s, setCookieContinuation(), [](const QRegularExpressionMatch &m) -> QString {
+            return m.captured(1) + removedMarker();
+        });
+    }
     if (hasColon || hasEquals) {
+        s = replaceAll(s, multiWordSecrets(), [](const QRegularExpressionMatch &m) -> QString {
+            const auto quote = m.captured(1);
+            return quote + m.captured(2) + quote + m.captured(3) + removedMarker();
+        });
         s = replaceAll(s, secretFields(), [](const QRegularExpressionMatch &m) -> QString {
             const auto quote = m.captured(1);
             const auto value = m.captured(4);
             QString replacement = removedMarker();
             if (value.startsWith(QLatin1Char('"'))) {
                 replacement = QStringLiteral("\"<removed>\"");
+            } else if (value.startsWith(QLatin1Char('{'))) {
+                replacement = quote.isEmpty() ? removedMarker() : QStringLiteral("\"<removed>\"");
             } else if (value.startsWith(QLatin1Char('\''))) {
                 replacement = QStringLiteral("'<removed>'");
             }

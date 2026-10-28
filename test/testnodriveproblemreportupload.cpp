@@ -38,6 +38,11 @@ QJsonDocument ocsReply(int statusCode, const QJsonValue &data)
     return QJsonDocument(QJsonObject{ { "ocs", ocs } });
 }
 
+int zipCount(const QString &dir)
+{
+    return QDir(dir).entryList(QStringList{ QStringLiteral("*.zip") }, QDir::Files).size();
+}
+
 } // namespace
 
 class TestNoDriveProblemReportUpload : public QObject
@@ -378,6 +383,194 @@ private Q_SLOTS:
         _putStatus = 201;
         manager.sendPending();
         QTRY_VERIFY_WITH_TIMEOUT(!manager.hasPendingReports(), 30000);
+        verifyOnlyOwnHostAndSafeMethods();
+    }
+
+    // ---- signed in, but not connected (offline, still connecting at start-up) ----
+
+    void aSignedInAccountThatIsNotConnectedWaitsQuietlyAndSaysSentOnce()
+    {
+        QTemporaryDir work;
+        const QString pending = work.path() + QStringLiteral("/pending");
+        ProblemReportManager manager;
+        manager.setPendingDirectory(pending);
+        manager.setSourcesProvider([&work] { return sourcesIn(work.path()); });
+        bool connected = false;
+        manager.setAccountProvider([this, &connected] { return connected ? _account : AccountPtr(); });
+        manager.setAccountExistsProvider([] { return true; }); // signed in, only not connected yet
+
+        quint64 finishedId = 0;
+        ProblemReportManager::Outcome outcome = ProblemReportManager::Outcome::Sent;
+        QObject::connect(&manager, &ProblemReportManager::submissionFinished, &manager, [&](quint64 id, ProblemReportManager::Outcome o) {
+            finishedId = id;
+            outcome = o;
+        });
+        QStringList messages;
+        QObject::connect(&manager, &ProblemReportManager::userMessage, &manager, [&messages](const QString &text) {
+            messages << text;
+        });
+
+        // An automatic report (tray message wanted): no "sign in" text, no interim message.
+        ProblemReportInfo info;
+        info.kind = ReportKind::UncleanExit;
+        const auto id = manager.submit(info, true);
+        QTRY_VERIFY_WITH_TIMEOUT(finishedId == id, 30000);
+        QCOMPARE(outcome, ProblemReportManager::Outcome::TryAgainLater);
+        QVERIFY(messages.isEmpty());
+        QVERIFY(manager.hasPendingReports());
+        QVERIFY(_requests.isEmpty());
+
+        // The account connects: one "Problem report sent".
+        connected = true;
+        manager.sendPending();
+        QTRY_VERIFY_WITH_TIMEOUT(!manager.hasPendingReports(), 30000);
+        QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 10000);
+        QCOMPARE(messages, QStringList{ QStringLiteral("Problem report sent") });
+        verifyOnlyOwnHostAndSafeMethods();
+    }
+
+    void aManualReportWhileNotConnectedSaysItWillTryAgain()
+    {
+        QTemporaryDir work;
+        ProblemReportManager manager;
+        manager.setPendingDirectory(work.path() + QStringLiteral("/pending"));
+        manager.setSourcesProvider([&work] { return sourcesIn(work.path()); });
+        manager.setAccountProvider([] { return AccountPtr(); });
+        manager.setAccountExistsProvider([] { return true; });
+
+        quint64 finishedId = 0;
+        ProblemReportManager::Outcome outcome = ProblemReportManager::Outcome::Sent;
+        QObject::connect(&manager, &ProblemReportManager::submissionFinished, &manager, [&](quint64 id, ProblemReportManager::Outcome o) {
+            finishedId = id;
+            outcome = o;
+        });
+        const auto id = manager.submit(ProblemReportInfo(), false);
+        QTRY_VERIFY_WITH_TIMEOUT(finishedId == id, 30000);
+        QCOMPARE(outcome, ProblemReportManager::Outcome::TryAgainLater);
+        QCOMPARE(ProblemReportManager::outcomeText(outcome),
+            QStringLiteral("Could not send the problem report now. NoDrive will try again when it is connected."));
+        QVERIFY(manager.hasPendingReports());
+        QVERIFY(_requests.isEmpty());
+    }
+
+    // ---- the report of a crash or unclean exit is built at once and kept until the user answers ----
+
+    void aHeldReportIsBuiltAtOnceAndSentOnSendWithoutAnInterimMessage()
+    {
+        QTemporaryDir work;
+        const QString pending = work.path() + QStringLiteral("/pending");
+        const QString held = pending + QStringLiteral("/awaiting-answer");
+        ProblemReportManager manager;
+        manager.setPendingDirectory(pending);
+        manager.setSourcesProvider([&work] { return sourcesIn(work.path()); });
+        bool connected = false;
+        manager.setAccountProvider([this, &connected] { return connected ? _account : AccountPtr(); });
+        manager.setAccountExistsProvider([] { return true; });
+        QStringList messages;
+        QObject::connect(&manager, &ProblemReportManager::userMessage, &manager, [&messages](const QString &text) {
+            messages << text;
+        });
+
+        ProblemReportInfo info;
+        info.kind = ReportKind::UncleanExit;
+        manager.holdReport(info);
+        // Built before anybody answered; nothing is pending, so nothing can be sent by a reconnect.
+        QTRY_COMPARE_WITH_TIMEOUT(zipCount(held), 1, 30000);
+        QCOMPARE(zipCount(pending), 0);
+        QVERIFY(!manager.hasPendingReports());
+
+        manager.answerHeldReport(true);
+        QTRY_VERIFY_WITH_TIMEOUT(manager.hasPendingReports(), 10000);
+        QCOMPARE(zipCount(held), 0);
+        QTest::qWait(200);
+        QVERIFY(messages.isEmpty()); // signed in but not connected: no interim message
+        QVERIFY(_requests.isEmpty());
+
+        connected = true;
+        manager.sendPending();
+        QTRY_VERIFY_WITH_TIMEOUT(!manager.hasPendingReports(), 30000);
+        QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 10000);
+        QCOMPARE(messages, QStringList{ QStringLiteral("Problem report sent") });
+        verifyOnlyOwnHostAndSafeMethods();
+    }
+
+    void aHeldReportAnsweredBeforeTheBuildEndsIsStillSent()
+    {
+        QTemporaryDir work;
+        const QString pending = work.path() + QStringLiteral("/pending");
+        ProblemReportManager manager;
+        manager.setPendingDirectory(pending);
+        manager.setSourcesProvider([&work] { return sourcesIn(work.path()); });
+        manager.setAccountProvider([this] { return _account; });
+        QStringList messages;
+        QObject::connect(&manager, &ProblemReportManager::userMessage, &manager, [&messages](const QString &text) {
+            messages << text;
+        });
+
+        ProblemReportInfo info;
+        info.kind = ReportKind::Crash;
+        info.crashText = QStringLiteral("signal 11 (SIGSEGV)");
+        manager.holdReport(info);
+        manager.answerHeldReport(true); // the worker thread is probably still busy
+        QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 30000);
+        QCOMPARE(messages, QStringList{ QStringLiteral("Problem report sent") });
+        QVERIFY(!manager.hasPendingReports());
+        QCOMPARE(count(QStringLiteral("PUT")), 1);
+    }
+
+    void aHeldReportThatTheUserDeclinesIsRemovedAndNeverSent()
+    {
+        QTemporaryDir work;
+        const QString pending = work.path() + QStringLiteral("/pending");
+        const QString held = pending + QStringLiteral("/awaiting-answer");
+        ProblemReportManager manager;
+        manager.setPendingDirectory(pending);
+        manager.setSourcesProvider([&work] { return sourcesIn(work.path()); });
+        manager.setAccountProvider([this] { return _account; });
+
+        ProblemReportInfo info;
+        info.kind = ReportKind::UncleanExit;
+        manager.holdReport(info);
+        QTRY_COMPARE_WITH_TIMEOUT(zipCount(held), 1, 30000);
+        manager.answerHeldReport(false); // "Not now"
+        QCOMPARE(zipCount(held), 0);
+        QVERIFY(!manager.hasPendingReports());
+        manager.sendPending();
+        QTest::qWait(300);
+        QVERIFY(_requests.isEmpty()); // nothing left the computer
+    }
+
+    // ---- one share attempt per batch ----
+
+    void aBatchOfReportsTriesTheShareOnlyOnce()
+    {
+        QTemporaryDir work;
+        const QString pending = work.path() + QStringLiteral("/pending");
+        QDir().mkpath(pending);
+        const QStringList names{ QStringLiteral("2026-10-28_10-00-00_linux_35.0.0-nourax.1.zip"),
+            QStringLiteral("2026-10-28_11-00-00_linux_35.0.0-nourax.1.zip"),
+            QStringLiteral("2026-10-28_12-00-00_linux_35.0.0-nourax.1.zip") };
+        for (const auto &name : names) {
+            QFile file(pending + QLatin1Char('/') + name);
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write("PK fake report zip, the content does not matter here");
+        }
+        ProblemReportManager manager;
+        manager.setPendingDirectory(pending);
+        manager.setAccountProvider([this] { return _account; });
+        _postStatus = 404; // nourax-support does not exist yet
+        QStringList messages;
+        QObject::connect(&manager, &ProblemReportManager::userMessage, &manager, [&messages](const QString &text) {
+            messages << text;
+        });
+
+        manager.sendPending();
+        QTRY_VERIFY_WITH_TIMEOUT(!manager.hasPendingReports(), 30000);
+        QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 10000);
+        QCOMPARE(messages, QStringList{ QStringLiteral("Saved in your NoDrive › Problem reports.") });
+        QCOMPARE(count(QStringLiteral("PUT")), 3); // every report is uploaded
+        QCOMPARE(count(QStringLiteral("GET"), QStringLiteral("/shares")), 1); // the share is checked once
+        QCOMPARE(count(QStringLiteral("POST"), QStringLiteral("/shares")), 1); // and created once
         verifyOnlyOwnHostAndSafeMethods();
     }
 

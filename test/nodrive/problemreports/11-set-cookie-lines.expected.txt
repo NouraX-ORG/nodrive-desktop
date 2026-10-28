@@ -1,0 +1,4 @@
+2026-10-28 14:03:22.250 [ info sync.httplogger ]:	"abc125": Response: PROPFIND 207 https://drive.example.org/remote.php/dav/files/jane Header: { Set-Cookie: <removed>
+cf_clearance=<removed>; path=/; expires=Thu, 01 Jan 2026 00:00:01 GMT; SameSite=None; Secure
+  __cf_bm=<removed>; path=/; domain=.example.org; HttpOnly
+Date: Wed, 28 Oct 2026 14:03:22 GMT, } Data: []

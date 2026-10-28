@@ -10,6 +10,7 @@
 
 #include "settingsswitch.h"
 
+#include <QCoreApplication>
 #include <QAbstractButton>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -38,14 +39,15 @@ void ProblemReportsPanel::install(QWidget *page, QVBoxLayout *pageLayout, QGroup
     auto *textColumn = new QVBoxLayout();
     textColumn->setObjectName(QStringLiteral("problemReportsTextColumn"));
 
-    auto *label = new QLabel(QObject::tr("Send problem reports to Nourax"), panel);
+    auto *label = new QLabel(QCoreApplication::translate("OCC::Nourax::ProblemReportsPanel", "Send problem reports to Nourax"), panel);
     label->setObjectName(QStringLiteral("problemReportsLabel"));
     label->setWordWrap(true);
     textColumn->addWidget(label);
 
-    auto *summary = new QLabel(QObject::tr("If the app has a problem, send a report to Nourax Support so we can fix it. "
-                                           "Reports are saved in your NoDrive and shared with Nourax Support. "
-                                           "They never include passwords."),
+    auto *summary = new QLabel(QCoreApplication::translate("OCC::Nourax::ProblemReportsPanel",
+                                               "If the app has a problem, send a report to Nourax Support so we can fix it. "
+                                               "Reports are saved in your NoDrive and shared with Nourax Support. "
+                                               "They never include passwords."),
         panel);
     summary->setObjectName(QStringLiteral("problemReportsSummary"));
     summary->setWordWrap(true);
@@ -71,7 +73,7 @@ void ProblemReportsPanel::install(QWidget *page, QVBoxLayout *pageLayout, QGroup
     pageLayout->insertWidget(pageLayout->indexOf(actionsGroupBox), panel);
 
     // "Report a problem" directly after "Create Debug Archive".
-    auto *button = new QPushButton(QObject::tr("Report a problem"), actionsGroupBox);
+    auto *button = new QPushButton(QCoreApplication::translate("OCC::Nourax::ProblemReportsPanel", "Report a problem"), actionsGroupBox);
     button->setObjectName(QStringLiteral("problemReportButton"));
     actionsLayout->insertWidget(actionsLayout->indexOf(debugArchiveButton) + 1, button);
     QWidget::setTabOrder(debugArchiveButton, button);

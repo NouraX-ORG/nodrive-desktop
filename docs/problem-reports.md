@@ -14,15 +14,23 @@ section 1. Works the same on Windows, macOS and Linux.
   switch off and before sign-in. The dialog has an optional box "What went wrong?", the link
   "What's included" (a plain-words list) and the buttons Send and Cancel.
 
-**After a crash or an unclean exit**, about 3 seconds after the next start:
+**After a crash or an unclean exit**, the report is built at once at start-up (before any log
+rotation) into `<config folder>/problem-reports/pending/awaiting-answer/`. About 3 seconds after the
+start:
 
-- switch **on**: the report is made and sent, then a tray message "Problem report sent" (or
-  "Saved in your NoDrive > Problem reports." if the share to Support failed);
+- switch **on**: the held report is moved to `pending/` and sent, then a tray message "Problem report
+  sent" (or "Saved in your NoDrive > Problem reports." if the share to Support failed);
 - switch **off**: the question "NoDrive closed unexpectedly. Send a problem report?" with Send
-  (default) and Not now (Escape). It is asked once: either answer closes the case.
+  (default) and Not now (Escape). It is asked once: either answer closes the case. Send moves the held
+  report to `pending/` and sends it; Not now removes the held copy. Nothing in `awaiting-answer/` is
+  ever sent by a reconnect, so a report the user has not agreed to cannot leave the computer.
 
-Other results: "Saved on this computer. NoDrive sends it after you sign in." (nobody signed in) and
-"Could not send the problem report now. NoDrive will try again when it is connected." (network).
+Other results: "Saved on this computer. NoDrive sends it after you sign in." (nobody is signed in) and
+"Could not send the problem report now. NoDrive will try again when it is connected." (the network is
+down, or the account is signed in but not connected yet). For an automatic report (switch on, or Send
+on the question) there is no interim message while the account is signed in but not connected yet
+(start-up, offline, maintenance): the report waits in `pending/` and the one message "Problem report
+sent" appears when the account connects.
 All texts are English; German and Arabic show English until they are translated (to-do).
 
 ## 2. Where it goes (the account's own connection only)
@@ -35,7 +43,8 @@ All texts are English; German and Arabic show English until they are translated 
 4. Otherwise one `POST` to the OCS Share API: `shareType=0`, `shareWith=nourax-support`,
    `permissions=1` (read only). If it fails (for example the account does not exist yet), the report
    stays saved, the app says "Saved in your NoDrive > Problem reports." and there is no retry loop;
-   the next report tries once more.
+   the next report tries once more. When several waiting reports are sent together, the share is
+   checked or created once for the whole batch.
 
 All requests use the account's own network manager, credentials and host. Nothing else is contacted:
 no analytics, no telemetry, no background pings, no timer. With nobody signed in, the zip waits in
@@ -56,19 +65,24 @@ One zip, at most **5,000,000 bytes** (the oldest log lines are dropped first):
 
 The sync journal databases and the macOS File Provider `*.realm` files are left out on purpose: they
 are binary, cannot be scrubbed and can be very large. "Create Debug Archive" still includes them.
-`server_host` is empty when nobody was signed in when the report was made.
+`server_host` is the host of the signed-in account at the time the report is made (also when the
+account is not connected yet). It is empty only when no account exists; the report is not rewritten
+when it is sent, because the folder it lands in already belongs to the account's own server.
 
 ## 4. Scrubbing (always, before zipping)
 
 `src/gui/nourax/problemreportscrubber.cpp`, tested with fixtures in `test/nodrive/problemreports/`
 and with 200 random secrets of each kind. Removed: PEM private keys, e2ee fields (`mnemonic`,
-`privateKey`, `metadataKey`, `passphrase`, ...), `Authorization`, `Proxy-Authorization`, `Cookie` and
-`Set-Cookie` values, `Basic` and `Bearer` values, session and instance cookies by name
+`privateKey` / `private-key`, `metadataKey` / `metadataKeys` (also as an object), `passphrase`, ...;
+names may use `-` or `_`; an unquoted `mnemonic` or `passphrase` is removed up to the next separator,
+not just its first word), `Authorization`, `Proxy-Authorization`, `Cookie` and
+`Set-Cookie` values (also a Set-Cookie value that a log printed on its own line, `name=value; path=/;
+HttpOnly`), `Basic` and `Bearer` values, session and instance cookies by name
 (`oc_sessionPassphrase`, `nc_session_id`, `__Host-*`, `oc<10-14 characters>`), URL query and form
 values named `token`, `password`, `pass`, `secret`, `key`, `sig`, `code`, `state`, `user:password@`
 in URLs, JSON and key=value fields for passwords and tokens, `--apppassword <value>`, JWTs, any run
 of 32 or more letters and digits that has upper case, lower case and a digit, and the grouped form
-`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`. Email addresses become `<email>`. In `nodrive.cfg` every key that
+`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`. Email addresses become `<email>` (retina image names such as `icon@2x.png` stay). In `nodrive.cfg` every key that
 contains `pass`, `token`, `secret`, `privatekey`, `mnemonic` or `cookie` loses its value.
 **File and folder names are kept** because they are needed to find the problem; the "What's
 included" text says so.
@@ -112,7 +126,7 @@ the object name `advancedGroupBox`; after an upstream change to that style sheet
 |---|---|---|
 | `NoDriveProblemReportScrubber` | one fixture per rule, "keep" fixture, idempotence, 200 random secrets of each kind | ctest, 3 OSes |
 | `NoDriveProblemReport` | `report.json` fields, file name, `.gz` logs, 5 MB cap with the newest line kept, newest 5 kept, `_2` names, all rows of the run marker table, "ask once", real crashes of a helper process (segmentation fault, abort, SIGTERM) | ctest, 3 OSes |
-| `NoDriveProblemReportUpload` | the upload against upstream's in-process fake server: MKCOL, `If-None-Match`, 412, share body, one POST per report, pending queue, only own host and MKCOL/PUT/GET/POST | ctest, 3 OSes |
+| `NoDriveProblemReportUpload` | the upload against upstream's in-process fake server: MKCOL, `If-None-Match`, 412, share body, one share attempt per batch, pending queue, an account that is signed in but not connected (no interim message, one "Problem report sent" later), the held report of a crash (built at once, sent only on Send), only own host and MKCOL/PUT/GET/POST | ctest, 3 OSes |
 | `NoDriveProblemReportUi` | exact texts, switch off by default and saved, button position, no "Nextcloud" text, screenshots light and dark with pixel checks | ctest, 3 OSes |
 | `NoDriveProblemReportServer` | the same against a real Nextcloud 35.0.2 (job `report-server` in `linux.yml`, four phases, `tools/ci/report-server.sh`) | Linux only (no Docker on the Windows and macOS runners) |
 | Smoke scripts (`tools/screenshots/*`) | the real packaged app: question after a killed run, Not now, no second question, Send, a scrubbed report in `pending/` | 3 OSes, light and dark |

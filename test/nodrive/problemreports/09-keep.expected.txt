@@ -4,3 +4,4 @@ Checksum MD5:D41D8CD98F00B204E9800998ECF8427E done
 file id 00012345ocabcd1234efgh and a very long folder name Company_Documents_2026_Quarter_Three_Final
 Basic configuration loaded; Bearer is not mentioned. Status code: 207
 2026-10-28 14:03:22.101 [ info nodrive.sync ]: Sync finished with 12 items in 3.4 s
+Loading /usr/share/icons/icon@2x.png and logo@3x.jpg for the tray
