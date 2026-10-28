@@ -337,6 +337,7 @@ jobs:
           path: |
             ${{ runner.temp }}/ctest-macos.xml
             ${{ env.BUILD_DIR }}/Testing/Temporary/LastTest*.log
+            ${{ env.BUILD_DIR }}/bin/nodrive-screenshots/
           retention-days: 30
           if-no-files-found: ignore
 

@@ -70,6 +70,8 @@ be opened) and one stale translation that is never looked up (dead code). See
 | Second language | pending owner test | pending owner test | pending owner test |
 | Next to the real Nextcloud app (optional) | pending owner test | pending owner test | pending owner test |
 | Device name in Settings > Security | pending owner test | pending owner test | pending owner test |
+| Problem reports: switch off by default; "Report a problem" saves a zip in "Problem reports" ([problem-reports.md](problem-reports.md)) | pending owner test | pending owner test | pending owner test |
+| Problem reports: no question after logout/logoff, the question after ending the app in the task manager, "Not now" is asked once | pending owner test | pending owner test | pending owner test |
 
 Offline files and automatic photo upload are phone features; they do not apply to
 the desktop app.

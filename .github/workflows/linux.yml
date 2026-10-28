@@ -107,6 +107,7 @@ jobs:
           path: |
             build/ctest-junit.xml
             build/Testing/Temporary/LastTest.log
+            build/bin/nodrive-screenshots/
           if-no-files-found: warn
           retention-days: 30
 

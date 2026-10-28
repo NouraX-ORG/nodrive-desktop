@@ -376,6 +376,7 @@ jobs:
           name: nodrive-windows-build-logs
           path: |
             ${{ env.BUILD_DIR }}\Testing\Temporary\LastTest*.log
+            ${{ env.BUILD_DIR }}\bin\nodrive-screenshots\
             ${{ runner.temp }}\logs\
           if-no-files-found: ignore
           retention-days: 30
