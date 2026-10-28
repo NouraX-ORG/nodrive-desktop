@@ -10,7 +10,7 @@
 
 namespace OCC::Nourax::Agenda {
 
-QString toString(CalendarMode mode)
+QString modeToString(CalendarMode mode)
 {
     switch (mode) {
     case CalendarMode::Personal:
@@ -30,14 +30,14 @@ QString toString(CalendarMode mode)
 CalendarMode calendarModeFromString(const QString &text, CalendarMode fallback)
 {
     for (auto mode : {CalendarMode::Personal, CalendarMode::Work, CalendarMode::Team, CalendarMode::Info, CalendarMode::Hidden}) {
-        if (toString(mode) == text) {
+        if (modeToString(mode) == text) {
             return mode;
         }
     }
     return fallback;
 }
 
-QString toString(WorkMode mode)
+QString modeToString(WorkMode mode)
 {
     switch (mode) {
     case WorkMode::DoOversee:
@@ -53,7 +53,7 @@ QString toString(WorkMode mode)
 WorkMode workModeFromString(const QString &text, WorkMode fallback)
 {
     for (auto mode : {WorkMode::DoOversee, WorkMode::Do, WorkMode::Hidden}) {
-        if (toString(mode) == text) {
+        if (modeToString(mode) == text) {
             return mode;
         }
     }
@@ -206,17 +206,17 @@ QJsonObject SourceSettings::toJson() const
     QJsonObject o;
     QJsonObject cal;
     for (auto it = _calendarModes.constBegin(); it != _calendarModes.constEnd(); ++it) {
-        cal.insert(it.key(), toString(it.value()));
+        cal.insert(it.key(), modeToString(it.value()));
     }
     o.insert(QStringLiteral("calendars"), cal);
     QJsonObject projects;
     for (auto it = _projectModes.constBegin(); it != _projectModes.constEnd(); ++it) {
-        projects.insert(QString::number(it.key()), toString(it.value()));
+        projects.insert(QString::number(it.key()), modeToString(it.value()));
     }
     o.insert(QStringLiteral("projects"), projects);
     QJsonObject boards;
     for (auto it = _boardModes.constBegin(); it != _boardModes.constEnd(); ++it) {
-        boards.insert(QString::number(it.key()), toString(it.value()));
+        boards.insert(QString::number(it.key()), modeToString(it.value()));
     }
     o.insert(QStringLiteral("boards"), boards);
     o.insert(QStringLiteral("personalAnswered"), _personalAnswered);

@@ -23,9 +23,9 @@ namespace OCC::Nourax::Agenda {
 enum class CalendarMode { Personal, Work, Team, Info, Hidden };
 enum class WorkMode { DoOversee, Do, Hidden };
 
-QString toString(CalendarMode mode);
+QString modeToString(CalendarMode mode);
 CalendarMode calendarModeFromString(const QString &text, CalendarMode fallback);
-QString toString(WorkMode mode);
+QString modeToString(WorkMode mode);
 WorkMode workModeFromString(const QString &text, WorkMode fallback);
 
 /// How the signed-in person relates to a NoGantt project (design 6.1).

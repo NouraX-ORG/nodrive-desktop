@@ -32,7 +32,10 @@
 #include <QTextStream>
 
 using namespace AgendaTest;
-using namespace OCC;
+using OCC::AbstractCredentials;
+using OCC::AccessManager;
+using OCC::Account;
+using OCC::AccountPtr;
 
 namespace {
 

@@ -279,7 +279,7 @@ private Q_SLOTS:
         // A trailing space in the name: not the exact name, so it is an unknown agent and a flag.
         {
             auto input = loadScenario(QStringLiteral("ali"));
-            setResourceField(&input, 13, QStringLiteral("name"), robot() + QStringLiteral(" Research-Bot (Ali) "));
+            setResourceField(&input, 13, QStringLiteral("name"), QString(robot() + QStringLiteral(" Research-Bot (Ali) ")));
             const auto out = AgendaBuilder::build(input);
             const auto *item = find(out.items, QStringLiteral("gantt:task:108"));
             QVERIFY(item);
@@ -289,7 +289,7 @@ private Q_SLOTS:
         // The person's name differs: not recognised.
         {
             auto input = loadScenario(QStringLiteral("ali"));
-            setResourceField(&input, 13, QStringLiteral("name"), robot() + QStringLiteral(" Research-Bot (Alice)"));
+            setResourceField(&input, 13, QStringLiteral("name"), QString(robot() + QStringLiteral(" Research-Bot (Alice)")));
             const auto *item = find(AgendaBuilder::build(input).items, QStringLiteral("gantt:task:108"));
             QVERIFY(hasProblem(*item, ProblemFlag::Kind::UnknownAgent));
         }

@@ -84,7 +84,7 @@ jobs:
             -DBUILD_TESTING=1 -DMIRALL_VERSION_BUILD=${{ github.run_number }}
 
       - name: Compile
-        run: cmake --build build
+        run: cmake --build build -- -k 0
 
       - name: Unit tests (ctest under Xvfb)
         run: |

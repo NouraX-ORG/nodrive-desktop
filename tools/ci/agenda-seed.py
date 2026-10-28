@@ -66,7 +66,8 @@ def request(who, method, path, body=None, headers=None, expect=(200, 201, 204, 2
     except urllib.error.HTTPError as e:
         status, payload = e.code, e.read()
     if expect and status not in expect:
-        raise RuntimeError("%s %s as %s -> HTTP %d" % (method, path, who, status))
+        detail = payload[:300].decode("utf-8", "replace").replace(chr(10), " ") if payload else ""
+        raise RuntimeError("%s %s as %s -> HTTP %d %s" % (method, path, who, status, detail))
     if raw:
         return status, payload
     if payload and payload[:1] in (b"{", b"["):

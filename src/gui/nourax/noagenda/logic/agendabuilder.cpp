@@ -54,7 +54,7 @@ namespace {
 
 QString modeTextForCalendar(CalendarMode mode)
 {
-    return toString(mode);
+    return modeToString(mode);
 }
 
 } // namespace
@@ -143,8 +143,8 @@ BuildOutput AgendaBuilder::build(const BuildInput &input)
             e.key = QString::number(relation.id);
             e.name = relation.title;
             e.color = sourceColor(relation.color);
-            e.defaultMode = toString(relation.defaultMode());
-            e.mode = toString(ctx.settings.projectMode(relation));
+            e.defaultMode = modeToString(relation.defaultMode());
+            e.mode = modeToString(ctx.settings.projectMode(relation));
             if (relation.owned) {
                 e.note = AgendaText::tr("You run this project");
             } else if (relation.seenOnlyAsServerAdmin) {
@@ -154,7 +154,7 @@ BuildOutput AgendaBuilder::build(const BuildInput &input)
             } else if (!relation.ownerName.isEmpty()) {
                 e.note = AgendaText::tr("Shared by %1").arg(relation.ownerName);
             }
-            if (e.mode == toString(WorkMode::DoOversee)) {
+            if (e.mode == modeToString(WorkMode::DoOversee)) {
                 out.anyOversee = true;
             }
             out.sources.append(e);
@@ -169,12 +169,12 @@ BuildOutput AgendaBuilder::build(const BuildInput &input)
             e.key = QString::number(relation.id);
             e.name = relation.title;
             e.color = sourceColor(QLatin1Char('#') + relation.color);
-            e.defaultMode = toString(relation.defaultMode());
-            e.mode = toString(ctx.settings.boardMode(relation));
+            e.defaultMode = modeToString(relation.defaultMode());
+            e.mode = modeToString(ctx.settings.boardMode(relation));
             if (relation.owned || relation.canManage) {
                 e.note = AgendaText::tr("You run this board");
             }
-            if (e.mode == toString(WorkMode::DoOversee)) {
+            if (e.mode == modeToString(WorkMode::DoOversee)) {
                 out.anyOversee = true;
             }
             out.sources.append(e);
