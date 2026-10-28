@@ -144,7 +144,7 @@ def task(project, title, start, end, rows, status=None, progress=0, deps=None, p
     if status:
         body["status"] = status
     if deps:
-        body["dependencies"] = [{"predecessor_id": d, "dependency_type": "EA", "lag_days": 0} for d in deps]
+        body["dependencies"] = [{"predecessor_id": "t-%d" % d, "dependency_type": "EA", "lag_days": 0} for d in deps]
     if phase_id:
         body["subproject_id"] = phase_id
     t = ocs("mara", "POST", "projects/%d/tasks" % project, body)

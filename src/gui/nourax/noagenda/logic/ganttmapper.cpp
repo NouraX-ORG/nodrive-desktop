@@ -254,7 +254,9 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
             QString blockedBy;
             const auto deps = task.value(QLatin1String("dependencies")).toArray();
             for (const auto &depValue : deps) {
-                const int predecessor = intOf(depValue.toObject().value(QLatin1String("predecessor_id")));
+                // NoGantt writes the predecessor as "t-<task id>" (or "m-<milestone id>").
+                const auto predecessorText = depValue.toObject().value(QLatin1String("predecessor_id")).toString();
+                const int predecessor = predecessorText.startsWith(QLatin1String("t-")) ? predecessorText.mid(2).toInt() : 0;
                 const auto pred = tasksById.value(predecessor);
                 if (!pred.isEmpty() && isLate(dateOfText(pred.value(QLatin1String("end_date"))), pred.value(QLatin1String("status")).toString(), ctx.today)) {
                     blocked = true;

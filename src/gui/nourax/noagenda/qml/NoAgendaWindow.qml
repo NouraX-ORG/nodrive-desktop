@@ -91,7 +91,7 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.right: parent.right
 
-            MonthGrid {
+            JumpCalendar {
                 id: grid
                 visible: win.ctrl.viewMode === "month"
                 anchors.top: parent.top

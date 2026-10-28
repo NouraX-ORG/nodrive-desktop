@@ -146,6 +146,7 @@ class TestNoDriveAgendaUi : public QObject
 
     void show(Env *env)
     {
+        QVERIFY(env->window);
         env->window->resize(1040, 1000);
         env->window->show();
         QVERIFY(QTest::qWaitForWindowExposed(env->window));

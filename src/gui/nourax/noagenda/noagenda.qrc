@@ -7,7 +7,7 @@
         <file alias="DetailPanel.qml">qml/DetailPanel.qml</file>
         <file alias="FlatButton.qml">qml/FlatButton.qml</file>
         <file alias="Glyph.qml">qml/Glyph.qml</file>
-        <file alias="MonthGrid.qml">qml/MonthGrid.qml</file>
+        <file alias="JumpCalendar.qml">qml/JumpCalendar.qml</file>
         <file alias="NoAgendaWindow.qml">qml/NoAgendaWindow.qml</file>
         <file alias="PersonalCalendarsDialog.qml">qml/PersonalCalendarsDialog.qml</file>
         <file alias="Seg.qml">qml/Seg.qml</file>

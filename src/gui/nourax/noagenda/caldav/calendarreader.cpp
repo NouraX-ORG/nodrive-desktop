@@ -301,7 +301,7 @@ void CalendarReader::syncWindow(const QDate &today, QDate *from, QDate *to)
 {
     const QDate firstOfMonth(today.year(), today.month(), 1);
     *from = firstOfMonth.addMonths(-1);
-    *to = firstOfMonth.addMonths(12).addDays(-1);
+    *to = firstOfMonth.addMonths(13).addDays(-1);
 }
 
 CalendarInfo CalendarReader::classify(const DavResponse &response, const QString &davUser)

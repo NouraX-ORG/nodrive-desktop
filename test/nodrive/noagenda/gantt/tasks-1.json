@@ -130,7 +130,7 @@
       {
         "id": 1004,
         "task_id": 104,
-        "predecessor_id": 103,
+        "predecessor_id": "t-103",
         "dependency_type": "EA",
         "lag_days": 0
       }
