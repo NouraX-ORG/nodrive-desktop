@@ -968,6 +968,161 @@ foreach ($v in $Variants) {
         }
     }
 }
+
+# ---------------------------------------------------------------------------
+# 3b. Problem reports: unclean-exit question, "ask once", scrubbed report in pending\
+# (plans/round3-desktop-plan.md, 1.8). Nobody is signed in, so a report waits on disk;
+# nothing is sent anywhere. All secrets below are made up.
+# ---------------------------------------------------------------------------
+function Marker-State {
+    $f = Join-Path $ConfDir 'problem-reports\run.marker'
+    if (Test-Path -LiteralPath $f) {
+        try { return [string](Get-Content -LiteralPath $f -Raw | ConvertFrom-Json).state } catch { return 'unreadable' }
+    }
+    return 'none'
+}
+
+# The question is a small window titled "NoDrive" that is not the wizard.
+function Find-Prompt([int] $procId, $wizard) {
+    return App-Windows $procId | Where-Object { $_.Title -eq $AppName -and (-not $wizard -or $_.Handle -ne $wizard.Handle) } | Select-Object -First 1
+}
+
+function Wait-Prompt([int] $procId, $wizard, [int] $seconds) {
+    $deadline = (Get-Date).AddSeconds($seconds)
+    while ((Get-Date) -lt $deadline) {
+        $p = Find-Prompt $procId $wizard
+        if ($p) { return $p }
+        Start-Sleep -Milliseconds 500
+    }
+    return $null
+}
+
+function Start-Unclean([string] $logDir) {
+    $p = Start-Process -FilePath $Exe -ArgumentList @('--logdebug', '--logflush', '--logdir', "`"$logDir`"") -PassThru
+    $NetPids.Add($p.Id)
+    return $p
+}
+
+function Kill-NoDrive([System.Diagnostics.Process] $proc) {
+    # TerminateProcess: no clean-up runs, like Task Manager "End task" or a power cut.
+    if ($proc -and -not $proc.HasExited) { try { $proc.Kill() } catch { } }
+    Get-Process -Name $ExeName -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+}
+
+foreach ($v in @($Variants | Where-Object { $_.Name -in 'en-light', 'en-dark' })) {
+    $tag = "$($v.Name)-unclean"
+    Step "run-$tag" {
+        Stop-NoDrive $null
+        Remove-Item -LiteralPath $ConfDir, $LocalDir -Recurse -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $Personalize -Name AppsUseLightTheme -Value $(if ($v.Dark) { 0 } else { 1 }) -Type DWord
+        Set-ItemProperty -Path $Personalize -Name SystemUsesLightTheme -Value $(if ($v.Dark) { 0 } else { 1 }) -Type DWord
+        [NdWin]::BroadcastSettingChange('ImmersiveColorSet')
+        $sl = Start-Process -FilePath $Exe -ArgumentList @('--set-language', $v.Lang) -PassThru
+        if (-not $sl.WaitForExit(60000)) { $sl.Kill(); throw "--set-language $($v.Lang) did not exit" }
+        $logDir = Join-Path $Work "logs-$tag"
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+        [NdWin]::SweepTray()
+
+        # 1. A run that never quits cleanly (killed).
+        $proc = Start-Unclean $logDir
+        $w = Wait-Wizard $proc.Id 120
+        if (-not $w) { Result "marker-running-$tag" 'FAIL' "no $AppName window within 120 s"; Kill-NoDrive $proc; return }
+        Start-Sleep -Seconds 6
+        $state = Marker-State
+        Result "marker-running-$tag" $(if ($state -eq 'running') { 'PASS' } else { 'FAIL' }) "run.marker is '$state' while the app runs"
+        Kill-NoDrive $proc
+        [NdWin]::SweepTray()
+
+        # 2. Next start: the question appears (the switch is off). Escape = "Not now".
+        $proc = Start-Unclean $logDir
+        $w = Wait-Wizard $proc.Id 120
+        $prompt = Wait-Prompt $proc.Id $w 90
+        if ($prompt) {
+            [NdWin]::Foreground($prompt.Handle); [NdWin]::Move(1, 1)
+            Start-Sleep -Seconds 1
+            Shot $v.Name '05-unclean-exit-prompt' | Out-Null
+            $texts = Uia-Dump $proc.Id "$tag-prompt"
+            Check-Texts "texts-$tag-prompt" $texts
+            $names = @($texts | ForEach-Object { $_.Name })
+            $okTexts = ($names -contains "$AppName closed unexpectedly. Send a problem report?") -and ($names -contains 'Send') -and ($names -contains 'Not now')
+            Result "prompt-$tag" $(if ($okTexts) { 'PASS' } else { 'FAIL' }) "the question appeared after a killed run; texts: $(($names | Where-Object { $_.Trim() } | Select-Object -Unique) -join ' | ')"
+            [NdWin]::Key(0x1B)
+            Start-Sleep -Seconds 2
+            $still = Find-Prompt $proc.Id $w
+            Result "not-now-$tag" $(if ($still) { 'FAIL' } else { 'PASS' }) "Escape (Not now) closes the question: still open = $([bool]$still)"
+        } else {
+            Shot $v.Name '05-no-prompt' | Out-Null
+            Save-Text "logs\windows-$tag-prompt.txt" ([NdWin]::TopWindows($true) | Where-Object { $_.Pid -eq $proc.Id })
+            Result "prompt-$tag" 'FAIL' 'no question 90 s after the start'
+        }
+        Stop-NoDrive $proc
+        $state = Marker-State
+        Result "quit-clean-$tag" $(if ($state -eq 'clean') { 'PASS' } else { 'FAIL' }) "run.marker is '$state' after --quit (a normal end)"
+        [NdWin]::SweepTray()
+
+        # 3. Asked once: the next start does not ask again.
+        $proc = Start-Unclean $logDir
+        $w = Wait-Wizard $proc.Id 120
+        if ($w) {
+            Start-Sleep -Seconds 9
+            $again = Find-Prompt $proc.Id $w
+            Result "ask-once-$tag" $(if ($again) { 'FAIL' } else { 'PASS' }) "no second question after a normal end (open = $([bool]$again))"
+        } else {
+            Result "ask-once-$tag" 'FAIL' "no $AppName window within 120 s"
+        }
+        Stop-NoDrive $proc
+        [NdWin]::SweepTray()
+
+        # 4. Another killed run, with a fake log that holds made-up secrets.
+        $planted = @(
+            '2026-10-28 15:00:01 [ info ] PLANTED-LOG-LINE-KEEP /Photos/Holiday 2026/IMG_0001.jpg',
+            '2026-10-28 15:00:02 [ info sync.httplogger ] Header: { Authorization: Basic YWRtaW46ZmFrZXBhc3N3b3Jk, Cookie: oc_sessionPassphrase=Fake9Session8Passphrase7Value6Zz5Yy4Xx3; nc_session_id=fake1234, }',
+            '2026-10-28 15:00:03 [ info ] app password Fk4pA-Pp9wD-Zz2Qq-Rr7Tt-Uu1Vv created for planted.user@example.org',
+            '2026-10-28 15:00:04 [ info ] appPassword: Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz')
+        [IO.File]::WriteAllText((Join-Path $logDir '20261028_1500_planted.log'), ($planted -join "`n") + "`n", $Utf8)
+        $forbidden = Join-Path $Work "forbidden-$tag.txt"
+        [IO.File]::WriteAllText($forbidden, (@('YWRtaW46ZmFrZXBhc3N3b3Jk', 'Fake9Session8Passphrase7Value6Zz5Yy4Xx3', 'Fk4pA-Pp9wD-Zz2Qq-Rr7Tt-Uu1Vv',
+            'planted.user@example.org', 'Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz') -join "`n") + "`n", $Utf8)
+        $proc = Start-Unclean $logDir
+        [void](Wait-Wizard $proc.Id 120)
+        Start-Sleep -Seconds 6
+        Kill-NoDrive $proc
+        [NdWin]::SweepTray()
+
+        # 5. Send: Enter = Send. Nobody is signed in, so the report is made and waits in pending\.
+        $proc = Start-Unclean $logDir
+        $w = Wait-Wizard $proc.Id 120
+        $prompt = Wait-Prompt $proc.Id $w 90
+        if ($prompt) {
+            [NdWin]::Foreground($prompt.Handle); [NdWin]::Move(1, 1)
+            Start-Sleep -Seconds 1
+            [NdWin]::Key(0x0D)
+            $zip = $null
+            $deadline = (Get-Date).AddSeconds(60)
+            while ((Get-Date) -lt $deadline -and -not $zip) {
+                $zip = Get-ChildItem -LiteralPath (Join-Path $ConfDir 'problem-reports\pending') -Filter '*.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $zip) { Start-Sleep -Milliseconds 500 }
+            }
+            if ($zip) {
+                New-Item -ItemType Directory -Force -Path (Join-Path $Out "reports\$tag") | Out-Null
+                $copy = Join-Path $Out "reports\$tag\$($zip.Name)"
+                Copy-Item -LiteralPath $zip.FullName -Destination $copy -Force
+                $check = Join-Path $Root 'tools\ci\check-report-zip.py'
+                $checkOut = (& python $check $copy --empty-host --platform windows --kind unclean-exit --forbid $forbidden --expect-text PLANTED-LOG-LINE-KEEP --expect-text IMG_0001.jpg 2>&1 | Out-String)
+                Result "report-$tag" $(if ($LASTEXITCODE -eq 0) { 'PASS' } else { 'FAIL' }) $checkOut
+            } else {
+                Result "report-$tag" 'FAIL' 'no report in problem-reports\pending 60 s after Send'
+            }
+        } else {
+            Result "report-$tag" 'FAIL' 'no question after the second killed run'
+        }
+        Stop-NoDrive $proc
+        Remove-Item -LiteralPath (Join-Path $logDir '20261028_1500_planted.log') -Force -ErrorAction SilentlyContinue
+        [NdWin]::SweepTray()
+    }
+}
+
 Stop-NoDrive $null
 Set-ItemProperty -Path $Personalize -Name AppsUseLightTheme -Value 1 -Type DWord
 Set-ItemProperty -Path $Personalize -Name SystemUsesLightTheme -Value 1 -Type DWord

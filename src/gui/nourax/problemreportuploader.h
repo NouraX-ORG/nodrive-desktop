@@ -14,7 +14,7 @@
 
 #include "accountfwd.h"
 
-#include <QBuffer>
+#include <QByteArray>
 #include <QObject>
 #include <QString>
 
@@ -49,7 +49,7 @@ private:
 
     AccountPtr _account;
     QString _zipPath;
-    QBuffer _body;
+    QByteArray _data;
     QString _uploadedName;
     bool _finished = false;
 };

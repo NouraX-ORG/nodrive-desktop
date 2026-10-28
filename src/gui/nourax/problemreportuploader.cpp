@@ -12,6 +12,7 @@
 #include "common/utility.h"
 #include "networkjobs.h"
 
+#include <QBuffer>
 #include <QFile>
 #include <QFileInfo>
 #include <QLoggingCategory>
@@ -32,7 +33,6 @@ ProblemReportUploader::ProblemReportUploader(AccountPtr account, const QString &
     : QObject(parent)
     , _account(std::move(account))
     , _zipPath(zipPath)
-    , _body(this)
 {
 }
 
@@ -53,7 +53,7 @@ void ProblemReportUploader::start()
         done(Result::NetworkError);
         return;
     }
-    _body.setData(file.readAll());
+    _data = file.readAll();
     createFolder();
 }
 
@@ -83,9 +83,10 @@ void ProblemReportUploader::uploadFile(int attempt)
     // An existing file is never replaced: the server answers 412 instead.
     request.setRawHeader("If-None-Match", "*");
 
-    _body.close();
-    _body.open(QIODevice::ReadOnly);
-    const auto job = _account->sendRequest("PUT", url, request, &_body);
+    // The job hands the body to the network reply, which deletes it: one new buffer per request.
+    auto *body = new QBuffer;
+    body->setData(_data);
+    const auto job = _account->sendRequest("PUT", url, request, body);
     connect(job, &SimpleNetworkJob::finishedSignal, this, [this, attempt, name](QNetworkReply *reply) {
         const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (status == 201 || status == 204) {

@@ -19,6 +19,9 @@
 # 3. Network: tcpdump logs every DNS query on the runner, lsof samples the app's own connections,
 #    and tools/screenshots/netcheck.py fails the test if a Nextcloud host shows up.
 #
+#    A third run per light and dark variant ("unclean") covers the problem reports: 05 question after
+#    a killed run, Not now, no second question, and a scrubbed report in problem-reports/pending.
+#
 # Output: <out>/screens/<variant>/NN-<screen>.png, <out>/net/, <out>/logs/, <out>/bundle/,
 #         <out>/results.tsv (check, PASS|FAIL|INFO, evidence)
 #
@@ -274,6 +277,172 @@ app_run() { # app_run <variant> <screens|login>
 
 # ---------------------------------------------------------------------------------------------
 # Main
+
+# ---------------------------------------------------------------------------------------------
+# Problem reports: unclean exit question, "ask once", scrubbed report in pending/
+# (plans/round3-desktop-plan.md, 1.8). Nobody is signed in, so a report waits on disk; nothing is
+# sent anywhere. The menu bar icon needs no account for this: the question is a normal window.
+# All secrets below are made up.
+# ---------------------------------------------------------------------------------------------
+mac_cfg_dir() { echo "$HOME/Library/Containers/$REV_DOMAIN/Data/Library/Preferences/$NAME"; }
+
+mac_marker_state() {
+    local f="$(mac_cfg_dir)/problem-reports/run.marker"
+    if [ -f "$f" ]; then
+        python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' "$f" 2> /dev/null || echo unreadable
+    else
+        echo none
+    fi
+}
+
+# First window of the pid that is not the wizard: the question.
+mac_prompt() { other_windows "$1" "$2" | head -n 1; }
+
+mac_wait_prompt() { # mac_wait_prompt <pid> <wizard id> <seconds>
+    local i p
+    for ((i = 0; i < $3 * 2; i++)); do
+        p=$(mac_prompt "$1" "$2")
+        if [ -n "$p" ]; then echo "$p"; return 0; fi
+        kill -0 "$1" 2> /dev/null || return 1
+        sleep 0.5
+    done
+    return 1
+}
+
+mac_kill_app() { # no clean-up runs, like Force Quit
+    kill -KILL "$1" 2> /dev/null
+    wait "$1" 2> /dev/null
+    pkill -KILL -f "$EXE" 2> /dev/null
+    sleep 2
+}
+
+mac_start() { # mac_start <log file>: sets APP_PID
+    "$EXE" > "$1" 2>&1 &
+    APP_PID=$!
+}
+
+mac_wait_wizard() { # mac_wait_wizard <pid> <seconds>: prints "<id> <x> <y> <w> <h>"
+    local i w
+    for ((i = 0; i < $2 * 2; i++)); do
+        w=$(main_window "$1")
+        if [ -n "$w" ]; then echo "$w"; return 0; fi
+        kill -0 "$1" 2> /dev/null || return 1
+        sleep 0.5
+    done
+    return 1
+}
+
+unclean_run() { # unclean_run <en-light|en-dark>
+    local variant=$1 scheme tag="$1-unclean" dir="$OUT/screens/$1" cfg state w id x y ww wh p verdict i
+    case "$variant" in
+        en-light) scheme=light ;;
+        en-dark) scheme=dark ;;
+        *) return 2 ;;
+    esac
+    mkdir -p "$dir"
+    set_scheme "$scheme"
+    cfg=$(mac_cfg_dir)
+    rm -rf "$cfg"
+    with_timeout 60 "$EXE" --set-language en > "$OUT/logs/set-language-$tag.txt" 2>&1
+
+    # 1. A run that never quits cleanly (killed).
+    mac_start "$OUT/logs/stdout-$tag-1.txt"
+    if ! w=$(mac_wait_wizard "$APP_PID" 120); then
+        result "marker-running-$tag" FAIL "no NoDrive window within 120 s"
+        mac_kill_app "$APP_PID"
+        return 1
+    fi
+    sleep 6
+    state=$(mac_marker_state)
+    verdict=FAIL; [ "$state" = running ] && verdict=PASS
+    result "marker-running-$tag" "$verdict" "run.marker is '$state' while the app runs"
+    mac_kill_app "$APP_PID"
+
+    # 2. Next start: the question appears (the switch is off). Escape = "Not now".
+    mac_start "$OUT/logs/stdout-$tag-2.txt"
+    read -r id x y ww wh <<< "$(mac_wait_wizard "$APP_PID" 120)"
+    if p=$(mac_wait_prompt "$APP_PID" "$id" 90); then
+        local oid ol ox oy ow oh
+        read -r oid ol ox oy ow oh <<< "$p"
+        sleep 1
+        "$UI" activate "$APP_PID" > /dev/null 2>&1
+        capture_window "$oid" "$ox" "$oy" "$ow" "$oh" "$dir/05-unclean-exit-prompt.png" > /dev/null
+        result "prompt-$tag" PASS "the question appeared after a killed run (${ow}x${oh} pt)"
+        "$UI" key escape
+        sleep 2
+        if [ -n "$(mac_prompt "$APP_PID" "$id")" ]; then result "not-now-$tag" FAIL "the question is still open after Escape"
+        else result "not-now-$tag" PASS "Escape (Not now) closed the question"; fi
+    else
+        screencapture -x "$dir/05-no-prompt.png"
+        "$UI" windows "$APP_PID" > "$OUT/logs/windows-$tag-prompt.txt" 2>&1
+        result "prompt-$tag" FAIL "no question 90 s after the start"
+    fi
+    stop_app "$APP_PID" "$tag-a"
+    state=$(mac_marker_state)
+    verdict=FAIL; [ "$state" = clean ] && verdict=PASS
+    result "sigterm-clean-$tag" "$verdict" "run.marker is '$state' after SIGTERM (a normal end)"
+
+    # 3. Asked once: the next start does not ask again.
+    mac_start "$OUT/logs/stdout-$tag-3.txt"
+    if w=$(mac_wait_wizard "$APP_PID" 120); then
+        read -r id x y ww wh <<< "$w"
+        sleep 9
+        if [ -n "$(mac_prompt "$APP_PID" "$id")" ]; then result "ask-once-$tag" FAIL "the question came again after a normal end"
+        else result "ask-once-$tag" PASS "no question after a normal end"; fi
+    else
+        result "ask-once-$tag" FAIL "no NoDrive window within 120 s"
+    fi
+    stop_app "$APP_PID" "$tag-b"
+
+    # 4. Another killed run, with a fake log that holds made-up secrets.
+    mkdir -p "$cfg/logs"
+    printf '%s\n' \
+        '2026-10-28 15:00:01 [ info ] PLANTED-LOG-LINE-KEEP /Photos/Holiday 2026/IMG_0001.jpg' \
+        '2026-10-28 15:00:02 [ info sync.httplogger ] Header: { Authorization: Basic YWRtaW46ZmFrZXBhc3N3b3Jk, Cookie: oc_sessionPassphrase=Fake9Session8Passphrase7Value6Zz5Yy4Xx3; nc_session_id=fake1234, }' \
+        '2026-10-28 15:00:03 [ info ] app password Fk4pA-Pp9wD-Zz2Qq-Rr7Tt-Uu1Vv created for planted.user@example.org' \
+        '2026-10-28 15:00:04 [ info ] appPassword: Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz' \
+        > "$cfg/logs/20261028_1500_planted.log"
+    printf '%s\n' YWRtaW46ZmFrZXBhc3N3b3Jk Fake9Session8Passphrase7Value6Zz5Yy4Xx3 Fk4pA-Pp9wD-Zz2Qq-Rr7Tt-Uu1Vv \
+        planted.user@example.org Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz > "$WORK/forbidden-$tag.txt"
+    mac_start "$OUT/logs/stdout-$tag-4.txt"
+    mac_wait_wizard "$APP_PID" 120 > /dev/null
+    sleep 6
+    mac_kill_app "$APP_PID"
+
+    # 5. Send: Return = Send. Nobody is signed in, so the report is made and waits in pending/.
+    mac_start "$OUT/logs/stdout-$tag-5.txt"
+    read -r id x y ww wh <<< "$(mac_wait_wizard "$APP_PID" 120)"
+    if p=$(mac_wait_prompt "$APP_PID" "$id" 90); then
+        sleep 1
+        "$UI" activate "$APP_PID" > /dev/null 2>&1
+        "$UI" key return
+        local zip=""
+        for ((i = 0; i < 120; i++)); do
+            zip=$(ls "$cfg"/problem-reports/pending/*.zip 2> /dev/null | head -n 1)
+            [ -n "$zip" ] && break
+            sleep 0.5
+        done
+        if [ -n "$zip" ]; then
+            mkdir -p "$OUT/reports/$tag"
+            cp "$zip" "$OUT/reports/$tag/"
+            local out
+            if out=$(python3 "$REPO/tools/ci/check-report-zip.py" "$OUT/reports/$tag/$(basename "$zip")" --empty-host --platform macos --kind unclean-exit \
+                    --forbid "$WORK/forbidden-$tag.txt" --expect-text PLANTED-LOG-LINE-KEEP --expect-text IMG_0001.jpg 2>&1); then
+                result "report-$tag" PASS "$out"
+            else
+                result "report-$tag" FAIL "$(printf '%s' "$out" | tr '\n' ' ')"
+            fi
+        else
+            result "report-$tag" FAIL "no report in problem-reports/pending 60 s after Send"
+        fi
+    else
+        result "report-$tag" FAIL "no question after the second killed run"
+    fi
+    stop_app "$APP_PID" "$tag-c"
+    rm -f "$cfg/logs/20261028_1500_planted.log"
+    return 0
+}
+
 # ---------------------------------------------------------------------------------------------
 [ $# -eq 2 ] || { echo "usage: $0 <NoDrive-*.dmg> <output dir>" >&2; exit 2; }
 DMG=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
@@ -428,6 +597,10 @@ for variant in en-light de-light ar-light en-dark; do
     for run in screens login; do
         app_run "$variant" "$run" || STATUS=1
     done
+done
+# Problem reports (unclean exit question, ask once, scrubbed report in pending/): light and dark.
+for variant in en-light en-dark; do
+    unclean_run "$variant" || STATUS=1
 done
 set_scheme light
 

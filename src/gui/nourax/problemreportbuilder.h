@@ -38,6 +38,8 @@ struct ProblemReportInfo {
 /// binary databases (they cannot be scrubbed and can be very large).
 struct ProblemReportSources {
     QString logDir;
+    /// Single log files outside logDir (only when the app was started with --logfile).
+    QStringList logFiles;
     /// The log file the running app writes to now (not "the previous session").
     QString currentLogFile;
     QString configFile;

@@ -232,10 +232,10 @@ unclean_flow() { # unclean_flow <variant> <tag> <home>
             sleep 0.5
         done
         if [ -n "$zip" ]; then
-            mkdir -p "$OUT/reports"
-            cp "$zip" "$OUT/reports/$tag.zip"
+            mkdir -p "$OUT/reports/$tag"
+            cp "$zip" "$OUT/reports/$tag/"
             local out
-            if out=$(python3 "$HERE/../ci/check-report-zip.py" "$OUT/reports/$tag.zip" --empty-host --kind unclean-exit \
+            if out=$(python3 "$HERE/../ci/check-report-zip.py" "$OUT/reports/$tag/$(basename "$zip")" --empty-host --kind unclean-exit \
                     --forbid "$WORK/forbidden-$tag.txt" --expect-text PLANTED-LOG-LINE-KEEP --expect-text IMG_0001.jpg 2>&1); then
                 result "report-$tag" PASS "$out"
             else

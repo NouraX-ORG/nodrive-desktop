@@ -2,7 +2,7 @@
 """Checks one problem report zip made by the desktop app (plans/round3-contract.md, section B).
 
   check-report-zip.py REPORT.zip (--server-host HOST | --empty-host) --forbid FILE
-                      [--max-bytes 5000000] [--kind KIND] [--expect-text TEXT ...]
+                      [--max-bytes 5000000] [--kind KIND] [--platform PLATFORM] [--expect-text TEXT ...]
 
 FILE has one forbidden value per line (planted fake secrets and the throwaway passwords).
 It is read from a path outside the artifact folder; no value is printed, only its line number.
@@ -27,6 +27,7 @@ def main():
     ap.add_argument("--server-host")
     ap.add_argument("--empty-host", action="store_true", help="server_host must be empty (nobody was signed in)")
     ap.add_argument("--kind")
+    ap.add_argument("--platform", default="linux")
     ap.add_argument("--expect-text", action="append", default=[])
     ap.add_argument("--forbid", required=True)
     ap.add_argument("--max-bytes", type=int, default=5_000_000)
@@ -61,8 +62,8 @@ def main():
                 problems.append("schema is not 1")
             if report.get("app") != "NoDrive Desktop":
                 problems.append("app is not NoDrive Desktop")
-            if report.get("platform") != "linux":
-                problems.append("platform is not linux")
+            if report.get("platform") != args.platform:
+                problems.append(f"platform is {report.get('platform')!r}, expected {args.platform!r}")
             want_host = "" if args.empty_host else args.server_host
             if report.get("server_host") != want_host:
                 problems.append(f"server_host is {report.get('server_host')!r}, expected {want_host!r}")

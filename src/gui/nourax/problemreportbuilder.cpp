@@ -145,8 +145,10 @@ ProblemReportSources ProblemReportSources::live()
     const auto logger = Logger::instance();
     sources.currentLogFile = logger->logFile();
     sources.logDir = logger->logDir();
-    if (sources.logDir.isEmpty() && !sources.currentLogFile.isEmpty()) {
-        sources.logDir = QFileInfo(sources.currentLogFile).absolutePath();
+    // Started with --logfile: take that one file, never a whole folder. "-" means the console.
+    if (sources.logDir.isEmpty() && !sources.currentLogFile.isEmpty() && sources.currentLogFile != QLatin1String("-")
+        && QFile::exists(sources.currentLogFile)) {
+        sources.logFiles << sources.currentLogFile;
     }
     sources.configFile = cfg.configFile();
     sources.buildInfo = Theme::instance()->aboutInfo() + QStringLiteral("\n\n") + Theme::instance()->aboutDetails();
@@ -380,6 +382,13 @@ QString ProblemReportBuilder::build(const ProblemReportInfo &info, const Problem
     }
 
     auto logs = collectLogs(sources.logDir, maxLogTextBytes);
+    for (const auto &file : sources.logFiles) {
+        const QFileInfo info(file);
+        const auto raw = readLogFile(info, maxLogTextBytes);
+        if (!raw.isEmpty()) {
+            logs.append({ QStringLiteral("logs/") + info.fileName(), scrubbedUtf8(raw) });
+        }
+    }
 
     const auto finalPath = uniqueZipPath(outDir, zipFileName(info.createdUtc));
     const QString tempPath = outDir + QStringLiteral("/.building-%1.tmp").arg(QCoreApplication::applicationPid());
