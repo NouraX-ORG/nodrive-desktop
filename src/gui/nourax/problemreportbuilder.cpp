@@ -304,7 +304,7 @@ bool ProblemReportBuilder::writeZip(const QString &path, const QList<Entry> &fix
 
 QString ProblemReportBuilder::uniqueZipPath(const QString &dir, const QString &zipName)
 {
-    auto path = dir + QLatin1Char('/') + zipName;
+    QString path = dir + QLatin1Char('/') + zipName;
     if (!QFile::exists(path)) {
         return path;
     }
@@ -382,7 +382,7 @@ QString ProblemReportBuilder::build(const ProblemReportInfo &info, const Problem
     auto logs = collectLogs(sources.logDir, maxLogTextBytes);
 
     const auto finalPath = uniqueZipPath(outDir, zipFileName(info.createdUtc));
-    const auto tempPath = outDir + QStringLiteral("/.building-%1.tmp").arg(QCoreApplication::applicationPid());
+    const QString tempPath = outDir + QStringLiteral("/.building-%1.tmp").arg(QCoreApplication::applicationPid());
     QFile::remove(tempPath);
 
     const qint64 limit = ProblemReportSettings::maxZipBytes;

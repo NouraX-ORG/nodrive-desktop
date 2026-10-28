@@ -253,8 +253,8 @@ private Q_SLOTS:
         QTemporaryDir root;
         const auto sources = sourcesIn(root.path());
         QRandomGenerator rng(1028);
-        const auto oldFile = sources.logDir + QStringLiteral("/20261027_1000_nodrive.log");
-        const auto newFile = sources.logDir + QStringLiteral("/20261028_1500_nodrive.log");
+        const QString oldFile = sources.logDir + QStringLiteral("/20261027_1000_nodrive.log");
+        const QString newFile = sources.logDir + QStringLiteral("/20261028_1500_nodrive.log");
         for (const auto &file : { oldFile, newFile }) {
             QByteArray data;
             if (file == oldFile) {
@@ -299,7 +299,7 @@ private Q_SLOTS:
         QTemporaryDir root;
         const auto sources = sourcesIn(root.path());
         writeFile(sources.logDir + QStringLiteral("/a.log"), "line\n");
-        const auto pending = root.path() + QStringLiteral("/pending");
+        const QString pending = root.path() + QStringLiteral("/pending");
         const auto start = QDateTime(QDate(2026, 10, 28), QTime(10, 0, 0), QTimeZone::utc());
         for (int i = 0; i < 7; ++i) {
             ProblemReportInfo info;
@@ -319,7 +319,7 @@ private Q_SLOTS:
         QTemporaryDir root;
         const auto sources = sourcesIn(root.path());
         writeFile(sources.logDir + QStringLiteral("/a.log"), "line\n");
-        const auto pending = root.path() + QStringLiteral("/pending");
+        const QString pending = root.path() + QStringLiteral("/pending");
         ProblemReportInfo info;
         info.createdUtc = QDateTime(QDate(2026, 10, 28), QTime(10, 0, 0), QTimeZone::utc());
         const auto first = ProblemReportBuilder::build(info, sources, pending);
@@ -371,7 +371,7 @@ private Q_SLOTS:
     void crashMarkerOrFatalLogMeansCrash()
     {
         QTemporaryDir dir;
-        const auto fatalLog = dir.path() + QStringLiteral("/fatal-crash.log");
+        const QString fatalLog = dir.path() + QStringLiteral("/fatal-crash.log");
         RunMarker first(dir.path(), QStringLiteral("35.0.0.1"), fatalLog);
         QVERIFY(first.markRunning());
         writeFile(first.crashMarkerPath(), "signal 11 (SIGSEGV)\n");

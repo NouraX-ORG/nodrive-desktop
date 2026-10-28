@@ -198,12 +198,12 @@ QString ProblemReportScrubber::scrubLine(const QString &line)
     const bool hasColon = s.contains(QLatin1Char(':'));
 
     if (s.contains(QStringLiteral("uthorization"), Qt::CaseInsensitive) || s.contains(QStringLiteral("ookie"), Qt::CaseInsensitive)) {
-        s = replaceAll(s, headerValues(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, headerValues(), [](const QRegularExpressionMatch &m) -> QString {
             return m.captured(1) + m.captured(2) + removedMarker();
         });
     }
     if (hasColon || hasEquals) {
-        s = replaceAll(s, secretFields(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, secretFields(), [](const QRegularExpressionMatch &m) -> QString {
             const auto quote = m.captured(1);
             const auto value = m.captured(4);
             QString replacement = removedMarker();
@@ -216,49 +216,49 @@ QString ProblemReportScrubber::scrubLine(const QString &line)
         });
     }
     if (s.contains(QStringLiteral("asic"), Qt::CaseInsensitive) || s.contains(QStringLiteral("earer"), Qt::CaseInsensitive)) {
-        s = replaceAll(s, basicBearer(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, basicBearer(), [](const QRegularExpressionMatch &m) -> QString {
             const auto scheme = m.captured(1);
             if (scheme.compare(QStringLiteral("basic"), Qt::CaseInsensitive) == 0 && !looksLikeBasicCredential(m.captured(2))) {
                 return m.captured(0);
             }
-            return scheme + QLatin1Char(' ') + removedMarker();
+            return QString(scheme + QLatin1Char(' ') + removedMarker());
         });
     }
     if (hasEquals) {
-        s = replaceAll(s, cookieNames(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, cookieNames(), [](const QRegularExpressionMatch &m) -> QString {
             return m.captured(1) + QLatin1Char('=') + removedMarker();
         });
-        s = replaceAll(s, queryValues(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, queryValues(), [](const QRegularExpressionMatch &m) -> QString {
             return m.captured(1) + QLatin1Char('=') + removedMarker();
         });
     }
     if (s.contains(QStringLiteral("://"))) {
-        s = replaceAll(s, urlUserInfo(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, urlUserInfo(), [](const QRegularExpressionMatch &m) -> QString {
             return m.captured(1) + removedMarker() + QLatin1Char('@');
         });
     }
     if (s.contains(QStringLiteral("apppassword"), Qt::CaseInsensitive)) {
-        s = replaceAll(s, appPasswordArgument(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, appPasswordArgument(), [](const QRegularExpressionMatch &m) -> QString {
             return m.captured(1) + removedMarker();
         });
     }
     if (s.contains(QStringLiteral("eyJ"))) {
-        s = replaceAll(s, jwt(), [](const QRegularExpressionMatch &) {
+        s = replaceAll(s, jwt(), [](const QRegularExpressionMatch &) -> QString {
             return QStringLiteral("<secret>");
         });
     }
     if (s.contains(QLatin1Char('@')) || s.contains(QStringLiteral("%40"))) {
-        s = replaceAll(s, email(), [](const QRegularExpressionMatch &) {
+        s = replaceAll(s, email(), [](const QRegularExpressionMatch &) -> QString {
             return QStringLiteral("<email>");
         });
     }
     if (s.size() >= 32) {
-        s = replaceAll(s, longRun(), [](const QRegularExpressionMatch &m) {
+        s = replaceAll(s, longRun(), [](const QRegularExpressionMatch &m) -> QString {
             return hasMixedClasses(m.captured(0)) ? QStringLiteral("<secret>") : m.captured(0);
         });
     }
     if (s.size() >= 29 && s.contains(QLatin1Char('-'))) {
-        s = replaceAll(s, groupedSecret(), [](const QRegularExpressionMatch &) {
+        s = replaceAll(s, groupedSecret(), [](const QRegularExpressionMatch &) -> QString {
             return QStringLiteral("<secret>");
         });
     }
@@ -269,10 +269,10 @@ QString ProblemReportScrubber::scrubText(const QString &text)
 {
     QString input = text;
     if (input.contains(QStringLiteral("PRIVATE KEY"))) {
-        input = replaceAll(input, pemFull(), [](const QRegularExpressionMatch &) {
+        input = replaceAll(input, pemFull(), [](const QRegularExpressionMatch &) -> QString {
             return QStringLiteral("<private key removed>");
         });
-        input = replaceAll(input, pemHeaderOnly(), [](const QRegularExpressionMatch &) {
+        input = replaceAll(input, pemHeaderOnly(), [](const QRegularExpressionMatch &) -> QString {
             return QStringLiteral("<private key removed>");
         });
     }

@@ -51,7 +51,7 @@ QString randomAlnum(QRandomGenerator &rng, int length)
     static const QString upper = QStringLiteral("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     static const QString lower = QStringLiteral("abcdefghijklmnopqrstuvwxyz");
     static const QString digits = QStringLiteral("0123456789");
-    const auto all = upper + lower + digits;
+    const QString all = upper + lower + digits;
     QString s;
     s.reserve(length);
     s += upper.at(int(rng.bounded(upper.size())));
@@ -185,7 +185,7 @@ private Q_SLOTS:
         QRandomGenerator rng(20261028);
         for (int i = 0; i < 200; ++i) {
             const auto appPassword = randomAlnum(rng, 72);
-            const auto group = randomAlnum(rng, 5) + QLatin1Char('-') + randomAlnum(rng, 5) + QLatin1Char('-') + randomAlnum(rng, 5)
+            const QString group = randomAlnum(rng, 5) + QLatin1Char('-') + randomAlnum(rng, 5) + QLatin1Char('-') + randomAlnum(rng, 5)
                 + QLatin1Char('-') + randomAlnum(rng, 5) + QLatin1Char('-') + randomAlnum(rng, 5);
             const auto bearer = randomAlnum(rng, 40);
             const auto basic = randomAlnum(rng, 24);
@@ -193,9 +193,9 @@ private Q_SLOTS:
             const auto query = randomAlnum(rng, 20);
             const auto longBare = randomAlnum(rng, 48);
             const auto flowToken = randomAlnum(rng, 128);
-            const auto email = randomWord(rng, 6 + int(rng.bounded(6))) + QLatin1Char('.') + randomWord(rng, 5) + QStringLiteral("@")
+            const QString email = randomWord(rng, 6 + int(rng.bounded(6))) + QLatin1Char('.') + randomWord(rng, 5) + QStringLiteral("@")
                 + randomWord(rng, 5 + int(rng.bounded(5))) + QStringLiteral(".example.com");
-            const auto words = randomWord(rng, 6) + QLatin1Char(' ') + randomWord(rng, 7) + QLatin1Char(' ') + randomWord(rng, 5);
+            const QString words = randomWord(rng, 6) + QLatin1Char(' ') + randomWord(rng, 7) + QLatin1Char(' ') + randomWord(rng, 5);
 
             const QList<QPair<QString, QString>> cases{
                 { QStringLiteral("{\"appPassword\":\"%1\"}").arg(appPassword), appPassword },

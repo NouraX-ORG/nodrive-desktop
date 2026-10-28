@@ -102,7 +102,7 @@ void ProblemReportUploader::uploadFile(int attempt)
 
 void ProblemReportUploader::findShare()
 {
-    const auto folder = QLatin1Char('/') + ProblemReportSettings::remoteFolder();
+    const QString folder = QLatin1Char('/') + ProblemReportSettings::remoteFolder();
     const auto job = new ProblemReportShareJob(_account);
     connect(job, &OcsJob::jobFinished, this, [this](const QJsonDocument &reply, int) {
         if (ProblemReportShareJob::hasUserShare(reply, ProblemReportSettings::supportUserId())) {
@@ -121,7 +121,7 @@ void ProblemReportUploader::findShare()
 
 void ProblemReportUploader::createShare()
 {
-    const auto folder = QLatin1Char('/') + ProblemReportSettings::remoteFolder();
+    const QString folder = QLatin1Char('/') + ProblemReportSettings::remoteFolder();
     const auto job = new ProblemReportShareJob(_account);
     connect(job, &OcsJob::jobFinished, this, [this](const QJsonDocument &, int) {
         done(Result::Sent);

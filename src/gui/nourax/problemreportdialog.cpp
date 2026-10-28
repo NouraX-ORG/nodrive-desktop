@@ -11,6 +11,7 @@
 
 #include <QDialogButtonBox>
 #include <QLabel>
+#include <QAbstractButton>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProgressBar>

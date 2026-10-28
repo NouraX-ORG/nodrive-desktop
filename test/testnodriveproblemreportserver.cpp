@@ -114,7 +114,7 @@ private Q_SLOTS:
         // This test never talks to the real Drive.
         QVERIFY2(!QUrl(serverUrl).host().contains(QStringLiteral("nourax.org")), "refusing to contact the real Drive");
 
-        const auto resultFile = work + QStringLiteral("/result.txt");
+        const QString resultFile = work + QStringLiteral("/result.txt");
         QDir().mkpath(work + QStringLiteral("/logs"));
 
         // A fake log with made-up secrets and the throwaway password; none may reach the zip.

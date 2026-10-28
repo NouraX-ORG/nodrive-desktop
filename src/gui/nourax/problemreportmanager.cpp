@@ -20,7 +20,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QLoggingCategory>
+#include <QAbstractButton>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QPointer>
 #include <QThreadPool>
 #include <QTimer>
@@ -158,7 +160,7 @@ void ProblemReportManager::start()
     _started = true;
 
     const auto reportsDir = ProblemReportSettings::reportsDir();
-    const auto fatalLog = QDir::tempPath() + QStringLiteral("/" APPLICATION_NAME "-crash.log");
+    const QString fatalLog = QDir::tempPath() + QStringLiteral("/" APPLICATION_NAME "-crash.log");
     _marker = std::make_unique<RunMarker>(reportsDir, RunMarker::currentBuild(), fatalLog);
     _previous = _marker->inspectPrevious();
     _marker->markRunning();

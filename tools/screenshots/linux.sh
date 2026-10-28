@@ -17,6 +17,9 @@
 # Network: tcpdump logs every DNS query on the runner and strace logs the
 # app's connect() calls; tools/screenshots/netcheck.py fails on Nextcloud hosts.
 #
+# A third run per light and dark variant ("unclean") covers the problem reports: 05 prompt after a
+# killed run, Not now, no second question, and a scrubbed report in problem-reports/pending.
+#
 # Output: <out>/screens/<variant>/NN-<screen>.png, <out>/net/, <out>/logs/,
 #         <out>/results.tsv (check, PASS|FAIL|INFO, evidence)
 #
@@ -91,6 +94,164 @@ stop_app() {
     for ((i = 0; i < 20; i++)); do [ -z "$(find_wizard)" ] && break; sleep 0.5; done
 }
 
+
+# ---------------------------------------------------------------------------
+# Problem reports: unclean exit prompt, "ask once", and a scrubbed report in pending/
+# (plans/round3-desktop-plan.md, 1.8). No account is signed in, so a report waits on disk;
+# nothing is sent anywhere. All secrets below are made up.
+# ---------------------------------------------------------------------------
+find_prompt() { # id of a visible window titled "NoDrive" that is not the wizard (the prompt)
+    local id wiz
+    wiz=$(find_wizard | cut -d' ' -f1)
+    for id in $(xdotool search --onlyvisible --name '^NoDrive$' 2>/dev/null); do
+        [ "$id" = "$wiz" ] && continue
+        echo "$id"; return 0
+    done
+    return 1
+}
+
+wait_prompt() { # wait_prompt <seconds>
+    local i id
+    for ((i = 0; i < $1 * 2; i++)); do
+        if id=$(find_prompt); then echo "$id"; return 0; fi
+        sleep 0.5
+    done
+    return 1
+}
+
+kill_app() { # kill_app <strace pid> <log dir>: the app dies without any clean-up
+    local pids
+    pids=$(descendants "$1")
+    [ -n "$pids" ] && kill -KILL $pids 2>/dev/null
+    kill -KILL "$1" 2>/dev/null
+    pkill -KILL -f -- "--logdir $2" 2>/dev/null
+    wait "$1" 2>/dev/null
+    sleep 1
+}
+
+press_in_prompt() { # press_in_prompt <window id> <key>: focus the prompt with a click, then press the key
+    local id=$1 WINDOW X Y WIDTH HEIGHT SCREEN
+    eval "$(xdotool getwindowgeometry --shell "$id")"
+    click $((X + WIDTH / 2)) $((Y + HEIGHT / 3))
+    xdotool key "$2"
+    sleep 1
+}
+
+marker_state() { # marker_state <home>: state of run.marker
+    local f
+    f=$(find "$1/.config" -name run.marker 2>/dev/null | head -n 1)
+    if [ -n "$f" ]; then
+        python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' "$f"
+    else
+        echo none
+    fi
+}
+
+unclean_flow() { # unclean_flow <variant> <tag> <home>
+    local variant=$1 tag=$2 H=$3 LOGDIR="$3/logs" app id i n=0 verdict
+    mkdir -p "$LOGDIR"
+    start_unclean() {
+        n=$((n + 1))
+        strace -f -qq -tt -e trace=connect -o "$OUT/net/strace-$tag-$n.txt" \
+            "$APPIMAGE" --logdebug --logflush --logdir "$LOGDIR" > "$OUT/logs/stdout-$tag-$n.txt" 2>&1 &
+        app=$!
+    }
+
+    # 1. A run that never quits cleanly (killed).
+    start_unclean
+    if ! wait_wizard 120 > /dev/null; then
+        result "unclean-$tag" FAIL "the app did not start"
+        kill_app "$app" "$LOGDIR"
+        return 1
+    fi
+    sleep 6
+    verdict=FAIL; [ "$(marker_state "$H")" = running ] && verdict=PASS
+    result "marker-running-$tag" "$verdict" "run.marker is '$(marker_state "$H")' while the app runs"
+    kill_app "$app" "$LOGDIR"
+    sleep 2
+
+    # 2. Next start: the question appears (the switch is off). Escape = "Not now".
+    start_unclean
+    if id=$(wait_prompt 90); then
+        sleep 1
+        shot "$variant" 05-unclean-exit-prompt
+        result "prompt-$tag" PASS "the question appeared after a killed run"
+        press_in_prompt "$id" Escape
+        if find_prompt > /dev/null; then
+            result "not-now-$tag" FAIL "the question is still open after Escape"
+        else
+            result "not-now-$tag" PASS "Escape (Not now) closed the question"
+        fi
+    else
+        shot "$variant" 05-no-prompt
+        windows > "$OUT/logs/windows-$tag-prompt.txt"
+        result "prompt-$tag" FAIL "no question 90 s after the start"
+    fi
+    sleep 2
+    stop_app "$app" "$tag-a"
+    verdict=FAIL; [ "$(marker_state "$H")" = clean ] && verdict=PASS
+    result "sigterm-clean-$tag" "$verdict" "run.marker is '$(marker_state "$H")' after SIGTERM (a normal end)"
+
+    # 3. Asked once: the next start does not ask again.
+    start_unclean
+    if wait_wizard 120 > /dev/null; then
+        sleep 9
+        if find_prompt > /dev/null; then
+            result "ask-once-$tag" FAIL "the question came again after a normal end"
+        else
+            result "ask-once-$tag" PASS "no question after a normal end"
+        fi
+    else
+        result "ask-once-$tag" FAIL "the app did not start"
+    fi
+    stop_app "$app" "$tag-b"
+
+    # 4. Another killed run, with a fake log that holds made-up secrets.
+    printf '%s\n' \
+        '2026-10-28 15:00:01 [ info ] PLANTED-LOG-LINE-KEEP /Photos/Holiday 2026/IMG_0001.jpg' \
+        '2026-10-28 15:00:02 [ info sync.httplogger ] Header: { Authorization: Basic YWRtaW46ZmFrZXBhc3N3b3Jk, Cookie: oc_sessionPassphrase=Fake9Session8Passphrase7Value6Zz5Yy4Xx3; nc_session_id=fake1234, }' \
+        '2026-10-28 15:00:03 [ info ] app password Fk4pA-Pp9wD-Zz2Qq-Rr7Tt-Uu1Vv created for planted.user@example.org' \
+        '2026-10-28 15:00:04 [ info ] appPassword: Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz' \
+        > "$LOGDIR/20261028_1500_planted.log"
+    printf '%s\n' YWRtaW46ZmFrZXBhc3N3b3Jk Fake9Session8Passphrase7Value6Zz5Yy4Xx3 Fk4pA-Pp9wD-Zz2Qq-Rr7Tt-Uu1Vv \
+        planted.user@example.org Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz > "$WORK/forbidden-$tag.txt"
+    start_unclean
+    wait_wizard 120 > /dev/null
+    sleep 6
+    kill_app "$app" "$LOGDIR"
+    sleep 2
+
+    # 5. Send: Enter = Send. Nobody is signed in, so the report is made and waits in pending/.
+    start_unclean
+    if id=$(wait_prompt 90); then
+        press_in_prompt "$id" Return
+        local zip=""
+        for ((i = 0; i < 80; i++)); do
+            zip=$(find "$H/.config" -path '*problem-reports/pending/*.zip' 2>/dev/null | head -n 1)
+            [ -n "$zip" ] && break
+            sleep 0.5
+        done
+        if [ -n "$zip" ]; then
+            mkdir -p "$OUT/reports"
+            cp "$zip" "$OUT/reports/$tag.zip"
+            local out
+            if out=$(python3 "$HERE/../ci/check-report-zip.py" "$OUT/reports/$tag.zip" --empty-host --kind unclean-exit \
+                    --forbid "$WORK/forbidden-$tag.txt" --expect-text PLANTED-LOG-LINE-KEEP --expect-text IMG_0001.jpg 2>&1); then
+                result "report-$tag" PASS "$out"
+            else
+                result "report-$tag" FAIL "$(printf '%s' "$out" | tr '\n' ' ')"
+            fi
+        else
+            result "report-$tag" FAIL "no report in problem-reports/pending 40 s after Send"
+        fi
+    else
+        result "report-$tag" FAIL "no question after the second killed run"
+    fi
+    stop_app "$app" "$tag-c"
+    rm -f "$LOGDIR/20261028_1500_planted.log"
+    return 0
+}
+
 # ---------------------------------------------------------------------------
 # One app run, inside its own D-Bus session (re-executed by dbus-run-session)
 # ---------------------------------------------------------------------------
@@ -125,6 +286,14 @@ inner() {
             > "$OUT/logs/portal-check-$tag.txt" 2>&1 && break
         sleep 0.2
     done
+
+    if [ "$run" = unclean ]; then
+        unclean_flow "$variant" "$tag" "$H"
+        local flow=$?
+        kill "$portal" 2>/dev/null
+        rm -rf "$H/tmp"
+        return $flow
+    fi
 
     if [ "$run" = cli ]; then
         timeout 120 "$APPIMAGE" --version > "$OUT/logs/version.txt" 2>&1
@@ -277,6 +446,10 @@ for variant in en-light de-light ar-light en-dark; do
         timeout -k 10 300 dbus-run-session -- bash "$0" --inner "$variant" "$run" || STATUS=1
         pkill -KILL -f "logs/app-$variant-$run[.]log" 2>/dev/null
     done
+done
+# Problem reports (unclean exit prompt, ask once, scrubbed report in pending/): light and dark.
+for variant in en-light en-dark; do
+    timeout -k 10 900 dbus-run-session -- bash "$0" --inner "$variant" unclean || STATUS=1
 done
 
 sleep 2

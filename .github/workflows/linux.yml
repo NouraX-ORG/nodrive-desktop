@@ -110,6 +110,32 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  report-server:
+    name: Problem reports against a throwaway server
+    needs: branding
+    if: ${{ !inputs.reuse_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      # A real Nextcloud server in a Docker network, created for this job only and thrown away
+      # with the runner. No secret is stored anywhere: the throwaway passwords are generated and
+      # masked at run time (tools/ci/report-server.sh). The Drive of Nourax is never contacted.
+      - name: Four phases (tools/ci/report-server.sh)
+        run: bash tools/ci/report-server.sh
+
+      - name: Upload the report (names, status codes, hashes only)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-linux-report-server
+          path: report-server-out/
+          if-no-files-found: warn
+          retention-days: 30
+
   appimage:
     name: AppImage
     needs: branding

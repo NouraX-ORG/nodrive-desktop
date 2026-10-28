@@ -74,7 +74,7 @@ class TestNoDriveProblemReportUpload : public QObject
 
     [[nodiscard]] QString makeZip(const QString &name = QStringLiteral("2026-10-28_14-03-22_linux_35.0.0-nourax.1.zip"))
     {
-        const auto path = _root.path() + QLatin1Char('/') + name;
+        const QString path = _root.path() + QLatin1Char('/') + name;
         QFile file(path);
         file.open(QIODevice::WriteOnly);
         file.write("PK fake report zip, the content does not matter here");
@@ -307,7 +307,7 @@ private Q_SLOTS:
     void aReportWithoutAnAccountStaysPendingAndIsSentAfterSignIn()
     {
         QTemporaryDir work;
-        const auto pending = work.path() + QStringLiteral("/pending");
+        const QString pending = work.path() + QStringLiteral("/pending");
         ProblemReportManager manager;
         manager.setPendingDirectory(pending);
         manager.setSourcesProvider([&work] { return sourcesIn(work.path()); });
@@ -356,7 +356,7 @@ private Q_SLOTS:
     void aNetworkErrorKeepsTheReportPendingUntilTheNextTry()
     {
         QTemporaryDir work;
-        const auto pending = work.path() + QStringLiteral("/pending");
+        const QString pending = work.path() + QStringLiteral("/pending");
         ProblemReportManager manager;
         manager.setPendingDirectory(pending);
         manager.setSourcesProvider([&work] { return sourcesIn(work.path()); });
