@@ -214,7 +214,9 @@ private Q_SLOTS:
         QVERIFY(included.contains(QStringLiteral("shared, read-only, with Nourax Support")));
         QVERIFY(included.contains(QStringLiteral("Problem reports")));
         std::unique_ptr<QMessageBox> box(ProblemReportDialog::createWhatsIncludedBox());
+#ifndef Q_OS_MACOS // macOS message boxes have no title
         QCOMPARE(box->windowTitle(), QStringLiteral("What's included"));
+#endif
         QCOMPARE(box->text(), included);
     }
 
@@ -222,7 +224,9 @@ private Q_SLOTS:
     {
         QCOMPARE(ProblemReportManager::closedUnexpectedlyText(), QStringLiteral("NoDrive closed unexpectedly. Send a problem report?"));
         std::unique_ptr<QMessageBox> box(ProblemReportManager::createClosedUnexpectedlyPrompt());
+#ifndef Q_OS_MACOS // macOS message boxes have no title
         QCOMPARE(box->windowTitle(), QStringLiteral("NoDrive"));
+#endif
         QCOMPARE(box->text(), QStringLiteral("NoDrive closed unexpectedly. Send a problem report?"));
         QVERIFY(box->defaultButton());
         QCOMPARE(box->defaultButton()->text(), QStringLiteral("Send"));
