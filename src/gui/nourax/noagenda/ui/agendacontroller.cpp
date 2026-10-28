@@ -479,7 +479,9 @@ QVariantMap AgendaController::rowOf(const AgendaItem &item, bool inTeam) const
     QStringList badges;
     QStringList problemTexts;
     for (const auto &p : item.problems) {
-        problemTexts.append(p.text);
+        if (p.text != item.title) { // a row that is only a problem says it once
+            problemTexts.append(p.text);
+        }
     }
     if (item.late && !inTeam) {
         badges.append(QStringLiteral("late"));

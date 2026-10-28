@@ -157,7 +157,7 @@ inline void routeScenario(FakeTransport *t, const QString &user)
     t->routeFile("GET", QStringLiteral("/index.php/apps/deck/api/v1.0/boards"), 200, QStringLiteral("deck/boards-%1.json").arg(user));
     t->routeFile("GET", QStringLiteral("/index.php/apps/deck/api/v1.0/boards/10/stacks"), 200, QStringLiteral("deck/stacks-10.json"));
 
-    // CalDAV (only Ali has calendars in the fixtures)
+    // CalDAV (Ali has the calendars of the scenario, Mara one empty calendar)
     if (user == QLatin1String("ali")) {
         t->routeFile("PROPFIND", QStringLiteral("/remote.php/dav/principals/users/ali/"), 207, QStringLiteral("caldav/principal-ali.xml"));
         t->routeFile("PROPFIND", QStringLiteral("/remote.php/dav/calendars/ali/"), 207, QStringLiteral("caldav/home-ali.xml"));
@@ -169,6 +169,13 @@ inline void routeScenario(FakeTransport *t, const QString &user)
         t->routeFile("REPORT", base + QStringLiteral("holidays/"), 207, QStringLiteral("caldav/events-holidays.xml"), "VEVENT");
         t->routeFile("REPORT", base + QStringLiteral("contact_birthdays/"), 207, QStringLiteral("caldav/events-birthdays.xml"), "VEVENT");
         t->routeFile("REPORT", base + QStringLiteral("ali-task-copy/"), 207, QStringLiteral("caldav/empty.xml"), "VEVENT");
+    } else if (user == QLatin1String("mara")) {
+        // Mara has one calendar and no events in the fixtures.
+        t->routeFile("PROPFIND", QStringLiteral("/remote.php/dav/principals/users/mara/"), 207, QStringLiteral("caldav/principal-mara.xml"));
+        t->routeFile("PROPFIND", QStringLiteral("/remote.php/dav/calendars/mara/"), 207, QStringLiteral("caldav/home-mara.xml"));
+        const auto base = QStringLiteral("/remote.php/dav/calendars/mara/personal/");
+        t->routeFile("REPORT", base, 207, QStringLiteral("caldav/empty.xml"), "VEVENT");
+        t->routeFile("REPORT", base, 207, QStringLiteral("caldav/empty.xml"), "VTODO");
     }
 }
 

@@ -156,7 +156,7 @@ Rectangle {
                 font.pixelSize: 12
             }
             AgentLabel {
-                visible: !r.row.info
+                visible: !r.row.info && !(r.row.workKind === "team" && (!r.row.personName || r.row.personName === ""))
                 st: r.st
                 text: r.row.agentText ? r.row.agentText : ""
                 agentKind: r.row.agentKind ? r.row.agentKind : "self"
