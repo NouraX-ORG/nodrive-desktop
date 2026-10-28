@@ -45,7 +45,7 @@ ProblemReportDialog::ProblemReportDialog(QWidget *parent)
     question->setBuddy(_note);
     layout->addWidget(_note);
 
-    _includedLink = new QLabel(QStringLiteral("<a href=\"#included\">%1</a>").arg(tr("What's included")), this);
+    _includedLink = new QLabel(this);
     _includedLink->setObjectName(QStringLiteral("problemReportIncludedLink"));
     _includedLink->setTextFormat(Qt::RichText);
     _includedLink->setTextInteractionFlags(Qt::TextBrowserInteraction);
@@ -80,12 +80,11 @@ ProblemReportDialog::ProblemReportDialog(QWidget *parent)
 void ProblemReportDialog::updateLinkColor()
 {
     const auto dark = palette().color(QPalette::Window).lightness() < 128;
-    auto linkPalette = _includedLink->palette();
     const auto link = dark ? QColor(0x60, 0xA5, 0xFA) : QColor(0x25, 0x63, 0xEB);
-    if (linkPalette.color(QPalette::Link) != link) {
-        linkPalette.setColor(QPalette::Link, link);
-        linkPalette.setColor(QPalette::LinkVisited, link);
-        _includedLink->setPalette(linkPalette);
+    // Rich text takes the link colour from the application palette, so the colour is set in the text.
+    const auto html = QStringLiteral("<a href=\"#included\" style=\"color:%1;\">%2</a>").arg(link.name(), tr("What's included"));
+    if (_includedLink->text() != html) {
+        _includedLink->setText(html);
     }
 }
 
