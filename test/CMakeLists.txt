@@ -115,6 +115,7 @@ nextcloud_add_test(NoDriveProblemReportUpload) # NoDrive: problem reports
 nextcloud_add_test(NoDriveProblemReportUi) # NoDrive: problem reports
 target_compile_definitions(NoDriveProblemReportUiTest PRIVATE NODRIVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}") # NoDrive: problem reports
 nextcloud_add_test(NoDriveProblemReportServer) # NoDrive: problem reports
+include(${CMAKE_CURRENT_SOURCE_DIR}/nodrive/noagenda.cmake) # NoDrive: NoAgenda
 nextcloud_add_test(SettingsDialog)
 nextcloud_add_test(IconUtils)
 nextcloud_add_test(CustomStateIcons)

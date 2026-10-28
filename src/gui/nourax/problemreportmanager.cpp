@@ -7,6 +7,7 @@
 
 #include "problemreportsettings.h"
 #include "problemreportuploader.h"
+#include "noagenda/agendaservice.h" // NoDrive: NoAgenda
 
 #include "account.h"
 #include "accountmanager.h"
@@ -213,6 +214,8 @@ void ProblemReportManager::start()
     } else if (_previous.run == RunMarker::PreviousRun::OtherBuild) {
         qCInfo(lcProblemReportManager) << "updated since the last run, not a problem";
     }
+
+    Agenda::AgendaService::instance()->start(); // NoDrive: NoAgenda (startup; no request, only connects to the accounts)
 }
 
 void ProblemReportManager::watchAccount(AccountState *state)

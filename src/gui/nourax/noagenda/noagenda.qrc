@@ -1,0 +1,17 @@
+<RCC>
+    <qresource prefix="/qml/nourax/noagenda">
+        <file alias="AgendaHeader.qml">qml/AgendaHeader.qml</file>
+        <file alias="AgendaRow.qml">qml/AgendaRow.qml</file>
+        <file alias="AgentLabel.qml">qml/AgentLabel.qml</file>
+        <file alias="Chip.qml">qml/Chip.qml</file>
+        <file alias="DetailPanel.qml">qml/DetailPanel.qml</file>
+        <file alias="FlatButton.qml">qml/FlatButton.qml</file>
+        <file alias="Glyph.qml">qml/Glyph.qml</file>
+        <file alias="MonthGrid.qml">qml/MonthGrid.qml</file>
+        <file alias="NoAgendaWindow.qml">qml/NoAgendaWindow.qml</file>
+        <file alias="PersonalCalendarsDialog.qml">qml/PersonalCalendarsDialog.qml</file>
+        <file alias="Seg.qml">qml/Seg.qml</file>
+        <file alias="SourcesPage.qml">qml/SourcesPage.qml</file>
+        <file alias="StatusBanner.qml">qml/StatusBanner.qml</file>
+    </qresource>
+</RCC>

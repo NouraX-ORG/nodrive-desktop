@@ -137,6 +137,33 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  agenda-server:
+    name: NoAgenda against a throwaway server
+    needs: branding
+    if: ${{ !inputs.reuse_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      # A real server in a Docker network, created for this job only and thrown away with the runner,
+      # with the pinned calendar, tasks, Deck and nc_gantt 2.4.1 apps (SHA-256 checked) and the seed of
+      # tools/ci/agenda-seed.py. No secret is stored anywhere: the throwaway passwords are generated and
+      # masked at run time (tools/ci/agenda-server.sh). The Drive of Nourax is never contacted.
+      - name: Seven phases (tools/ci/agenda-server.sh)
+        run: bash tools/ci/agenda-server.sh
+
+      - name: Upload the report (names, status codes, counts, key sets; screenshots)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-linux-agenda-server
+          path: agenda-server-out/
+          if-no-files-found: warn
+          retention-days: 30
+
   appimage:
     name: AppImage
     needs: branding

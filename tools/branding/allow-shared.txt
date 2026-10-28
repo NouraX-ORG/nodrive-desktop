@@ -67,3 +67,6 @@ theme/nextcloud.VisualElementsManifest.xml	*	not-shipped	Upstream tile manifest;
 usr/share/doc/nodrive/*	*	legal	Licence texts and THIRD-PARTY-NOTICES.txt shipped in the AppImage (from nodrive/licenses); naming the copyright holders is required by the licences.
 usr/share/nodrive/i18n/client_*.qm	^\[OCC::LegalNotice\]	legal	Upstream copyright line of the Legal Notice dialog in the compiled translations; NoDrive hides the dialog's button (NOTICE.md), the line is never shown.
 usr/share/nodrive/i18n/client_*.qm	^\[OCC::OwncloudSetupWizard\] .*Nextcloud.*%1$	dead-code	Stale message "creating folder on Nextcloud: %1" (he, br): its source text no longer exists in src/, so Qt never looks it up; the source-tree sweep classifies the same .ts entries as dead code.
+
+# --- NoAgenda -----------------------------------------------------------------------------
+src/gui/nourax/noagenda/model/agendacolors.cpp	^#(0082c9|00679e)$	internal	NoAgenda maps the server default blue accent colours of calendars and projects to Nourax cobalt so they never show on a row; the literals exist to remove the colour.

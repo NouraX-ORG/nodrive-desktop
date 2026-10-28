@@ -25,3 +25,6 @@ target_sources(nextcloudCore PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/problemreportspanel.h
     ${CMAKE_CURRENT_LIST_DIR}/problemreportspanel.cpp
 )
+
+# NoAgenda (plans/noagenda-decisions.md): the one screen with everything a person is responsible for.
+include(${CMAKE_CURRENT_LIST_DIR}/noagenda/noagenda.cmake)

@@ -16,6 +16,7 @@
 #include "systray.h"
 #include "tray/trayactivationpolicy.h"
 #include "tray/usermodel.h"
+#include "nourax/noagenda/ui/noagendalauncher.h" // NoDrive: NoAgenda
 
 #include <QCoreApplication>
 #include <QCursor>
@@ -246,6 +247,15 @@ using namespace OCC::Mac::TrayPopupViewUtils;
     addOwnedArrangedSubview(_stack, [[NCSpacerView alloc] initWithHeight:kActionVerticalPadding]);
 
     __unsafe_unretained NCTrayPopup *weakSelf = self;
+    if (model->rowCount() > 0) { // NoDrive: NoAgenda
+        addOwnedArrangedSubview(_stack, [[NCActionRow alloc] initWithTitle:OCC::Nourax::Agenda::NoAgendaLauncher::trayEntryText().toNSString() width:kPopupWidth enabled:YES action:^{ // NoDrive: NoAgenda
+            [weakSelf orderOut:nil]; // NoDrive: NoAgenda
+            OCC::Systray::instance()->setIsOpen(false); // NoDrive: NoAgenda
+            OCC::Nourax::Agenda::NoAgendaLauncher::openForCurrentUser(); // NoDrive: NoAgenda
+        } hoverAction:^(NSView *) { // NoDrive: NoAgenda
+            [weakSelf closeAccountActionsPopup]; // NoDrive: NoAgenda
+        }]); // NoDrive: NoAgenda
+    } // NoDrive: NoAgenda
     if (OCC::Systray::instance()->enableAddAccount()) {
         addOwnedArrangedSubview(_stack, [[NCActionRow alloc] initWithTitle:OCC::Systray::tr("Add account").toNSString()
                                                                       width:kPopupWidth

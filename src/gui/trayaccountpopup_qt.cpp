@@ -13,6 +13,7 @@
 #include "tray/trayaccountmenupolicy.h"
 #include "tray/trayimageutils.h"
 #include "tray/usermodel.h"
+#include "nourax/noagenda/ui/noagendalauncher.h" // NoDrive: NoAgenda
 
 #include <QAbstractItemModel>
 #include <QAction>
@@ -870,6 +871,11 @@ void populateTrayMenu(QMenu *menu, Systray *systray)
         }
         menu->addSeparator();
     }
+
+    if (userModel && userModel->rowCount() > 0) { // NoDrive: NoAgenda
+        const auto noAgendaAction = addMenuAction(menu, templateThemeIcon(QStringLiteral("calendar.svg"), menuIconSize, menuIconPalette), Nourax::Agenda::NoAgendaLauncher::trayEntryText()); // NoDrive: NoAgenda
+        QObject::connect(noAgendaAction, &QAction::triggered, noAgendaAction, [] { closeTrayPopup(); Nourax::Agenda::NoAgendaLauncher::openForCurrentUser(); }); // NoDrive: NoAgenda
+    } // NoDrive: NoAgenda
 
     if (systray->enableAddAccount()) {
         const auto addAccountAction = addMenuAction(menu,

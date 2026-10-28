@@ -1,0 +1,176 @@
+/*
+ * SPDX-FileCopyrightText: 2026 Nourax
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+
+// NoAgenda: the one row type that every view shows (plans/noagenda-desktop-plan.md, 1.3).
+
+#pragma once
+
+#include <QCoreApplication>
+#include <QDate>
+#include <QDateTime>
+#include <QList>
+#include <QString>
+#include <QStringList>
+#include <QTimeZone>
+
+namespace OCC::Nourax::Agenda {
+
+/// Translations for code that is not a QObject.
+class AgendaText
+{
+    Q_DECLARE_TR_FUNCTIONS(AgendaText)
+};
+
+enum class ItemKind { Event, Todo, GanttTask, Milestone, Card };
+enum class Home { Calendar, Tasks, Gantt, Board };
+/// Design 6.0: the three kinds of work.
+enum class WorkKind { Self, MyAgent, Team };
+/// For the All / Work / Personal switch.
+enum class Category { Personal, Work, Info };
+
+struct AgentRef
+{
+    bool isSelf = true;
+    QString id; ///< AG-0001, or the unrecognised label / tag text
+    QString name; ///< empty when the agent is not in the registry
+    QString status; ///< active | paused | retired | empty
+    bool unknown = false;
+    bool retired = false;
+    bool paused = false;
+    bool otherOrganisation = false; ///< name is hidden ("Agent of Ali")
+    QString owner; ///< display name used for "Agent of %1"
+
+    /// "Self", "Writer-Bot", "AG-0001 (unknown agent)", "Writer-Bot (retired)" or "Agent of Ali".
+    [[nodiscard]] QString displayText() const;
+};
+
+/// A problem sentence with the audience that is shown it (design 4.4).
+struct ProblemFlag
+{
+    enum class Kind {
+        Late,
+        DueToday,
+        Blocked,
+        Overbooked,
+        NotAssigned,
+        AgentNoPerson,
+        AgentWrongPerson,
+        TwoAgents,
+        UnknownAgent,
+        RetiredAgent,
+        NotLinked,
+        RoleOnly,
+        NotShared,
+    };
+    enum class Audience { Person, Manager, Both };
+
+    Kind kind = Kind::Late;
+    Audience audience = Audience::Both;
+    QString text;
+};
+
+struct AgendaItem
+{
+    QString key; ///< cal:<calendarUri>/<objectUri>[#<recurrence-id>], gantt:task:<id>, gantt:ms:<id>, deck:card:<id>
+    ItemKind kind = ItemKind::Event;
+    Home home = Home::Calendar;
+    QString title;
+
+    // Times. A timed item has start (and usually end) in UTC. A date-based item has startDate / endDate.
+    bool timed = false;
+    bool allDay = false;
+    QDateTime start;
+    QDateTime end;
+    QDate startDate;
+    QDate endDate;
+    QDate due;
+
+    QString sourceKey;
+    QString sourceName;
+    QString sourceColor;
+    Category category = Category::Work;
+    WorkKind workKind = WorkKind::Self;
+    AgentRef agent;
+    QString personName; ///< team rows: who the work belongs to
+    QString personUid;
+
+    QString status;
+    bool done = false;
+    int percentDone = -1;
+
+    // Flags
+    bool late = false;
+    int lateDays = 0;
+    bool dueToday = false;
+    bool blocked = false;
+    QString blockedBy;
+    bool tentative = false;
+    bool transparent = false;
+    bool declined = false;
+    bool repeating = false;
+    bool invitation = false;
+    bool info = false; ///< holidays, birthdays, subscriptions: shown, never block time
+    bool readOnly = false;
+    QString readOnlyReason;
+    bool versionReadOnly = false;
+    bool boardBadge = false; ///< a Gantt task that is linked to a board card
+    bool timeApproximated = false;
+    QList<ProblemFlag> problems;
+
+    QString description;
+    QString location;
+    QString version; ///< ETag, updated_at or lastModified (edit stage)
+
+    // References
+    int projectId = 0;
+    QString projectName;
+    int taskId = 0;
+    int boardId = 0;
+    int cardId = 0;
+    int deckCardId = 0;
+    QString calendarUri;
+    QString objectUri;
+    QString uid;
+    QString recurrenceId;
+    bool organizerIsMe = false;
+    QString myPartstat;
+    double myWorkHours = -1;
+
+    /// Date used to place the row in a day list (start date for timed items).
+    [[nodiscard]] QDate firstDay(const QTimeZone &zone) const;
+    [[nodiscard]] QDate lastDay(const QTimeZone &zone) const;
+    [[nodiscard]] bool hasDate() const;
+};
+
+/// Result of reading one source.
+struct SourceStatus
+{
+    enum class State { NeverLoaded, Fresh, Cached, Failed, ReadOnly, Unavailable, NotLinked, NeedsLogin };
+
+    QString key; ///< calendar | gantt | board | registry
+    State state = State::NeverLoaded;
+    QDateTime savedAt; ///< when the shown data was read
+    QString message;
+    bool readOnlyByGuard = false;
+};
+
+/// A row of the Sources screen.
+struct SourceEntry
+{
+    enum class Type { Calendar, Project, Board };
+
+    Type type = Type::Calendar;
+    QString key; ///< calendar uri, project id or board id
+    QString name;
+    QString color;
+    QString note;
+    QString mode; ///< effective mode: personal | work | team | info | hidden | doOversee | do
+    QString defaultMode;
+    bool autoHidden = false;
+    QString autoHiddenReason;
+    bool personalQuestion = false; ///< an own calendar (listed in the one-time question)
+};
+
+} // namespace OCC::Nourax::Agenda

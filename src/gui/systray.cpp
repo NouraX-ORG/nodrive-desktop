@@ -21,6 +21,7 @@
 #include "tray/trayimageprovider.h"
 #include "tray/usermodel.h"
 #include "wheelhandler.h"
+#include "nourax/noagenda/ui/noagendalauncher.h" // NoDrive: NoAgenda
 
 #ifdef Q_OS_MACOS
 #include "foregroundbackground_interface.h"
@@ -576,6 +577,7 @@ void Systray::setupContextMenu()
         _contextMenu->addAction(tr("Open %1 Desktop", "Open Nextcloud main window. Placeholer will be the application name. Please keep it.").arg(APPLICATION_NAME), this, [this]{ showActivitiesWindow(); });
     }
 
+    Nourax::Agenda::NoAgendaLauncher::addContextMenuEntry(_contextMenu); // NoDrive: NoAgenda
     auto pauseAction = _contextMenu->addAction(tr("Pause sync"), this, &Systray::slotPauseAllFolders);
     auto resumeAction = _contextMenu->addAction(tr("Resume sync"), this, &Systray::slotUnpauseAllFolders);
     _contextMenu->addAction(tr("Settings"), this, &Systray::openSettings);
