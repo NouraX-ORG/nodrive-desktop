@@ -40,6 +40,10 @@ public:
 
     static constexpr int refreshIntervalMs = 5 * 60 * 1000;
 
+Q_SIGNALS:
+    /// The account was removed from NoDrive: its NoAgenda data and cache are gone, windows must close.
+    void agendaRemoved(const QString &accountId);
+
 private:
     void watch(AccountState *state);
     void remove(AccountState *state);

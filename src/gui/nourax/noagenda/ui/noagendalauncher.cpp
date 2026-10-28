@@ -108,6 +108,18 @@ void NoAgendaLauncher::openForUserIndex(int userIndex)
     }
     agenda->markOpened();
 
+    // When the account is removed, its window goes away at once (before its data does).
+    static bool watching = false;
+    if (!watching) {
+        watching = true;
+        QObject::connect(AgendaService::instance(), &AgendaService::agendaRemoved, AgendaService::instance(), [](const QString &accountId) {
+            if (auto window = windows().take(accountId)) {
+                window->hide();
+                window->deleteLater();
+            }
+        });
+    }
+
     auto *controller = new AgendaController(agenda);
     controller->setAccountName(accountState->account()->displayName());
     QString error;

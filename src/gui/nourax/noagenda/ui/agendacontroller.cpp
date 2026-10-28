@@ -180,23 +180,26 @@ void AgendaController::setPage(const QString &page)
 
 bool AgendaController::hasTeamSection() const
 {
-    return _agenda->state().build.anyOversee;
+    return _agenda && _agenda->state().build.anyOversee;
 }
 
 bool AgendaController::refreshing() const
 {
-    return _agenda->state().refreshing;
+    return _agenda && _agenda->state().refreshing;
 }
 
 bool AgendaController::loadingFirstTime() const
 {
+    if (!_agenda) {
+        return false;
+    }
     const auto &state = _agenda->state();
     return state.neverLoaded && (state.refreshing || !state.refreshedAt.isValid()) && !state.offline;
 }
 
 bool AgendaController::personalQuestionVisible() const
 {
-    return _agenda->state().build.needsPersonalQuestion && !_personalDismissed;
+    return _agenda && _agenda->state().build.needsPersonalQuestion && !_personalDismissed;
 }
 
 void AgendaController::refresh()
@@ -361,6 +364,9 @@ QString AgendaController::savedAtText(const QDateTime &when) const
 
 QString AgendaController::updatedText() const
 {
+    if (!_agenda) {
+        return QString();
+    }
     const auto when = _agenda->state().refreshedAt;
     if (!when.isValid()) {
         return QString();

@@ -79,6 +79,7 @@ void AgendaService::remove(AccountState *state)
         return;
     }
     const auto id = state->account()->id();
+    Q_EMIT agendaRemoved(id); // windows close first
     const auto it = _agendas.find(id);
     if (it != _agendas.end()) {
         // NoAgenda's own copy of the server data goes away with the account (it holds personal events).
