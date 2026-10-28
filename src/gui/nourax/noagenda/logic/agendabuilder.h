@@ -14,7 +14,7 @@
 #include "../model/agendaitem.h"
 #include "../ocs/serverinfo.h"
 #include "../registry/agentregistry.h"
-#include "buildcontext.h"
+#include "agendacontext.h"
 #include "sourcesettings.h"
 
 namespace OCC::Nourax::Agenda {

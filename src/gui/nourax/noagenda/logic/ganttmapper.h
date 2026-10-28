@@ -9,7 +9,7 @@
 #pragma once
 
 #include "../gantt/ganttdata.h"
-#include "buildcontext.h"
+#include "agendacontext.h"
 
 namespace OCC::Nourax::Agenda {
 

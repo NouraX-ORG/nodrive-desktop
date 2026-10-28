@@ -8,7 +8,7 @@
 #pragma once
 
 #include "../deck/deckclient.h"
-#include "buildcontext.h"
+#include "agendacontext.h"
 
 namespace OCC::Nourax::Agenda {
 

@@ -5,7 +5,7 @@
 
 #include "agendacontroller.h"
 
-#include "../logic/buildcontext.h"
+#include "../logic/agendacontext.h"
 #include "theme.h"
 
 #include <QLocale>

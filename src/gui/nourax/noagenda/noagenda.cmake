@@ -44,8 +44,8 @@ target_sources(nextcloudCore PRIVATE
     ${NOAGENDA_DIR}/deck/deckclient.cpp
     ${NOAGENDA_DIR}/logic/sourcesettings.h
     ${NOAGENDA_DIR}/logic/sourcesettings.cpp
-    ${NOAGENDA_DIR}/logic/buildcontext.h
-    ${NOAGENDA_DIR}/logic/buildcontext.cpp
+    ${NOAGENDA_DIR}/logic/agendacontext.h
+    ${NOAGENDA_DIR}/logic/agendacontext.cpp
     ${NOAGENDA_DIR}/logic/calendarmapper.h
     ${NOAGENDA_DIR}/logic/calendarmapper.cpp
     ${NOAGENDA_DIR}/logic/ganttmapper.h
