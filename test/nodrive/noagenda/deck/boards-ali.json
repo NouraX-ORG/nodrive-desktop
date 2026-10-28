@@ -63,6 +63,8 @@
     "users": [],
     "deletedAt": 0,
     "lastModified": 1790000000,
-    "settings": []
+    "settings": {
+      "calendar": true
+    }
   }
 ]

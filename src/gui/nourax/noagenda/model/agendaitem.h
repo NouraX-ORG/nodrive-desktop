@@ -147,7 +147,8 @@ struct AgendaItem
 /// Result of reading one source.
 struct SourceStatus
 {
-    enum class State { NeverLoaded, Fresh, Cached, Failed, ReadOnly, Unavailable, NotLinked, NeedsLogin };
+    /// Saved: read from the cache at start, no attempt yet (no banner). Cached: the last attempt failed, the saved copy is shown.
+    enum class State { NeverLoaded, Fresh, Saved, Cached, Failed, ReadOnly, Unavailable, NotLinked, NeedsLogin };
 
     QString key; ///< calendar | gantt | board | registry
     State state = State::NeverLoaded;

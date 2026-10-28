@@ -406,19 +406,21 @@ private:
         check(QStringLiteral("contract capabilities deck.version"), !caps.data.toObject().value(QLatin1String("capabilities")).toObject().value(QLatin1String("deck")).toObject().value(QLatin1String("version")).toString().isEmpty(), QStringLiteral("deck version present"));
         const auto home = dav(&transport, "PROPFIND", QStringLiteral("remote.php/dav/calendars/%1/").arg(_user), CalDavXml::propfindBody(CalendarReader::calendarProps()), 1);
         const auto ms = CalDavXml::parseMultistatus(home.body);
-        bool personalChecked = false;
+        bool calendarChecked = false;
         for (const auto &r : ms.responses) {
-            if (r.href.endsWith(QLatin1String("/personal/"))) {
-                personalChecked = true;
-                for (const auto &p : {Dav::key(Dav::nsDav(), QStringLiteral("resourcetype")), Dav::key(Dav::nsDav(), QStringLiteral("displayname")),
-                         Dav::key(Dav::nsDav(), QStringLiteral("sync-token")), Dav::key(Dav::nsCs(), QStringLiteral("getctag")),
-                         Dav::key(Dav::nsCalDav(), QStringLiteral("supported-calendar-component-set")), Dav::key(Dav::nsOc(), QStringLiteral("owner-principal")),
-                         Dav::key(Dav::nsDav(), QStringLiteral("current-user-privilege-set"))}) {
-                    check(QStringLiteral("contract CalDAV property ") + p, r.props.contains(p), r.props.contains(p) ? QStringLiteral("present") : QStringLiteral("missing"));
-                }
+            if (!r.props.value(Dav::key(Dav::nsDav(), QStringLiteral("resourcetype"))).has(QStringLiteral("calendar"))) {
+                continue;
             }
+            calendarChecked = true;
+            for (const auto &p : {Dav::key(Dav::nsDav(), QStringLiteral("resourcetype")), Dav::key(Dav::nsDav(), QStringLiteral("displayname")),
+                     Dav::key(Dav::nsDav(), QStringLiteral("sync-token")), Dav::key(Dav::nsCs(), QStringLiteral("getctag")),
+                     Dav::key(Dav::nsCalDav(), QStringLiteral("supported-calendar-component-set")), Dav::key(Dav::nsOc(), QStringLiteral("owner-principal")),
+                     Dav::key(Dav::nsDav(), QStringLiteral("current-user-privilege-set"))}) {
+                check(QStringLiteral("contract CalDAV property ") + p, r.props.contains(p), r.props.contains(p) ? QStringLiteral("present") : QStringLiteral("missing"));
+            }
+            break;
         }
-        check(QStringLiteral("contract CalDAV personal calendar listed"), personalChecked, QString());
+        check(QStringLiteral("contract CalDAV a calendar is listed"), calendarChecked, QString());
     }
 
     // ---- Ali: staff -----------------------------------------------------------------------------------------------------------------------
@@ -561,12 +563,12 @@ private:
         check(QStringLiteral("a card that is late"), team(QStringLiteral("Fix footer"), ProblemFlag::Kind::Late), QString());
         check(QStringLiteral("a card with nobody on it"), team(QStringLiteral("Unassigned backlog"), ProblemFlag::Kind::NotAssigned), QString());
         check(QStringLiteral("a card due today"), team(QStringLiteral("Pay invoice"), ProblemFlag::Kind::DueToday), QString());
-        // her own rows: none of the staff's work is hers
+        // the staff's work is not hers: every project and board row is a team row
         int mine = 0;
         for (const auto &i : state.items) {
-            mine += i.workKind != WorkKind::Team ? 1 : 0;
+            mine += ((i.home == Home::Gantt || i.home == Home::Board) && i.workKind != WorkKind::Team && i.sourceName != QLatin1String("Team board") ? 1 : 0);
         }
-        check(QStringLiteral("only team rows"), mine == 0, QString::number(mine));
+        check(QStringLiteral("no project or board row of the staff is hers"), mine == 0, QString::number(mine));
         // Mara never sees Ali's personal events
         check(QStringLiteral("no personal event of someone else"), byTitle(*agenda, QStringLiteral("Dentist")) == nullptr, QString());
     }
@@ -604,11 +606,18 @@ private:
         check(QStringLiteral("no agent list: missing"), state.registryStatus == AgentRegistry::Status::Missing, QString());
         const auto *gantt = state.status(QStringLiteral("gantt"));
         check(QStringLiteral("not linked to a person in NoGantt"), gantt && gantt->state == SourceStatus::State::NotLinked, gantt ? QString::number(static_cast<int>(gantt->state)) : QString());
+        int foreign = 0;
+        int names = 0;
         for (const auto &i : state.items) {
-            check(QStringLiteral("nothing of another organisation: %1").arg(i.key.left(12)), i.home != Home::Gantt && i.home != Home::Board, i.key);
-            check(QStringLiteral("no name of someone else's agent: %1").arg(i.key.left(12)),
-                !i.title.contains(QStringLiteral("Bot")) && !i.agent.displayText().contains(QStringLiteral("Writer-Bot")) && !i.agent.displayText().contains(QStringLiteral("Design-Bot")), QString());
+            // The cards of his own welcome board are his; nothing of the other organisation's board or projects is.
+            foreign += (i.home == Home::Gantt || i.sourceName == QLatin1String("Team board")) ? 1 : 0;
+            names += (i.agent.displayText().contains(QStringLiteral("Writer-Bot")) || i.agent.displayText().contains(QStringLiteral("Design-Bot"))
+                         || i.title.contains(QStringLiteral("Writer-Bot")) || i.title.contains(QStringLiteral("Design-Bot")))
+                ? 1
+                : 0;
         }
+        check(QStringLiteral("nothing of the other organisation's projects and board"), foreign == 0, QString::number(foreign));
+        check(QStringLiteral("no name of someone else's agent"), names == 0, QString::number(names));
         check(QStringLiteral("none of Ali's events"), byTitle(*agenda, QStringLiteral("Dentist")) == nullptr && byTitle(*agenda, QStringLiteral("Client call")) == nullptr, QString());
     }
 

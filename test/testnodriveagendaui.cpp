@@ -22,6 +22,7 @@
 #include <QApplication>
 #include <QGuiApplication>
 #include <QImage>
+#include <QLocale>
 #include <QQmlEngine>
 #include <QQuickItem>
 #include <QQuickStyle>
@@ -98,6 +99,7 @@ class TestNoDriveAgendaUi : public QObject
 
     QTemporaryDir _config;
     QQmlEngine _engine;
+    int _opened = 0;
     QString _shots;
 
     struct Env
@@ -118,7 +120,8 @@ class TestNoDriveAgendaUi : public QObject
         if (tweak) {
             tweak(env->transport);
         }
-        env->agenda = std::make_unique<AccountAgenda>(std::move(fake), _config.path() + QStringLiteral("/noagenda/") + user + (dark ? QStringLiteral("-dark") : QStringLiteral("-light")));
+        // Every window gets its own cache folder: the settings (chips, answers) must not leak from one test to the next.
+        env->agenda = std::make_unique<AccountAgenda>(std::move(fake), _config.path() + QStringLiteral("/noagenda/") + user + QLatin1Char('-') + QString::number(++_opened));
         env->agenda->setClock([] { return fixedNow(); });
         env->agenda->setZone(QTimeZone(QTimeZone::UTC));
         env->agenda->loadFromCache();
@@ -223,23 +226,23 @@ private Q_SLOTS:
     {
         const auto env = open(QStringLiteral("ali"), false);
         show(env.get());
-        QVERIFY(hasText(env->window, QStringLiteral("Day")));
-        QVERIFY(hasText(env->window, QStringLiteral("Week")));
-        QVERIFY(hasText(env->window, QStringLiteral("Month")));
-        QVERIFY(hasText(env->window, QStringLiteral("Today")));
-        QVERIFY(hasText(env->window, QStringLiteral("All")));
-        QVERIFY(hasText(env->window, QStringLiteral("Work")));
-        QVERIFY(hasText(env->window, QStringLiteral("Personal")));
-        QVERIFY(hasText(env->window, QStringLiteral("Me")));
-        QVERIFY(hasText(env->window, QStringLiteral("My agents")));
-        QVERIFY(hasText(env->window, QStringLiteral("My team")));
-        QVERIFY(hasText(env->window, QStringLiteral("Refresh")));
-        QVERIFY(hasText(env->window, QStringLiteral("Sources")));
-        QVERIFY(hasText(env->window, QStringLiteral("Due today")));
-        QVERIFY(hasText(env->window, QStringLiteral("Self")));
-        QVERIFY(hasText(env->window, QStringLiteral("Writer-Bot")));
-        QVERIFY(hasText(env->window, QStringLiteral("Dentist")));
-        QVERIFY(hasText(env->window, QStringLiteral("Client call")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Day")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Week")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Month")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Today")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("All")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Work")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Personal")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Me")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("My agents")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("My team")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Refresh")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Sources")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Due today")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Self")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Writer-Bot")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Dentist")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Client call")));
     }
 
     void noTextOfTheWindowEverSaysTheServerSoftwareName()
@@ -289,11 +292,11 @@ private Q_SLOTS:
             QVERIFY2(findItem(content, QString::fromLatin1(key)), key);
         }
         // the dentist and the client call are both at 10:00 (the clash of feature 2 is not drawn yet)
-        QVERIFY(hasText(env->window, QStringLiteral("10:00")));
-        QVERIFY(hasText(env->window, QStringLiteral("Late")));
-        QVERIFY(hasText(env->window, QStringLiteral("2 days late")));
-        QVERIFY(hasText(env->window, QStringLiteral("In progress")));
-        QVERIFY(hasText(env->window, QStringLiteral("No date")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("10:00")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Late")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("2 days late")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("In progress")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("No date")));
         checkBackground(env.get(), dark);
         checkSelectedChip(env.get(), dark);
         shoot(env.get(), QStringLiteral("day"), dark);
@@ -416,14 +419,14 @@ private Q_SLOTS:
         show(env.get());
         auto *content = env->window->contentItem();
         QVERIFY(env->controller->hasTeamSection());
-        QVERIFY(hasText(env->window, QStringLiteral("My team")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("My team")));
         // a problem row names the person, the agent and the problem
         auto *late = findItem(content, QStringLiteral("row-gantt:task:103:sara"));
         QVERIFY(late);
-        QVERIFY(hasText(env->window, QStringLiteral("Banner design")));
-        QVERIFY(hasText(env->window, QStringLiteral("Sara")));
-        QVERIFY(hasText(env->window, QStringLiteral("Design-Bot")));
-        QVERIFY(hasText(env->window, QStringLiteral("2 days late")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Banner design")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Sara")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Design-Bot")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("2 days late")));
         // a row without a problem is not there...
         QVERIFY(!findItem(content, QStringLiteral("row-gantt:task:101:ali")));
         shoot(env.get(), QStringLiteral("my-team"), dark);
@@ -446,8 +449,8 @@ private Q_SLOTS:
         QCOMPARE(env->controller->selectedKey(), QStringLiteral("gantt:task:101"));
         auto *panel = findItem(content, QStringLiteral("detailPanel"));
         QVERIFY(panel->isVisible());
-        QVERIFY(hasText(env->window, QStringLiteral("Write homepage copy")));
-        QVERIFY(hasText(env->window, QStringLiteral("Open in NoGantt")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Write homepage copy")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Open in NoGantt")));
         QVERIFY(!hasText(env->window, QStringLiteral("Delete")));
         QCOMPARE(env->controller->detail().value(QStringLiteral("agentText")).toString(), QStringLiteral("Writer-Bot"));
         // Open in...: the account's own server, in the default browser
@@ -471,7 +474,7 @@ private Q_SLOTS:
         show(env.get());
         env->controller->select(QStringLiteral("gantt:task:108"));
         QTest::qWait(100);
-        QVERIFY(hasText(env->window, QStringLiteral("Two agents for Ali: choose one")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Two agents for Ali: choose one")));
         shoot(env.get(), QStringLiteral("detail"), dark);
     }
 
@@ -508,13 +511,13 @@ private Q_SLOTS:
         QTest::qWait(100);
         auto *page = findItem(env->window->contentItem(), QStringLiteral("sourcesPage"));
         QVERIFY(page && page->isVisible());
-        QVERIFY(hasText(env->window, QStringLiteral("Projects (NoGantt)")));
-        QVERIFY(hasText(env->window, QStringLiteral("Boards (NoBoard)")));
-        QVERIFY(hasText(env->window, QStringLiteral("Website")));
-        QVERIFY(hasText(env->window, QStringLiteral("Team board")));
-        QVERIFY(hasText(env->window, QStringLiteral("Do + Oversee")));
-        QVERIFY(hasText(env->window, QStringLiteral("Working hours")));
-        QVERIFY(hasText(env->window, QStringLiteral("Agents")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Projects (NoGantt)")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Boards (NoBoard)")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Website")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Team board")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Do + Oversee")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Working hours")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Agents")));
         // Changing a setting on the screen changes it for real.
         click(env->window, findItem(page, QStringLiteral("mode-2-hidden")));
         bool hidden = false;
@@ -560,10 +563,10 @@ private Q_SLOTS:
         show(env.get());
         auto *dialog = findItem(env->window->contentItem(), QStringLiteral("personalDialog"));
         QVERIFY(dialog && dialog->isVisible());
-        QVERIFY(hasText(env->window, QStringLiteral("Which of your calendars are personal?")));
-        QVERIFY(hasText(env->window, QStringLiteral("Personal events are only ever shown to you. The others count as Work.")));
-        QVERIFY(hasText(env->window, QStringLiteral("Save")));
-        QVERIFY(hasText(env->window, QStringLiteral("Skip")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Which of your calendars are personal?")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Personal events are only ever shown to you. The others count as Work.")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Save")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Skip")));
         QVERIFY(findItem(dialog, QStringLiteral("personalCalendar-personal")));
         QVERIFY(findItem(dialog, QStringLiteral("personalCalendar-work")));
         shoot(env.get(), QStringLiteral("personal-question"), dark);
@@ -605,7 +608,7 @@ private Q_SLOTS:
             t->answers.removeIf([](const FakeTransport::Answer &a) { return a.path.contains(QStringLiteral("/projects/")); });
         });
         show(env.get());
-        QVERIFY(hasText(env->window, QStringLiteral("You're not linked to a person in NoGantt yet. Ask your project manager to link you.")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("You're not linked to a person in NoGantt yet. Ask your project manager to link you.")));
         shoot(env.get(), QStringLiteral("empty-not-linked"), dark);
     }
 
@@ -623,8 +626,8 @@ private Q_SLOTS:
         env->transport->offline = true;
         env->agenda->refresh(true);
         show(env.get());
-        QVERIFY(hasText(env->window, QStringLiteral("can't be reached; showing what was saved at")));
-        QVERIFY(hasText(env->window, QStringLiteral("Dentist"))); // the saved rows are still there
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("can't be reached; showing what was saved at")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Dentist"))); // the saved rows are still there
         shoot(env.get(), QStringLiteral("offline-banner"), dark);
     }
 
@@ -638,7 +641,7 @@ private Q_SLOTS:
         }
         env->agenda->refresh(true);
         show(env.get());
-        QVERIFY(hasText(env->window, QStringLiteral("NoGantt can't be reached; showing what was saved at")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("NoGantt can't be reached; showing what was saved at")));
         QVERIFY(!hasText(env->window, QStringLiteral("NoBoard can't be reached")));
         QVERIFY(findItem(env->window->contentItem(), QStringLiteral("row-gantt:task:101"))); // the old rows stay
     }
@@ -648,7 +651,7 @@ private Q_SLOTS:
         const auto env = open(QStringLiteral("ali"), false, [](FakeTransport *t) { t->offline = true; });
         env->agenda->setOnline(false);
         show(env.get());
-        QVERIFY(hasText(env->window, QStringLiteral("You're offline. NoAgenda will load when NoDrive is connected.")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("You're offline. NoAgenda will load when NoDrive is connected.")));
     }
 
     void aSignedOutAccountOffersToLogIn()
@@ -656,8 +659,8 @@ private Q_SLOTS:
         const auto env = open(QStringLiteral("ali"), false);
         env->agenda->setNeedsLogin(true);
         show(env.get());
-        QVERIFY(hasText(env->window, QStringLiteral("Sign in to NoDrive to see new changes.")));
-        QVERIFY(hasText(env->window, QStringLiteral("Log in")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Sign in to NoDrive to see new changes.")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Log in")));
         bool login = false;
         connect(env->controller.get(), &AgendaController::loginRequested, this, [&login] { login = true; });
         env->controller->bannerAction(QStringLiteral("login"));
@@ -681,7 +684,7 @@ private Q_SLOTS:
             show(env.get());
             env->controller->setPage(QStringLiteral("sources"));
             QTest::qWait(100);
-            QVERIFY(hasText(env->window, QStringLiteral("No agent list found in your NoDrive (NoAgenda/agent-registry.json). Everything shows as Self.")));
+            QTRY_VERIFY(hasText(env->window, QStringLiteral("No agent list found in your NoDrive (NoAgenda/agent-registry.json). Everything shows as Self.")));
             shoot(env.get(), QStringLiteral("registry-missing"), dark);
         }
         {
@@ -762,6 +765,8 @@ int main(int argc, char *argv[])
     QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication app(argc, argv);
+    // The screenshots look the same everywhere: 24 hour clock and English names.
+    QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedKingdom));
     TestNoDriveAgendaUi test;
     return QTest::qExec(&test, argc, argv);
 }

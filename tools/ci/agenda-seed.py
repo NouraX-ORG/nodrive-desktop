@@ -197,7 +197,7 @@ def card(title, users, due, label=None, done=False):
         deck("mara", "PUT", "boards/%d/stacks/%d/cards/%d/assignLabel" % (board, stack, cid), {"labelId": labels[label]})
     if done:
         try:
-            update = {"title": title, "type": "plain", "owner": "mara", "description": "", "order": 1, "done": True}
+            update = {"title": title, "type": "plain", "owner": "mara", "description": "", "order": 1, "done": TODAY.isoformat() + "T08:00:00+00:00"}
             if due is not None:
                 update["duedate"] = body["duedate"]
             deck("mara", "PUT", "boards/%d/stacks/%d/cards/%d" % (board, stack, cid), update)
@@ -207,6 +207,10 @@ def card(title, users, due, label=None, done=False):
     return cid
 
 
+try:
+    ocs("mara", "PUT", "projects/%d" % website, {"deck_board_id": board, "deck_sync_level": "read"})
+except RuntimeError as e:
+    warn("project deck level: " + str(e))
 linked_card = card("Landing page card", ["ali"], 2)
 card("Call supplier", ["ali"], 1, "Writer-Bot")
 card("Pay invoice", ["ali"], 0)

@@ -528,7 +528,7 @@ private Q_SLOTS:
         QCOMPARE(second.state().items.size(), 32);
         QVERIFY(!second.state().neverLoaded);
         for (const auto &s : second.state().statuses) {
-            QCOMPARE(s.state, SourceStatus::State::Cached);
+            QCOMPARE(s.state, SourceStatus::State::Saved); // read from the cache, no attempt yet: no banner
             QVERIFY(s.savedAt.isValid());
         }
 

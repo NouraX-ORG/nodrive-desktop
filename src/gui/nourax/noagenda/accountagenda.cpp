@@ -71,16 +71,16 @@ void AccountAgenda::loadFromCache()
     _gantt = _cache.loadGantt();
     _deck = _cache.loadDeck();
     if (_calendar.loaded) {
-        markStatus(QStringLiteral("calendar"), SourceStatus::State::Cached, _calendar.fetchedAt);
+        markStatus(QStringLiteral("calendar"), SourceStatus::State::Saved, _calendar.fetchedAt);
     }
     if (_gantt.loaded) {
-        markStatus(QStringLiteral("gantt"), _gantt.unavailable ? SourceStatus::State::Unavailable : SourceStatus::State::Cached, _gantt.fetchedAt);
+        markStatus(QStringLiteral("gantt"), _gantt.unavailable ? SourceStatus::State::Unavailable : SourceStatus::State::Saved, _gantt.fetchedAt);
     }
     if (_deck.loaded) {
-        markStatus(QStringLiteral("board"), _deck.unavailable ? SourceStatus::State::Unavailable : SourceStatus::State::Cached, _deck.fetchedAt);
+        markStatus(QStringLiteral("board"), _deck.unavailable ? SourceStatus::State::Unavailable : SourceStatus::State::Saved, _deck.fetchedAt);
     }
     if (_registryCache.present) {
-        markStatus(QStringLiteral("registry"), SourceStatus::State::Cached, _registryCache.fetchedAt);
+        markStatus(QStringLiteral("registry"), SourceStatus::State::Saved, _registryCache.fetchedAt);
     }
     rebuild();
 }
