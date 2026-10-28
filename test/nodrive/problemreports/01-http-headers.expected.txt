@@ -1,0 +1,3 @@
+2026-10-28 14:03:22.101 [ info sync.httplogger ]:	"abc123": Request: PROPFIND https://drive.example.org/remote.php/dav/files/<email>/Documents Header: { Authorization: <removed>, Cookie: <removed>, X-Request-ID: abc123, } Data: []
+2026-10-28 14:03:22.250 [ info sync.httplogger ]:	"abc123": Response: PROPFIND 207 https://drive.example.org/remote.php/dav/files/<email>/Documents Header: { Content-Type: application/xml, Set-Cookie: <removed>, Set-Cookie: <removed>, Date: Wed, 28 Oct 2026 14:03:22 GMT, } Data: []
+2026-10-28 14:03:23.000 [ info sync.httplogger ]:	"abc124": Request: GET https://drive.example.org/status.php Header: { Proxy-Authorization: <removed>, Accept: */*, } Data: []

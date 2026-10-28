@@ -1,0 +1,3 @@
+Arguments: ("/usr/bin/nodrive", "--apppassword", "aB3dE-fG5hI-jK7lM-nO9pQ-rS1tU", "--serverurl", "https://drive.example.org")
+nodrive --apppassword=Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz --userid jane.doe@example.com
+nodrive --apppassword Zk8sLq3VnX0pTt4RbYw9UcHgJm2EaDf7

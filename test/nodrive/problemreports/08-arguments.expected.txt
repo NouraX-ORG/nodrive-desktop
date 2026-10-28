@@ -1,0 +1,3 @@
+Arguments: ("/usr/bin/nodrive", "--apppassword", <removed>, "--serverurl", "https://drive.example.org")
+nodrive --apppassword=<removed> --userid <email>
+nodrive --apppassword <removed>

@@ -32,6 +32,7 @@
 #include "csync_exclude.h"
 #include "owncloudsetupwizard.h"
 #include "version.h"
+#include "nourax/problemreportmanager.h" // NoDrive: problem reports
 
 #include "config.h"
 #include "settings/migration.h"
@@ -515,6 +516,7 @@ Application::Application(int &argc, char **argv)
 
     // Cleanup at Quit.
     connect(this, &QCoreApplication::aboutToQuit, this, &Application::slotCleanup);
+    Nourax::ProblemReportManager::instance()->start(); // NoDrive: problem reports
 
     // Allow other classes to hook into isShowingSettingsDialog() signals (re-auth widgets, for example)
     connect(_gui.data(), &ownCloudGui::isShowingSettingsDialog, this, &Application::slotGuiIsShowingSettings);

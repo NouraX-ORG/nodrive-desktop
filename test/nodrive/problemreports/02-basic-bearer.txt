@@ -1,0 +1,5 @@
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4ifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+{"Authorization":"Basic YWRtaW46c2VjcmV0cGFzc3dvcmQ=","Accept":"application/json"}
+curl -H 'Authorization: Bearer abcdef0123456789' https://drive.example.org
+The Basic configuration was loaded and Bearer tokens are not used here.
+Retry with Basic YWRtaW46c2VjcmV0cGFzc3dvcmQ= after the proxy answered 407

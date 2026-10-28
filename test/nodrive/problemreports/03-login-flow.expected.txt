@@ -1,0 +1,5 @@
+{"server":"https://drive.example.org","loginName":"<email>","appPassword":"<removed>"}
+{"poll":{"token":"<removed>","endpoint":"https://drive.example.org/login/v2/poll"},"login":"https://drive.example.org/login/v2/flow/<secret>"}
+POST https://drive.example.org/login/v2/poll Data: [token=<removed>]
+New app password <secret> created
+Account stored with appPassword=<removed> and accessToken: <removed>

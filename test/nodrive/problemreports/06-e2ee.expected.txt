@@ -1,0 +1,2 @@
+{"mnemonic":"<removed>","privateKey":"<removed>","metadataKey":"<removed>","folder":"/Private/Taxes 2026"}
+encryptedMetadataKey=<removed> passphrase: "<removed>"

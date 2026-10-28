@@ -108,6 +108,13 @@ target_link_libraries(SharingDialogTest PRIVATE nextcloudGuiSharing nextcloudGui
 nextcloud_add_test(PushNotifications)
 nextcloud_add_test(Theme)
 nextcloud_add_test(NoDriveBranding) # NoDrive branding checks
+nextcloud_add_test(NoDriveProblemReportScrubber) # NoDrive: problem reports
+target_compile_definitions(NoDriveProblemReportScrubberTest PRIVATE NODRIVE_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/test/nodrive/problemreports") # NoDrive: problem reports
+nextcloud_add_test(NoDriveProblemReport) # NoDrive: problem reports
+nextcloud_add_test(NoDriveProblemReportUpload) # NoDrive: problem reports
+nextcloud_add_test(NoDriveProblemReportUi) # NoDrive: problem reports
+target_compile_definitions(NoDriveProblemReportUiTest PRIVATE NODRIVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}") # NoDrive: problem reports
+nextcloud_add_test(NoDriveProblemReportServer) # NoDrive: problem reports
 nextcloud_add_test(SettingsDialog)
 nextcloud_add_test(IconUtils)
 nextcloud_add_test(CustomStateIcons)

@@ -1,0 +1,6 @@
+Uploading /Photos/Holiday 2026/IMG_0001.jpg (etag "7d6c5f0a1b2c3d4e5f60718293a4b5c6")
+Checksum SHA1:da39a3ee5e6b4b0d3255bfef95601890afd80709 for Reports/Q3.xlsx
+Checksum MD5:D41D8CD98F00B204E9800998ECF8427E done
+file id 00012345ocabcd1234efgh and a very long folder name Company_Documents_2026_Quarter_Three_Final
+Basic configuration loaded; Bearer is not mentioned. Status code: 207
+2026-10-28 14:03:22.101 [ info nodrive.sync ]: Sync finished with 12 items in 3.4 s

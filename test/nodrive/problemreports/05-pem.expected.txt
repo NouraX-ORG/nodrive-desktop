@@ -1,0 +1,4 @@
+before the key
+<private key removed>
+after the key
+{"key":"<private key removed>\n","name":"keep-me.txt"}

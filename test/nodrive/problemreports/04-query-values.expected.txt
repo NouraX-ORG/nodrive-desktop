@@ -1,0 +1,4 @@
+GET https://drive.example.org/s/x?token=<removed>&password=<removed>&pass=<removed>&secret=<removed>&key=<removed>&sig=<removed>&code=<removed>&state=<removed>&fileid=123&path=/Photos/Summer 2026.jpg
+Data: [grant_type=authorization_code&code=<removed>&state=<removed>&redirect_uri=https://drive.example.org/cb]
+status code=404 for key lookup: not a query value
+https://<removed>@localhost/owncloud was contacted

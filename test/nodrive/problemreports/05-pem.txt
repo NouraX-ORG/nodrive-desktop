@@ -1,0 +1,7 @@
+before the key
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj
+MzEfYyjiWA4R4/M2bS1GB4t7NXp98C3SC6dVMvDuictGeurT8jNbvJZHtCSuYEvu
+-----END PRIVATE KEY-----
+after the key
+{"key":"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAyKq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz\n-----END RSA PRIVATE KEY-----\n","name":"keep-me.txt"}

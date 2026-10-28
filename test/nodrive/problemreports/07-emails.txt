@@ -1,0 +1,3 @@
+Sharing with support@example.org failed; owner is jane.doe@example.com.
+GET /remote.php/dav/files/john@corp.example.co.uk/Reports/2026.pdf
+Contact me at first.last+tag@sub.example.com, thanks.

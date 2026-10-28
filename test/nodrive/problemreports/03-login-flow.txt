@@ -1,0 +1,5 @@
+{"server":"https://drive.example.org","loginName":"jane.doe@example.com","appPassword":"Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz"}
+{"poll":{"token":"Kd83HfQ0zLw92mXvN7bTcY4rPjE6uGaS1oIiVxZtB5nMlWqRy3UeDhJk8CfA0sgTp2NvOb9LxQ7mZw4YrHcEd6Ju1KtGa5SnPiBv3MoXz0LqWy8RfCh2DjUe9NlTb4Vk","endpoint":"https://drive.example.org/login/v2/poll"},"login":"https://drive.example.org/login/v2/flow/Kd83HfQ0zLw92mXvN7bTcY4rPjE6uGaS1oIiVxZtB5nMlWqRy3UeDhJk8CfA0sgTp2NvOb9LxQ7mZw4YrHcEd6Ju1KtGa5SnPiBv3MoXz0LqWy8RfCh2DjUe9NlTb4Vk"}
+POST https://drive.example.org/login/v2/poll Data: [token=Kd83HfQ0zLw92mXvN7bTcY4rPjE6uGaS1oIiVxZtB5nMlWqRy3UeDhJk8CfA0sgTp2NvOb9LxQ7mZw4YrHcEd6Ju1KtGa5SnPiBv3MoXz0LqWy8RfCh2DjUe9NlTb4Vk]
+New app password aB3dE-fG5hI-jK7lM-nO9pQ-rS1tU created
+Account stored with appPassword=Qa7Zp3LmN9xV2cTb8RyHs4WdKf6JgEu1XoPiAnMq5ZtCvBlYr0SwDhGk3UeF7jTa2Nc9VbXz and accessToken: Zk8sLq3VnX0pTt4RbYw9UcHgJm2EaDf7

@@ -17,6 +17,7 @@
 #include "logger.h"
 #include "owncloudgui.h"
 #include "settingspanelstyle.h"
+#include "nourax/problemreportspanel.h" // NoDrive: problem reports
 #include "theme.h"
 #include "common/syncjournaldb.h"
 
@@ -292,6 +293,7 @@ AdvancedSettings::AdvancedSettings(QWidget *parent)
     connect(AccountManager::instance(), &AccountManager::accountRemoved, this, &AdvancedSettings::updatePollIntervalVisibility);
     connect(AccountManager::instance(), &AccountManager::capabilitiesChanged, this, &AdvancedSettings::updatePollIntervalVisibility);
 
+    Nourax::ProblemReportsPanel::install(this, _ui->pageLayout, _ui->advancedActionsGroupBox, _ui->advancedActionsLayout, _ui->debugArchiveButton); // NoDrive: problem reports
     customizeStyle();
 }
 

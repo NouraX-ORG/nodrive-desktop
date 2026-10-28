@@ -1,0 +1,3 @@
+Sharing with <email> failed; owner is <email>.
+GET /remote.php/dav/files/<email>/Reports/2026.pdf
+Contact me at <email>, thanks.

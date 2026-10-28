@@ -21,7 +21,7 @@ name: macOS
 
 on:
   push:
-    branches: [main, platform/macos]
+    branches: [main, platform/macos, 'feature/**']
   workflow_dispatch:
     inputs:
       reuse_run:

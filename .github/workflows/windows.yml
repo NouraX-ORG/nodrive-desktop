@@ -39,7 +39,7 @@ name: Windows
 
 on:
   push:
-    branches: [main, platform/windows]
+    branches: [main, platform/windows, 'feature/**']
   workflow_dispatch:
     inputs:
       reuse_run:

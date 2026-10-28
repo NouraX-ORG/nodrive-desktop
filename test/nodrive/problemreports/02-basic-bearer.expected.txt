@@ -1,0 +1,5 @@
+Authorization: <removed>
+{"Authorization":"<removed>","Accept":"application/json"}
+curl -H 'Authorization: <removed>' https://drive.example.org
+The Basic configuration was loaded and Bearer tokens are not used here.
+Retry with Basic <removed> after the proxy answered 407

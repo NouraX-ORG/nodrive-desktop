@@ -1,0 +1,2 @@
+{"mnemonic":"abandon ability able about above absent absorb abstract absurd abuse access accident","privateKey":"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7","metadataKey":"c2VjcmV0LW1ldGFkYXRh","folder":"/Private/Taxes 2026"}
+encryptedMetadataKey=dGhpcyBpcyBhIHNlY3JldA== passphrase: "correct horse battery staple"

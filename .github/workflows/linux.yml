@@ -9,7 +9,7 @@ name: Linux
 
 on:
   push:
-    branches: [main, platform/linux]
+    branches: [main, platform/linux, 'feature/**']
   workflow_dispatch:
     inputs:
       reuse_run:

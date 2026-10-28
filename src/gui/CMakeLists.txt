@@ -621,6 +621,8 @@ target_link_libraries(nextcloudCore
   KDAB::kdsingleapplication
   )
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/nourax/nourax.cmake) # NoDrive: Nourax features (problem reports)
+
 if(KF6GuiAddons_FOUND)
   target_link_libraries(nextcloudCore
     PUBLIC
