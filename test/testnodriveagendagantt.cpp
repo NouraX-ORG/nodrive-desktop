@@ -290,14 +290,16 @@ private Q_SLOTS:
         {
             auto input = loadScenario(QStringLiteral("ali"));
             setResourceField(&input, 13, QStringLiteral("name"), QString(robot() + QStringLiteral(" Research-Bot (Alice)")));
-            const auto *item = find(AgendaBuilder::build(input).items, QStringLiteral("gantt:task:108"));
+            const auto built_item = AgendaBuilder::build(input);
+            const auto *item = find(built_item.items, QStringLiteral("gantt:task:108"));
             QVERIFY(hasProblem(*item, ProblemFlag::Kind::UnknownAgent));
         }
         // A planning person that has an account is a person, never an agent.
         {
             auto input = loadScenario(QStringLiteral("ali"));
             setResourceField(&input, 13, QStringLiteral("uid"), QStringLiteral("someone"));
-            const auto *item = find(AgendaBuilder::build(input).items, QStringLiteral("gantt:task:108"));
+            const auto built_item = AgendaBuilder::build(input);
+            const auto *item = find(built_item.items, QStringLiteral("gantt:task:108"));
             QVERIFY(!hasProblem(*item, ProblemFlag::Kind::TwoAgents));
             QVERIFY(!hasProblem(*item, ProblemFlag::Kind::UnknownAgent));
         }
@@ -305,7 +307,8 @@ private Q_SLOTS:
         {
             auto input = loadScenario(QStringLiteral("ali"));
             input.registry = AgentRegistry::missing();
-            const auto *item = find(AgendaBuilder::build(input).items, QStringLiteral("gantt:task:101"));
+            const auto built_item = AgendaBuilder::build(input);
+            const auto *item = find(built_item.items, QStringLiteral("gantt:task:101"));
             QVERIFY(item);
             QVERIFY(item->agent.unknown); // without the registry an agent planning person is not guessed
         }
@@ -335,7 +338,8 @@ private Q_SLOTS:
     {
         auto input = loadScenario(QStringLiteral("ali"));
         setResourceField(&input, 1, QStringLiteral("unit"), QStringLiteral("PT"));
-        const auto *item = find(AgendaBuilder::build(input).items, QStringLiteral("gantt:task:102"));
+        const auto built_item = AgendaBuilder::build(input);
+        const auto *item = find(built_item.items, QStringLiteral("gantt:task:102"));
         QCOMPARE(item->myWorkHours, 80.0); // 10 person days x 8 hours (the instance's hours_per_pt)
     }
 

@@ -338,7 +338,8 @@ private Q_SLOTS:
             }
         }
         input.calendar.records = records;
-        const auto *item = find(AgendaBuilder::build(input).items, QStringLiteral("cal:work/agent.ics"));
+        const auto built_item = AgendaBuilder::build(input);
+        const auto *item = find(built_item.items, QStringLiteral("cal:work/agent.ics"));
         QVERIFY(item->agent.unknown);
         QVERIFY(hasProblem(*item, ProblemFlag::Kind::UnknownAgent));
     }
@@ -449,7 +450,8 @@ private Q_SLOTS:
             projects.append(o);
         }
         input.gantt.projects = projects;
-        const auto *task = find(AgendaBuilder::build(input).items, QStringLiteral("gantt:task:102"));
+        const auto built_task = AgendaBuilder::build(input);
+        const auto *task = find(built_task.items, QStringLiteral("gantt:task:102"));
         QVERIFY(task);
         QVERIFY(task->readOnly);
         QVERIFY(!task->readOnlyReason.isEmpty());
