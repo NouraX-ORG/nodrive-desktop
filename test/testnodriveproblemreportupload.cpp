@@ -533,7 +533,7 @@ private Q_SLOTS:
         manager.holdReport(info);
         QTRY_COMPARE_WITH_TIMEOUT(zipCount(held), 1, 30000);
         manager.answerHeldReport(false); // "Not now"
-        QCOMPARE(zipCount(held), 0);
+        QTRY_COMPARE_WITH_TIMEOUT(zipCount(held), 0, 10000); // removed as soon as the build has been reported back
         QVERIFY(!manager.hasPendingReports());
         manager.sendPending();
         QTest::qWait(300);

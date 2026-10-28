@@ -48,10 +48,12 @@ QString screenshotDir()
 void saveShot(QWidget *widget, const QString &name)
 {
     // A message box sizes its word-wrapped text when it is shown: without show() the picture is clipped.
-    if (!widget->isVisible()) {
+    // Shown off screen (no native window), and only message boxes: other widgets are grabbed as before.
+    if (qobject_cast<QMessageBox *>(widget) && !widget->isVisible()) {
+        widget->setAttribute(Qt::WA_DontShowOnScreen);
         widget->show();
+        QCoreApplication::processEvents();
     }
-    QCoreApplication::processEvents();
     QPixmap shot = widget->grab();
     QVERIFY2(!shot.isNull(), qPrintable(name));
     QVERIFY2(shot.save(screenshotDir() + QLatin1Char('/') + name + QStringLiteral(".png")), qPrintable(name));
