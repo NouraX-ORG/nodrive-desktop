@@ -39,12 +39,17 @@ public:
 public Q_SLOTS:
     void reject() override;
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private Q_SLOTS:
     void slotSend();
     void slotShowWhatsIncluded();
     void slotSubmissionFinished(quint64 id, OCC::Nourax::ProblemReportManager::Outcome outcome);
 
 private:
+    void updateLinkColor();
+
     QPlainTextEdit *_note = nullptr;
     QLabel *_includedLink = nullptr;
     QProgressBar *_busy = nullptr;

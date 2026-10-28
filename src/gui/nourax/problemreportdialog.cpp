@@ -9,10 +9,13 @@
 
 #include "theme.h"
 
+#include <QColor>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QLabel>
 #include <QAbstractButton>
 #include <QMessageBox>
+#include <QPalette>
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
@@ -69,6 +72,29 @@ ProblemReportDialog::ProblemReportDialog(QWidget *parent)
 
     setTabOrder(_note, _sendButton);
     _note->setFocus();
+    updateLinkColor();
+}
+
+// The default link colour is dark blue, unreadable on a dark window: use the Nourax blue,
+// and a lighter one in dark mode.
+void ProblemReportDialog::updateLinkColor()
+{
+    const auto dark = palette().color(QPalette::Window).lightness() < 128;
+    auto linkPalette = _includedLink->palette();
+    const auto link = dark ? QColor(0x60, 0xA5, 0xFA) : QColor(0x25, 0x63, 0xEB);
+    if (linkPalette.color(QPalette::Link) != link) {
+        linkPalette.setColor(QPalette::Link, link);
+        linkPalette.setColor(QPalette::LinkVisited, link);
+        _includedLink->setPalette(linkPalette);
+    }
+}
+
+void ProblemReportDialog::changeEvent(QEvent *event)
+{
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ThemeChange) {
+        updateLinkColor();
+    }
 }
 
 QString ProblemReportDialog::whatsIncludedText()

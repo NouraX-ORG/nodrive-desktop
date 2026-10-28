@@ -17,6 +17,7 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QGuiApplication>
 #include <QDir>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -27,6 +28,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QStyleHints>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolBar>
@@ -84,7 +86,12 @@ class TestNoDriveProblemReportUi : public QObject
 
     void applyColorScheme(bool dark)
     {
-        auto palette = _originalPalette;
+        // The style follows the colour scheme where the platform supports it (Windows, macOS);
+        // the palette below makes the same true everywhere (Linux, offscreen).
+        QApplication::setPalette(_originalPalette);
+        QGuiApplication::styleHints()->setColorScheme(dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+        QTest::qWait(100);
+        auto palette = QApplication::palette();
         const QColor background(dark ? "#202020" : "#ffffff");
         const QColor foreground(dark ? Qt::white : Qt::black);
         palette.setColor(QPalette::Window, background);
@@ -130,6 +137,7 @@ private Q_SLOTS:
     void cleanup()
     {
         ProblemReportSettings::setEnabled(false);
+        QGuiApplication::styleHints()->unsetColorScheme();
         QApplication::setPalette(_originalPalette);
     }
 
