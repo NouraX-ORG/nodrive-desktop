@@ -134,7 +134,7 @@ class TestNoDriveProblemReportUpload : public QObject
         }
         r.url = request.url();
         for (const auto &name : request.rawHeaderList()) {
-            r.headers.insert(name, request.rawHeader(name));
+            r.headers.insert(name.toLower(), request.rawHeader(name)); // Qt 6 keeps header names in lower case
         }
         if (device) {
             if (!device->isOpen()) {
@@ -159,7 +159,7 @@ class TestNoDriveProblemReportUpload : public QObject
             if (_putStatus != 201) {
                 return new FakeErrorReply(op, request, parent, _putStatus);
             }
-            if (r.headers.value("If-None-Match") == "*" && _existingFiles.contains(name)) {
+            if (r.headers.value("if-none-match") == "*" && _existingFiles.contains(name)) {
                 return new FakeErrorReply(op, request, parent, 412);
             }
             _existingFiles.insert(name);
@@ -235,7 +235,7 @@ private Q_SLOTS:
             if (r.verb == QLatin1String("MKCOL")) {
                 QVERIFY2(r.url.path().endsWith(QStringLiteral("/Problem reports")), qPrintable(r.url.path()));
             } else if (r.verb == QLatin1String("PUT")) {
-                QCOMPARE(r.headers.value("If-None-Match"), QByteArray("*"));
+                QCOMPARE(r.headers.value("if-none-match"), QByteArray("*"));
                 QVERIFY(r.url.path().contains(QStringLiteral("/Problem reports/2026-10-28_14-03-22_linux_35.0.0-nourax.1.zip")));
                 QVERIFY(r.body.startsWith("PK fake report zip"));
             } else if (r.verb == QLatin1String("POST")) {

@@ -10,6 +10,7 @@ section 11.3).
 | `linux.py` | Linux | `admin/linux/**` (AppImage script) |
 | `windows.py` | Windows | Windows packaging, installer, shell extensions |
 | `macos.py` | macOS | macOS packaging, Finder / File Provider files |
+| `problemreports.py` | shared | The six marked hooks of the problem reports feature (`src/gui/CMakeLists.txt`, `application.cpp`, `advancedsettings.cpp`, `test/CMakeLists.txt`). The logic is in `src/gui/nourax/`; see [../../docs/problem-reports.md](../../docs/problem-reports.md) |
 
 A plugin is a plain Python file:
 
