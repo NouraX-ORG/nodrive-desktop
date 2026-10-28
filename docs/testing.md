@@ -15,11 +15,15 @@ How the builds are made: [build.md](build.md).
 
 ## 1. Results
 
-CI result on `main` at commit `bd3bd8a412` (all jobs green): Linux run
-[40189812444](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40189812444),
+CI result of the problem-reports change at commit `14ebedb5c4` (branch
+`feature/problem-reports`, all jobs green): Linux run [40736612257](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612257),
+Windows run [40736612246](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612246), macOS run [40736612254](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612254). The merge into `main`
+adds only documents on top, and `main` runs the same tests again on every push.
+The packaging, install and branding rows below were first measured at `bd3bd8a412`
+(Linux run [40189812444](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40189812444),
 Windows run [40189812456](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40189812456),
-macOS run [40189812446](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40189812446).
-Every later push to `main` runs the same tests again.
+macOS run [40189812446](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40189812446));
+the same smoke checks were green again at `14ebedb5c4`.
 
 ### 1.1 Before sign-in (CI)
 
@@ -40,7 +44,7 @@ Every later push to `main` runs the same tests again.
 | No updater | PASS (not built) | PASS (not built) | PASS: no Sparkle keys or framework |
 | Licence files in the package | PASS: `usr/share/doc/nodrive/` | PASS: `C:\Program Files\NoDrive\licenses\` | PASS: `NoDrive.app/Contents/Resources/licenses/` |
 | Uninstall | n/a | PASS: silent, nothing left except the user's settings | n/a (drag to Trash) |
-| Unit tests (`ctest`) | PASS: 99 of 99 | PASS: 96 of 96 | PASS: 93 of 93 |
+| Unit tests (`ctest`) | PASS: 104 of 104 | PASS: 101 of 101 | PASS: 98 of 98 |
 | Branding sweep of the package | PASS: 61 hits, 0 unclassified | PASS: 61 hits, 0 unclassified | PASS: 61 hits, 0 unclassified |
 | Finder extension | n/a | n/a | INFO: registered (`pluginkit`); badges need a sync folder (owner) |
 | Files on demand | not tested | owner test | not built (needs real signing) |
@@ -52,6 +56,22 @@ The 61 hits in each package sweep are kept on purpose: licence files and the
 Legal Notice copyright line in the compiled translations (legal; the dialog cannot
 be opened) and one stale translation that is never looked up (dead code). See
 [branding-sweep.md](branding-sweep.md).
+
+### 1.1a Problem reports (CI, [problem-reports.md](problem-reports.md))
+
+All rows at commit `14ebedb5c4`: Linux run [40736612257](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612257), Windows run
+[40736612246](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612246), macOS run [40736612254](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612254). CI never contacts
+`drive.nourax.org`. The upload tests use an in-process fake server; the Linux job
+`report-server` uses a throwaway Nextcloud 35.0.2 in Docker with throwaway accounts.
+
+| Feature | Linux | Windows | macOS |
+|---|---|---|---|
+| Unit tests: scrubber (a fixture per rule, 200 random secrets of each kind), report contents and 5 MB cap, run marker table, real crashes of a helper process, upload to a fake server (MKCOL, `If-None-Match`, 412 and `_2` name, read-only share, one share attempt per batch, waiting queue, held crash report), Settings texts | PASS: 5 tests, within 104 of 104 | PASS: 5 tests, within 101 of 101 | PASS: 5 tests, within 98 of 98 |
+| Settings > Advanced: switch off by default and saved, "Report a problem" after "Create Debug Archive", exact texts, no "Nextcloud" text, light and dark screenshots with pixel checks | PASS (screenshots `linux/problem-reports/`) | PASS (screenshots `windows/problem-reports/`) | PASS in the unit test; its screenshots were not collected by CI (to-do) |
+| Real app after a killed run: the question "NoDrive closed unexpectedly. Send a problem report?" appears, Escape (Not now) closes it, no second question, `run.marker` is `running` while the app runs and `clean` after a normal end | PASS, light and dark (`results.tsv`: `prompt-`, `not-now-`, `ask-once-`, `marker-running-`, `sigterm-clean-`) | PASS, light and dark; the question's UI Automation texts name no Nextcloud | PASS, light and dark |
+| Real app: "Send" builds a zip in `problem-reports/pending/` with the scrubbed files (secrets planted in the logs are gone) | PASS: 10 entries, 8.9 KB | PASS: 12 entries, 10.5 KB | PASS: 11 entries, 11.3 KB |
+| Real Nextcloud 35.0.2 (throwaway): the folder "Problem reports" is created, one zip each, an existing name is never replaced (`_2`), no share while `nourax-support` does not exist, then one read-only share (`permissions=1`), Support can list but not write, no DELETE / MOVE / COPY, a report made offline is sent later, no secret in the artifact | PASS: all 4 phases (job `report-server`, artifact `nodrive-linux-report-server`) | not run (no Docker on the runner) | not run (no Docker on the runner) |
+| Branding gate stays green and `rebrand.py --check` is clean (the marked lines of `tools/rebrand.d/problemreports.py`) | PASS: lane linux, 653 hits, 0 unclassified | PASS | PASS |
 
 ### 1.2 After sign-in (owner)
 
@@ -70,8 +90,12 @@ be opened) and one stale translation that is never looked up (dead code). See
 | Second language | pending owner test | pending owner test | pending owner test |
 | Next to the real Nextcloud app (optional) | pending owner test | pending owner test | pending owner test |
 | Device name in Settings > Security | pending owner test | pending owner test | pending owner test |
-| Problem reports: switch off by default; "Report a problem" saves a zip in "Problem reports" ([problem-reports.md](problem-reports.md)) | pending owner test | pending owner test | pending owner test |
-| Problem reports: no question after logout/logoff, the question after ending the app in the task manager, "Not now" is asked once | pending owner test | pending owner test | pending owner test |
+| Problem reports ([problem-reports.md](problem-reports.md)): Settings > Advanced shows "Send problem reports to Nourax", switched off | pending owner test | pending owner test | pending owner test |
+| Problem reports: "Report a problem" with a note says "Saved in your NoDrive > Problem reports." and the zip is in the folder "Problem reports" on the Drive (web page) | pending owner test | pending owner test | pending owner test |
+| Problem reports: logging out (Linux, macOS) or logging off (Windows) while NoDrive runs gives no question at the next start | pending owner test | pending owner test | pending owner test |
+| Problem reports: ending NoDrive hard (Task Manager, Activity Monitor or `kill -9`) gives the question at the next start; "Not now" is not asked again | pending owner test | pending owner test | pending owner test |
+| Problem reports: with the switch on, ending NoDrive hard sends the report without a question and shows "Problem report sent" | pending owner test | pending owner test | pending owner test |
+| Problem reports: dark mode (Settings > Advanced, the dialog, the question) is readable | pending owner test | pending owner test | pending owner test |
 
 Offline files and automatic photo upload are phone features; they do not apply to
 the desktop app.
@@ -151,9 +175,41 @@ keyring, so a real Linux machine is better for the sign-in and sync tests.
 4. Once signed in, syncing also works away from home (WebDAV with the app password
    is not limited to the home network).
 
+### Problem reports: what to try (after sign-in)
+
+The "Nourax Support" account may not exist on the Drive yet. Until it does, the
+app still saves the zip in your own files and says "Saved in your NoDrive >
+Problem reports." That is the expected result for now.
+
+1. Open **Settings > Advanced**. Above "Edit Ignored Files" there is **Send problem
+   reports to Nourax**. It must be switched **off**. The button **Report a problem**
+   is right of "Create Debug Archive".
+2. Click **Report a problem**, type a short note ("test"), click **What's included**
+   to read the list, then **Send**. Expected: a message "Saved in your NoDrive >
+   Problem reports." (or "Problem report sent" once Support exists). On
+   `https://drive.nourax.org` open your files: a folder **Problem reports** with one
+   zip named like `2026-10-28_12-00-00_windows_35.0.0-nourax.1.zip`. Download it
+   and open it: it has `report.json`, `logs/` and `config/`, and it must not
+   contain a password. Send back the file name and whether anything private is
+   visible.
+3. Log out (Linux, macOS) or log off (Windows) while NoDrive is running, log in
+   again, start NoDrive. Expected: **no** question.
+4. End NoDrive hard: Windows Task Manager > NoDrive > End task; macOS Activity
+   Monitor > NoDrive > Quit > Force Quit; Linux `pkill -9 nodrive`. Start NoDrive
+   again. Expected: after a few seconds the question "NoDrive closed unexpectedly.
+   Send a problem report?". Click **Not now**. End NoDrive hard and start it a
+   second time: the old case must not be asked about again.
+5. Switch **Send problem reports to Nourax** on. End NoDrive hard again and start
+   it. Expected: no question; a tray message "Problem report sent" (or "Saved in
+   your NoDrive > Problem reports.") and a new zip in the folder.
+6. Switch the system to dark mode and open the dialog and the switch: all text is
+   readable.
+7. Report PASS or what you saw (a screenshot helps) for each step. Also check that
+   no screen says "Nextcloud".
+
 ## 3. Screenshot index
 
-All screenshots are in `docs/screenshots/` (58 files). Each was looked at for
+All screenshots are in `docs/screenshots/` (84 files). Each was looked at for
 Nextcloud names, logos and colours: none found ([branding-sweep.md](branding-sweep.md),
 section 5). Variants: `en-light` (English), `de-light` (German), `ar-light`
 (Arabic, right to left), `en-dark` (English, dark mode).
@@ -168,8 +224,10 @@ section 5). Variants: `en-light` (English), `de-light` (German), `ar-light`
 | `macos/<variant>/` (4 variants) | `00-screen.png`, `01-wizard.png`, `02-menu-bar.png`, `03-proxy-settings.png`, `04-sign-in.png` | whole screen with menu bar and Dock; wizard; menu bar icon; proxy dialog; "Switch to your browser" |
 | `macos/en-light/` | `02-after-icon-click.png` | menu bar icon clicked without an account: brings the wizard back |
 | `macos/` | `app-icon-512.png` | 512 px image from `NoDrive.icns` |
+| `linux/problem-reports/`, `windows/problem-reports/` | `advanced-{light,dark}.png`, `advanced-switch-on-{light,dark}.png`, `report-dialog-{light,dark}.png`, `whats-included-{light,dark}.png`, `unclean-exit-prompt-{light,dark}.png` (from the unit test), `smoke-unclean-exit-prompt-{light,dark}.png` (from the real app) | Settings > Advanced with the new switch and button (off and on), the "Report a problem" dialog, the "What's included" text, the question after an unclean exit |
+| `macos/problem-reports/` | `smoke-unclean-exit-prompt-{light,dark}.png` | the question after an unclean exit in the real app |
 
-Count: Linux 16, Windows 20, macOS 22.
+Count: Linux 28, Windows 32, macOS 24 (12, 12 and 2 of them in `problem-reports/`).
 
 Not captured yet: the Settings window (General, Network, Info/About). "Settings"
 in the tray menu opens it even without an account (only a click on the tray icon

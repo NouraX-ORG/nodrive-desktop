@@ -47,8 +47,10 @@ Runs: the MSI `NoDrive-35.0.0.5-nourax.1-x64.msi` and the unit tests come from r
 | Second language: German | CI | PASS | Screenshots `de-light` |
 | Right-to-left: Arabic | CI | PASS, with a note | Layout mirrored (buttons, dialogs). The new wizard texts have no Arabic translation upstream yet and show in English; the tray menu is Arabic |
 | Uninstalls silently and completely | CI | PASS | `msiexec /x /qn` exit 0; nothing left (files, shortcuts, HKLM keys, Explorer handlers and overlays, `nc://`, "Apps & features"). Kept, as for any app: the user's settings folder and the autostart value |
-| Unit tests | CI | PASS | `100% tests passed, 0 tests failed out of 96` (includes `NoDriveBrandingTest`); skipped: `UpdateChannelTest` (no update channels in branded builds; no updater) |
+| Unit tests | CI | PASS | `100% tests passed, 0 tests failed out of 101` (includes `NoDriveBrandingTest`); skipped: `UpdateChannelTest` (no update channels in branded builds; no updater) |
 | Branding sweep of the packaged files | CI | PASS | Inside the MSI: 61 hits, 0 unclassified; kept: licence texts (legal), the Legal Notice copyright line in the compiled translations (legal, never shown), a stale never-shown translation (dead code); listed in `tools/branding/allow-windows.txt` |
+| Problem reports: unit tests | CI | PASS | The five `NoDriveProblemReport*Test` tests passed (run [40736612246](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612246)); `NoDriveProblemReportServerTest` skips itself without a server (real server: Linux job only) |
+| Problem reports: real app, killed run | CI | PASS | `results.tsv`: `prompt-`, `not-now-`, `ask-once-`, `marker-running-`, `quit-clean-`, `report-` PASS in `en-light` and `en-dark`; `texts-*-unclean-prompt`: 18 UI Automation texts, none names Nextcloud; zip `2026-10-28_18-15-38_windows_35.0.0-nourax.1.zip` (10499 bytes, 12 entries) clean |
 | Sync root and Explorer sidebar name ("NoDrive") | owner | pending owner test | Needs a signed-in account with a sync folder |
 | File list | owner | pending owner test | |
 | Upload, download, rename, move, delete | owner | pending owner test | |
@@ -60,6 +62,11 @@ Runs: the MSI `NoDrive-35.0.0.5-nourax.1-x64.msi` and the unit tests come from r
 | Second language (after sign-in) | owner | pending owner test | |
 | Next to the real Nextcloud app (optional) | owner | pending owner test | |
 | Device name in the web page (Settings → Security → Devices) | owner | pending owner test | |
+| Problem reports: Settings > Advanced shows "Send problem reports to Nourax", switched off | owner | pending owner test | |
+| Problem reports: "Report a problem" with a note: "Saved in your NoDrive > Problem reports." and the zip is in that folder on the Drive | owner | pending owner test | |
+| Problem reports: no question after logging out or off; the question after a hard end; "Not now" is asked once | owner | pending owner test | |
+| Problem reports: switch on, hard end: no question, "Problem report sent" | owner | pending owner test | |
+| Problem reports: dark mode readable | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 
@@ -76,6 +83,7 @@ Folder `docs/screenshots/windows/`. Variants: `en-light`, `de-light`, `ar-light`
 | `<variant>/03-proxy-settings.png` | Proxy settings dialog of the wizard |
 | `<variant>/04-sign-in.png` | After "Log in": "Switch to your browser" |
 | `app-icon-32.png` | The icon Windows shows for `nodrive.exe` |
+| `problem-reports/*.png` | Settings > Advanced with the new switch and button, the "Report a problem" dialog, "What's included", the question after an unclean exit (from the unit test and from the real app); see [testing.md](testing.md) section 3 |
 
 These are all the screens the app shows without an account: "Settings" in the tray menu opens the same wizard until an account exists.
 

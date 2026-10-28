@@ -35,8 +35,10 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Licence files | CI | PASS | `NoDrive.app/Contents/Resources/licenses/` (COPYING, licence texts, THIRD-PARTY-NOTICES.txt) |
 | Finder extension | CI | INFO | Registered with the system after the first start (`pluginkit`: `org.nourax.nodrive.desktop.FinderSyncExt(35.0.0)`). Whether Finder shows its badges needs a sync folder: owner test |
 | Files on demand (File Provider) | CI | not built | Classic sync build (`buildFileProviderModule=False`). File Provider needs real signing; owner to-do |
-| Unit tests | CI | PASS | `100% tests passed out of 93`; skipped: `UpdateChannelTest` (no update channels in branded builds; no updater) |
+| Unit tests | CI | PASS | `100% tests passed out of 98`; skipped: `UpdateChannelTest` (no update channels in branded builds; no updater) |
 | Branding sweep of the installed app | CI | PASS | 61 hits, 0 unclassified: licence files and the Legal Notice copyright line in the translations (legal), one stale never-shown translation (dead code); listed in `tools/branding/allow-macos.txt` |
+| Problem reports: unit tests | CI | PASS | The five `NoDriveProblemReport*Test` tests passed (run [40736612254](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612254)); `NoDriveProblemReportServerTest` skips itself without a server (real server: Linux job only). The unit test's own screenshots were not collected on macOS (to-do) |
+| Problem reports: real app, killed run | CI | PASS | `results.tsv`: `prompt-`, `not-now-`, `ask-once-`, `marker-running-`, `sigterm-clean-`, `report-` PASS in `en-light` and `en-dark` (screenshots `problem-reports/`); zip `2026-10-28_18-15-43_macos_35.0.0-nourax.1.zip` (11301 bytes, 11 entries) clean. Before sign-in the menu-bar icon cannot open Settings on macOS, so Settings > Advanced is an owner check |
 | File list | owner | pending owner test | |
 | Upload, download, rename, move, delete | owner | pending owner test | |
 | Public link with expiry and password | owner | pending owner test | |
@@ -48,6 +50,11 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Second language (after sign-in) | owner | pending owner test | |
 | Next to the real Nextcloud app (optional) | owner | pending owner test | |
 | Device name in the web page (Settings → Security → Devices) | owner | pending owner test | |
+| Problem reports: Settings > Advanced shows "Send problem reports to Nourax", switched off | owner | pending owner test | |
+| Problem reports: "Report a problem" with a note: "Saved in your NoDrive > Problem reports." and the zip is in that folder on the Drive | owner | pending owner test | |
+| Problem reports: no question after logging out or off; the question after a hard end; "Not now" is asked once | owner | pending owner test | |
+| Problem reports: switch on, hard end: no question, "Problem report sent" | owner | pending owner test | |
+| Problem reports: dark mode readable | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 

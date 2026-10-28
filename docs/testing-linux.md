@@ -30,8 +30,11 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Dark mode (before sign-in) | CI | PASS | Wizard background `#202124` with the desktop set to dark (XDG portal `color-scheme` = prefer dark) |
 | Second language: German | CI | PASS | Screenshots `de-light` |
 | Right-to-left: Arabic | CI | PASS, with a note | Layout is mirrored (buttons, menus). Several new wizard texts have no Arabic translation upstream yet and show in English |
-| Unit tests | CI | PASS | `100% tests passed, 0 tests failed out of 99`; skipped: `UpdateChannelTest` (no update channels in branded builds; no updater) |
+| Unit tests | CI | PASS | `100% tests passed, 0 tests failed out of 104` (commit `14ebedb5c4`, run [40736612257](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612257)); skipped: `UpdateChannelTest` (no update channels in branded builds; no updater) |
 | Branding sweep of the AppImage | CI | PASS | Only legal text (licence files, Legal Notice copyright line in the translations) and one stale, never-shown translation are kept, all listed in `tools/branding/allow-shared.txt` |
+| Problem reports: unit tests | CI | PASS | `NoDriveProblemReportScrubberTest`, `NoDriveProblemReportTest`, `NoDriveProblemReportUploadTest`, `NoDriveProblemReportUiTest`, `NoDriveProblemReportServerTest` all passed (run [40736612257](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612257)); details in [problem-reports.md](problem-reports.md) section 7 |
+| Problem reports: real app, killed run | CI | PASS | `results.tsv`: `prompt-`, `not-now-`, `ask-once-`, `marker-running-`, `sigterm-clean-`, `report-` PASS in `en-light` and `en-dark`; zip `2026-10-28_17-42-18_linux_35.0.0-nourax.1.zip` (8763 bytes, 10 entries) passed `tools/ci/check-report-zip.py` (no planted secret left) |
+| Problem reports: against a real Nextcloud 35.0.2 (throwaway) | CI | PASS | Job `report-server`, artifact `nodrive-linux-report-server`: 4 phases; folder and zip created, nothing replaced, no share until `nourax-support` exists, then one share with `permissions=1`; Support lists but cannot write (HTTP 207 / 403); no DELETE, MOVE or COPY seen; an offline report is sent later |
 | File list | owner | pending owner test | |
 | Upload, download, rename, move, delete | owner | pending owner test | |
 | Public link with expiry and password | owner | pending owner test | |
@@ -42,6 +45,11 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Second language (after sign-in) | owner | pending owner test | |
 | Next to the real Nextcloud app (optional) | owner | pending owner test | |
 | Device name in the web page (Settings → Security → Devices) | owner | pending owner test | |
+| Problem reports: Settings > Advanced shows "Send problem reports to Nourax", switched off | owner | pending owner test | |
+| Problem reports: "Report a problem" with a note: "Saved in your NoDrive > Problem reports." and the zip is in that folder on the Drive | owner | pending owner test | |
+| Problem reports: no question after logging out or off; the question after a hard end; "Not now" is asked once | owner | pending owner test | |
+| Problem reports: switch on, hard end: no question, "Problem report sent" | owner | pending owner test | |
+| Problem reports: dark mode readable | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 
@@ -55,6 +63,7 @@ Folder `docs/screenshots/linux/<variant>/`. Variants: `en-light`, `de-light`, `a
 | `02-tray-menu.png` | Tray icon menu without an account (Add account, Settings, Quit) |
 | `03-proxy-settings.png` | Proxy settings dialog of the wizard |
 | `04-sign-in.png` | After "Log in": "Switch to your browser" |
+| `problem-reports/*.png` | Settings > Advanced with the new switch and button, the "Report a problem" dialog, "What's included", the question after an unclean exit (from the unit test and from the real app); see [testing.md](testing.md) section 3 |
 
 Not captured yet: the Settings window (General, Network, Info). "Settings" in the tray menu opens it even without an account (`Systray::openSettings` -> `ownCloudGui::slotShowSettings`); only a click on the tray icon itself brings the wizard back. These screens were reviewed in code instead ([branding-sweep.md](branding-sweep.md), section 5), and adding them to the smoke test is a to-do. Until then they are part of the owner tests.
 

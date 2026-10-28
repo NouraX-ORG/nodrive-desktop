@@ -122,6 +122,8 @@ the object name `advancedGroupBox`; after an upstream change to that style sheet
 
 ## 7. Tests
 
+CI results and the screenshots (`docs/screenshots/<os>/problem-reports/`) are in [testing.md](testing.md) section 1.1a; the independent review (rounds 1 and 2) approved the change.
+
 | Test | What it covers | Where |
 |---|---|---|
 | `NoDriveProblemReportScrubber` | one fixture per rule, "keep" fixture, idempotence, 200 random secrets of each kind | ctest, 3 OSes |
@@ -138,6 +140,26 @@ the object name `advancedGroupBox`; after an upstream change to that style sheet
 - A crash during start-up, before the manager runs, is not detected.
 - The folder `Problem reports` may already exist as a user folder; then it is shared with Support as
   it is (flagged in the plan, risk R3).
+- The HTTP log in its quoted form: if `sync.httplogger` is switched on by hand (`QT_LOGGING_RULES` or
+  `qtlogging.ini`; no app setting does it), `HttpLogger` writes JSON bodies with escaped quotes
+  (`\"private-key\":\"...\"`). The scrubber does not yet remove short values in that form (the
+  initialisation vector, the salt, short base64 pieces, short `password` / `token` values); long app
+  passwords and login tokens are still caught by the long-run rule. Do not send a report made with
+  manual HTTP logging on. To-do: accept an optional backslash before the quotes and add a fixture from a
+  real `HttpLogger` line.
+- A report the user has not answered stays on disk: if the app ends while the question is open, or
+  within 3 seconds of the start, the scrubbed held copy stays in `pending/awaiting-answer/` (never sent,
+  inside the app's own folder) until the next unclean exit. To-do: clear `awaiting-answer/` in `start()`
+  when no case is open.
+- "Report a problem" after the user signed out, or when the account needs its password again, says
+  "will try again when it is connected" instead of the sign-in text. The report is still sent after the
+  next sign-in; only the wording is a to-do.
+- Like "Create Debug Archive", the report reads every file of the log folder. A user who points
+  `--logdir` at a general folder would have its files (scrubbed) uploaded. The default and temporary log
+  folders are dedicated, so this is unlikely. To-do: read only `*.log` and `*.log.gz`.
+- No test drives the start-up path "switch on, unclean exit, sent without a question" end to end (the
+  unit tests call the answer directly, the smoke scripts do not seed the switch). To-do: a smoke block.
+- The unit test's screenshots were not collected by CI on macOS (the other two systems upload them).
 - Translations (German, Arabic) are a to-do. The folder name `Problem reports` stays English.
 - The Windows and macOS runners cannot run the real-server test; the fake-server tests and the owner
   tests cover them.

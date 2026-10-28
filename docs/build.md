@@ -42,7 +42,7 @@ Artifacts (kept 30 days):
 
 | Workflow | Artifacts |
 |---|---|
-| Linux | `nodrive-linux-appimage`, `nodrive-linux-screenshots`, `nodrive-linux-test-results`, `nodrive-linux-branding-report` |
+| Linux | `nodrive-linux-appimage`, `nodrive-linux-screenshots`, `nodrive-linux-test-results` (also the unit test's screenshots), `nodrive-linux-report-server` (job `report-server`: real-server check of the problem reports), `nodrive-linux-branding-report` |
 | Windows | `nodrive-windows-msi`, `nodrive-windows-screenshots`, `nodrive-windows-build-logs`, `branding-windows` |
 | macOS | `nodrive-macos-dmg`, `nodrive-macos-app`, `nodrive-macos-screenshots`, `nodrive-macos-test-results`, `nodrive-macos-branding-report` |
 
