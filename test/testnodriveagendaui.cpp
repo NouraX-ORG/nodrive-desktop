@@ -445,8 +445,11 @@ private Q_SLOTS:
         show(env.get());
         auto *content = env->window->contentItem();
         QVERIFY(!findItem(content, QStringLiteral("detailPanel"))->isVisible());
-        click(env->window, findItem(content, QStringLiteral("row-gantt:task:101")));
-        QCOMPARE(env->controller->selectedKey(), QStringLiteral("gantt:task:101"));
+        // A click on a row near the top selects it (rows further down are below the window).
+        click(env->window, findItem(content, QStringLiteral("row-cal:personal/dentist.ics")));
+        QCOMPARE(env->controller->selectedKey(), QStringLiteral("cal:personal/dentist.ics"));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Open in NoCalendar")));
+        env->controller->select(QStringLiteral("gantt:task:101"));
         auto *panel = findItem(content, QStringLiteral("detailPanel"));
         QVERIFY(panel->isVisible());
         QTRY_VERIFY(hasText(env->window, QStringLiteral("Write homepage copy")));
@@ -527,6 +530,11 @@ private Q_SLOTS:
             }
         }
         QVERIFY(hidden);
+        // The working hours can be changed in half hours.
+        QCOMPARE(env->controller->hours().value(QStringLiteral("from")).toString(), QStringLiteral("09:00"));
+        click(env->window, findItem(page, QStringLiteral("hoursFromLater")));
+        QCOMPARE(env->controller->hours().value(QStringLiteral("from")).toString(), QStringLiteral("09:30"));
+        QVERIFY(env->controller->hours().value(QStringLiteral("overridden")).toBool());
         shoot(env.get(), QStringLiteral("sources"), dark);
     }
 

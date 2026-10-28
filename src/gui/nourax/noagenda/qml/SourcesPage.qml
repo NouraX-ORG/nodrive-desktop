@@ -16,6 +16,16 @@ Rectangle {
 
     signal closeRequested
 
+    // "HH:mm" moved by some minutes, within the day.
+    function shift(time, minutes) {
+        var parts = time.split(":");
+        var m = parseInt(parts[0]) * 60 + parseInt(parts[1]) + minutes;
+        m = Math.max(0, Math.min(24 * 60 - 30, m));
+        var h = Math.floor(m / 60);
+        var mm = m % 60;
+        return (h < 10 ? "0" : "") + h + ":" + (mm < 10 ? "0" : "") + mm;
+    }
+
     Flickable {
         id: flick
         anchors.fill: parent
@@ -168,10 +178,62 @@ Rectangle {
                     }
                 }
             }
-            Text {
-                text: qsTr("From %1 to %2").arg(p.ctrl.hours.from).arg(p.ctrl.hours.to)
-                color: p.st.text
-                font.pixelSize: 13
+            Row {
+                spacing: 6
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("From")
+                    color: p.st.text
+                    font.pixelSize: 13
+                }
+                FlatButton {
+                    objectName: "hoursFromEarlier"
+                    st: p.st
+                    label: "-"
+                    Accessible.name: qsTr("Start earlier")
+                    onClicked: p.ctrl.setWorkingHours(p.ctrl.hours.daysMask, p.shift(p.ctrl.hours.from, -30), p.ctrl.hours.to)
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: p.ctrl.hours.from
+                    color: p.st.text
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+                FlatButton {
+                    objectName: "hoursFromLater"
+                    st: p.st
+                    label: "+"
+                    Accessible.name: qsTr("Start later")
+                    onClicked: p.ctrl.setWorkingHours(p.ctrl.hours.daysMask, p.shift(p.ctrl.hours.from, 30), p.ctrl.hours.to)
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("to")
+                    color: p.st.text
+                    font.pixelSize: 13
+                }
+                FlatButton {
+                    objectName: "hoursToEarlier"
+                    st: p.st
+                    label: "-"
+                    Accessible.name: qsTr("End earlier")
+                    onClicked: p.ctrl.setWorkingHours(p.ctrl.hours.daysMask, p.ctrl.hours.from, p.shift(p.ctrl.hours.to, -30))
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: p.ctrl.hours.to
+                    color: p.st.text
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+                FlatButton {
+                    objectName: "hoursToLater"
+                    st: p.st
+                    label: "+"
+                    Accessible.name: qsTr("End later")
+                    onClicked: p.ctrl.setWorkingHours(p.ctrl.hours.daysMask, p.ctrl.hours.from, p.shift(p.ctrl.hours.to, 30))
+                }
             }
 
             Text {
