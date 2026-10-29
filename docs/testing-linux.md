@@ -53,7 +53,12 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Problem reports: no question after logging out or off; the question after a hard end; "Not now" is asked once | owner | pending owner test | |
 | Problem reports: switch on, hard end: no question, "Problem report sent" | owner | pending owner test | |
 | Problem reports: dark mode readable | owner | pending owner test | |
+| NoAgenda editing: unit tests (iCalendar patch, edits, my agent on a task, offline queue, conflicts and workload) | CI | PASS | `100% tests passed, 0 tests failed out of 119` (commit `d33c7090fe`, run [40929677778](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677778)) |
+| NoAgenda editing: the window in light and dark (clash, workload bar, agent picker, new event, edit conflict, waiting changes, delete question, locked rows) | CI | PASS | `NoDriveAgendaUiTest`; screenshots in `nodrive-screenshots/noagenda/` of the artifact `nodrive-linux-test-results` |
+| NoAgenda editing: against a real Nextcloud 35.0.2 (throwaway) with nc_gantt 2.4.1, Deck 1.19.1, Calendar 6.6.4, Tasks 0.18.1 | CI | PASS | Job `agenda-server`, artifact `nodrive-linux-agenda-server`: phases `edit-calendar`, `conflict`, `edit-gantt`, `edit-deck`, `offline` and the read phases, 30 PASS rows, 0 FAIL; the only DELETE is the event the test created; no secret in the artifact |
+| NoAgenda editing: does the agent id survive an edit in the web pages (Chromium by Playwright) | CI | INFO | Calendar page keeps the id and the tag; the Tasks page drops the id and keeps the tag (NoAgenda reads either) |
 | NoAgenda: the tray menu shows "NoAgenda" and it opens the window; the personal-calendars question; Today; tasks with their agent; My team; offline banner; dark mode | owner | pending owner test | |
+| NoAgenda editing: change an event, a to-do, a NoGantt task and a card and see it on the Drive; Undo; "changed somewhere else"; Wi-Fi off and on; clash and workload warning; delete an event and find it in the Trash bin | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 

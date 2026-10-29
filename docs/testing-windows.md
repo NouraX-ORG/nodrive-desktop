@@ -53,6 +53,7 @@ Runs: the MSI `NoDrive-35.0.0.5-nourax.1-x64.msi` and the unit tests come from r
 | Problem reports: real app, killed run | CI | PASS | `results.tsv`: `prompt-`, `not-now-`, `ask-once-`, `marker-running-`, `quit-clean-`, `report-` PASS in `en-light` and `en-dark`; `texts-*-unclean-prompt`: 18 UI Automation texts, none names Nextcloud; zip `2026-10-28_18-15-38_windows_35.0.0-nourax.1.zip` (10499 bytes, 12 entries) clean |
 | Sync root and Explorer sidebar name ("NoDrive") | owner | pending owner test | Needs a signed-in account with a sync folder |
 | NoAgenda: unit tests and the window in light and dark (mouse clicks, pixel checks, screenshots) | CI | PASS | `NoDriveAgenda*Test`: `100% tests passed, 0 tests failed out of 111` (commit `46f8a71e0b`, run [40809977148](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40809977148)) |
+| NoAgenda editing: unit tests and the window in light and dark (edits, my agent, offline queue, conflicts, workload, clash) | CI | PASS | `100% tests passed, 0 tests failed out of 116` (commit `d33c7090fe`, run [40929677748](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677748)) |
 | File list | owner | pending owner test | |
 | Upload, download, rename, move, delete | owner | pending owner test | |
 | Public link with expiry and password | owner | pending owner test | |
@@ -69,6 +70,7 @@ Runs: the MSI `NoDrive-35.0.0.5-nourax.1-x64.msi` and the unit tests come from r
 | Problem reports: switch on, hard end: no question, "Problem report sent" | owner | pending owner test | |
 | Problem reports: dark mode readable | owner | pending owner test | |
 | NoAgenda: the tray menu (left- and right-click) shows "NoAgenda" and it opens the window; the personal-calendars question; Today; tasks with their agent; My team; offline banner; dark mode | owner | pending owner test | |
+| NoAgenda editing: change an event, a to-do, a NoGantt task and a card and see it on the Drive; Undo; "changed somewhere else"; Wi-Fi off and on; clash and workload warning; delete an event and find it in the Trash bin | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 

@@ -340,6 +340,16 @@ Found against the real server:
 - Repeating events and to-dos are not changed here (design 9); a repeating to-do still shows only its first due date (the server does not expand to-dos).
 - Texts are English; translations are a to-do.
 
+Small points left open by the independent review of the edit step (none loses data; all are to-dos):
+
+- A queued NoGantt or NoBoard edit that is moved to "Not sent" because the app is gone (404) says "Read only: this version of the app on the server has not been checked yet." The sentence should name the real reason.
+- While every read of NoGantt or NoBoard since the reconnection fails or is refused, the guard stays unknown and queued edits for that app say "Waiting to send" with no reason. They should move to "Not sent" with the refusal sentence.
+- A 401 from NoGantt or NoBoard goes to "Not sent" without "Apply my change again"; once the sign-in works again the edit has to be made again by hand.
+- After an agent label switch on a card, "The old agent was put back." is shown without checking that the put-back worked.
+- A 412 on a create reads the item first; with no connection at that moment the answer should be "Offline", not "An item with this id already exists", and the sentence says "Open in NoCalendar" for to-dos too.
+- Without a known project owner the agent's first visible planning person is used without checking that it belongs to the project (the server then drops it and the answer check says "Check this task in NoGantt"). Safer: refuse with "Ask your project manager ..." and log it.
+- The times of NoGantt tasks are read in the person's time zone, not in NoGantt's own `settings.timezone`.
+
 ### Server-side items found in this step (for the Workspace session; nothing here was changed on any server)
 
 1. NoGantt: let a viewer change the progress of their own task, or say so in the API (today `PUT tasks/{id}` and `progress/sync` need editor rights).

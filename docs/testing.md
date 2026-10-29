@@ -87,6 +87,24 @@ pinned apps calendar 6.6.4, tasks 0.18.1, Deck 1.19.1 and nc_gantt 2.4.1 and thr
 | Real Nextcloud 35.0.2 (throwaway) with the four pinned apps (SHA-256 checked): auth proof (app password, Basic, `OCS-APIRequest`), contract (live key sets against the fixtures), Ali (staff), Mara (manager), Sara (invalid registry, viewer), Olaf (other organisation), version guard | PASS: 146 checks, 0 failed (job `agenda-server`, artifact `nodrive-linux-agenda-server` with the live screenshots of Ali's day) | not run (no Docker on the runner) | not run (no Docker on the runner) |
 | Branding gate stays green and `rebrand.py --check` is clean (the marked lines of `tools/rebrand.d/noagenda.py`) | PASS | PASS | PASS |
 
+### 1.1c NoAgenda editing and conflicts (CI, [noagenda.md](noagenda.md))
+
+Commit `d33c7090fe` (branch `feature/noagenda-edit`, approved by the independent review 2; later commits on the branch are documents only): Linux run [40929677778](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677778),
+macOS run [40929677752](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677752), Windows run [40929677748](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677748). All three are green. CI never contacts `drive.nourax.org`. The unit tests use canned answers; the Linux job
+`agenda-server` uses the same throwaway Nextcloud 35.0.2 in Docker with the pinned apps (nc_gantt 2.4.1 SHA-256 `9003904a...cfb9` checked) and throwaway accounts.
+
+| Feature | Linux | Windows | macOS |
+|---|---|---|---|
+| Unit tests of the edit step: `NoDriveAgendaICalPatch` (only the named properties change; alarms, guests, unknown `X-` lines and time zones stay byte for byte), `...Edit` (verb, path, headers `If-Match` / `If-None-Match` / `OCS-APIRequest` and body of every edit; conflicts, refusals, viewers, repeating items, invitations), `...GanttAgent` ("my agent": other rows unchanged, 4-row limit, work total kept, one agent with two planning people), `...Queue` (order, restart, no parallel sends, folding, conflicts kept until a click, version guard holds queued NoGantt and NoBoard edits, a 401 of an app is that app's refusal, three tries then "Not sent"), `...Conflicts` (clash, overbooked, deadline on a day off, blocked, an agent's capacity and load) | PASS (`100% tests passed, 0 tests failed out of 119`) | PASS (`100% tests passed, 0 tests failed out of 116`) | PASS (`100% tests passed out of 113`) |
+| `NoDriveAgendaUiTest`, edit step: the window in light and dark with the clash and workload bar, the agent picker, an agent not in the project, a new event, an edit conflict, waiting changes, the delete question, a repeating item and a viewer (locked with the reason); no text with the server software's name | PASS, screenshots `nodrive-screenshots/noagenda/` in the artifact `nodrive-linux-test-results` | PASS, in the ctest artifact | PASS, in the ctest artifact |
+| Real Nextcloud 35.0.2 (throwaway) with the four pinned apps: the phases `edit-calendar` (alarm, unknown property and UID stay; agent on and off; to-do done and not done; a new event and a new to-do; the one delete), `conflict` (the other change wins, "Apply my change again" keeps both), `edit-gantt` (a move with a successor, Undo, % done, status, my agent Self / Writer-Bot / Self with the rows and the total work untouched, refusals, a viewer refused, conflict), `edit-deck` (due date and done keep the other fields, the agent label, a missing label refused or created by who may manage the board, conflict), `offline` (three edits wait, survive a restart, go out in order) | PASS: 30 PASS rows, 0 FAIL (job `agenda-server`, artifact `nodrive-linux-agenda-server`) | not run (no Docker on the runner) | not run (no Docker on the runner) |
+| The only DELETE after the seed is the event the edit phase created itself; no MOVE or COPY; the read phases send no DELETE, MOVE or COPY; no throwaway password in the artifact | PASS (`edit-deletes-only-its-own-event`, `no-destructive-requests-in-read-steps`, `no-secret-in-artifact`) | n/a | n/a |
+| Does the agent id survive an edit in the web pages (Playwright with Chromium, CI only)? | Calendar page: id and tag survived. Tasks page: the id was dropped, the tag survived (so NoAgenda still finds the agent; `webedit-agent-id-survives` PASS) | n/a | n/a |
+| Branding gate stays green and `rebrand.py --check` is clean; nothing in the upstream files changed | PASS | PASS | PASS |
+
+Not verified by CI: that the calendar's trash bin keeps a deleted event (the job reports "not verified"; owner row "Delete an event"), and what the iPhone, Android and
+macOS calendar apps do to the agent id (owner row). Known limits and the review's nits are listed in [noagenda.md](noagenda.md), "Open points of the edit step".
+
 ### 1.2 After sign-in (owner)
 
 | Feature | Linux | Windows | macOS |
@@ -117,6 +135,15 @@ pinned apps calendar 6.6.4, tasks 0.18.1, Deck 1.19.1 and nc_gantt 2.4.1 and thr
 | NoAgenda: My team shows a late task in a project the owner runs | pending owner test | pending owner test | pending owner test |
 | NoAgenda: switching off Wi-Fi shows "showing what was saved at ..." | pending owner test | pending owner test | pending owner test |
 | NoAgenda: dark mode is readable | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing ([noagenda.md](noagenda.md)): change an event's time in NoAgenda; the Calendar page of the Drive shows the new time and keeps its alarms and guests | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: change an event in the Calendar page, then its title in NoAgenda without refreshing: "changed somewhere else" with "Apply my change again" | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: tick a to-do in NoAgenda; the Tasks page shows it done | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: move a NoGantt task's end date; "Also moved: ..." appears and **Undo** puts it back within 10 seconds | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: choose "my agent" on a NoGantt task and on a card, then Self again | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: Wi-Fi off, change something, Wi-Fi on; "Waiting to send 1 change" goes away and the change is on the Drive | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: a dentist visit and a client call at the same time both show the clash mark; 6 hours of work on a day with 4 free hours shows the workload warning | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: set an agent on an event, then edit that event in the iPhone, Android or macOS calendar app; is the agent still there in NoAgenda? | pending owner test | pending owner test | pending owner test |
+| NoAgenda editing: delete an event in NoAgenda (after the question); it is in the Trash bin of the Calendar page and can be restored | pending owner test | pending owner test | pending owner test |
 
 Offline files and automatic photo upload are phone features; they do not apply to
 the desktop app.
@@ -198,7 +225,7 @@ keyring, so a real Linux machine is better for the sign-in and sync tests.
 
 ### NoAgenda: what to try (after sign-in)
 
-NoAgenda reads your calendars, to-dos, NoGantt projects and NoBoard boards and changes nothing. If the file
+NoAgenda reads your calendars, to-dos, NoGantt projects and NoBoard boards. Steps 1 to 7 only look; step 8 changes things (use a test event and a test task). If the file
 `NoAgenda/agent-registry.json` is not in your NoDrive yet, everything shows as "Self" (the Sources screen says so).
 
 1. Open the tray menu and click **NoAgenda**. A window opens with today's list. The first time, the question
@@ -212,6 +239,18 @@ NoAgenda reads your calendars, to-dos, NoGantt projects and NoBoard boards and c
 5. **Sources** lists every calendar, project and board with its setting. Switch one to Hidden and back.
 6. Switch off Wi-Fi and click **Refresh**: the banner says "showing what was saved at ...", the list stays.
 7. Switch the system to dark mode: all text is readable. No screen says "Nextcloud".
+8. Editing (use items you can lose, not real appointments). Click a row: the panel has fields and **Save**.
+   - Change an event's time and **Save**. Open the Calendar page of the Drive: the new time is there; alarms and guests are unchanged.
+   - Change the same event in the Calendar page, then in NoAgenda change its title without refreshing and Save: you read "This changed somewhere else
+     while you were editing. NoAgenda kept the other change." with **Apply my change again** in the Not sent panel.
+   - Tick a to-do; look at it in the Tasks page.
+   - Move a NoGantt task's end date: "Also moved: ..." appears and **Undo** puts it back within 10 seconds.
+   - Choose "my agent" on a NoGantt task and on a card, then choose Self again. A row that can't be changed has a lock and says why.
+   - Switch Wi-Fi off, change something (a clock mark and "Waiting to send 1 change" show), switch Wi-Fi on: the banner goes away and the change is on the Drive.
+   - Put two items at the same time: both show the clash mark. Plan more work in a day than it has free hours: the workload bar warns. The **Conflicts** chip lists only the problems.
+   - **+** makes a new event or to-do (Self is preselected as the agent). Delete the test event (after the question): it is in the Trash bin of the Calendar page.
+   - Nothing on your computer or in your files is ever deleted by NoAgenda; NoGantt tasks and cards can't be deleted here.
+9. Send back PASS or what you saw for each point.
 
 ### Problem reports: what to try (after sign-in)
 
