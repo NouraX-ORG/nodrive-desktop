@@ -10,7 +10,7 @@
 // Switches: NODRIVE_AGENDA_LIVE_DIR (a folder with a cache written by the server test) shows the data of
 // a real throwaway server instead of the canned scenario (tools/ci/agenda-server.sh).
 
-#include "nodrive/noagenda/agendatestsupport.h"
+#include "nodrive/noagenda/edittestsupport.h"
 
 #include "gui/nourax/noagenda/ui/agendacontroller.h"
 #include "gui/nourax/noagenda/ui/noagendalauncher.h"
@@ -196,6 +196,85 @@ class TestNoDriveAgendaUi : public QObject
         const auto center = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
         QTest::mouseClick(window, Qt::LeftButton, {}, center);
         QTest::qWait(60);
+    }
+
+    // ---- helpers of the edit step ------------------------------------------------------------------------------------
+
+    static int countShown(QQuickItem *root, const QString &objectName)
+    {
+        if (!root || !root->isVisible()) {
+            return 0;
+        }
+        int n = root->objectName() == objectName ? 1 : 0;
+        const auto children = root->childItems();
+        for (auto *child : children) {
+            n += countShown(child, objectName);
+        }
+        return n;
+    }
+
+    static bool shown(QQuickItem *root, const QString &objectName)
+    {
+        return countShown(root, objectName) > 0;
+    }
+
+    static void darkRows()
+    {
+        QTest::addColumn<bool>("dark");
+        QTest::newRow("light") << false;
+        QTest::newRow("dark") << true;
+    }
+
+    static void prepend(FakeTransport *t, const QByteArray &verb, const QString &path, int status, const QByteArray &body, const QMap<QByteArray, QByteArray> &headers = {})
+    {
+        t->answers.prepend({verb, path, QByteArray(), status, body, headers});
+    }
+
+    static QByteArray ics(const QString &uid, const QString &summary)
+    {
+        return (QStringLiteral("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:") + uid + QStringLiteral("\r\nSUMMARY:") + summary
+            + QStringLiteral("\r\nDTSTART:20261028T100000Z\r\nDTEND:20261028T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")).toUtf8();
+    }
+
+    /// The NoGantt tasks of the fixtures, with the total work of the task "Landing page build" filled in as the server does.
+    static QByteArray ganttTasksWithWork()
+    {
+        auto tasks = fixtureJson(QStringLiteral("gantt/tasks-1.json")).toArray();
+        for (int i = 0; i < tasks.size(); ++i) {
+            auto t = tasks.at(i).toObject();
+            if (t.value(QStringLiteral("id")).toInt() == 111) {
+                t.insert(QStringLiteral("work"), 0.75);
+                tasks.replace(i, t);
+            }
+        }
+        return ocsBody(tasks);
+    }
+
+    static void routeGanttAgentEdit(FakeTransport *t)
+    {
+        prepend(t, "GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/projects/1/tasks"), 200, ganttTasksWithWork());
+        QJsonObject saved;
+        for (const auto &v : fixtureJson(QStringLiteral("gantt/tasks-1.json")).toArray()) {
+            if (v.toObject().value(QStringLiteral("id")).toInt() == 111) {
+                saved = v.toObject();
+            }
+        }
+        saved.insert(QStringLiteral("work"), 0.75);
+        saved.insert(QStringLiteral("updated_at"), QStringLiteral("2026-10-28 12:00:00"));
+        saved.insert(QStringLiteral("resources"), QJsonArray{QJsonObject{{QStringLiteral("resource_id"), 1}, {QStringLiteral("work"), 6}}, QJsonObject{{QStringLiteral("resource_id"), 11}, {QStringLiteral("work"), QJsonValue(QJsonValue::Null)}}});
+        prepend(t, "PUT", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/tasks/111"), 200,
+            ocsBody(QJsonObject{{QStringLiteral("task"), saved}, {QStringLiteral("propagated"), QJsonArray()}, {QStringLiteral("op_id"), QJsonValue(QJsonValue::Null)}, {QStringLiteral("deck"), QJsonObject()}}));
+    }
+
+    static QString allText(QQuickWindow *window)
+    {
+        return textsOf(window).join(QStringLiteral("\n"));
+    }
+
+    void selectAndWait(Env *env, const QString &key)
+    {
+        env->controller->select(key);
+        QTest::qWait(120);
     }
 
 private Q_SLOTS:
@@ -776,6 +855,367 @@ private Q_SLOTS:
             QTest::qWait(60);
         }
         QVERIFY(env->window->isVisible());
+    }
+
+    // ---- the edit step: conflicts, workload and the editor ---------------------------------------------------------------
+
+    void theDayShowsTheClashAndTheTooFullDay_data() { darkRows(); }
+
+    void theDayShowsTheClashAndTheTooFullDay()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        QTRY_VERIFY(shown(content, QStringLiteral("workloadBar")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("h planned /")));
+        bool overbooked = false;
+        for (const auto &r : env->controller->rows()) {
+            const auto m = r.toMap();
+            overbooked = overbooked || (m.value(QStringLiteral("type")).toString() == QLatin1String("workload") && m.value(QStringLiteral("overbooked")).toBool());
+        }
+        QVERIFY(overbooked);
+        // The dentist and the client call are both at 10:00: both rows carry the clash mark.
+        QTRY_VERIFY(countShown(content, QStringLiteral("badgeClash")) >= 2);
+        shoot(env.get(), QStringLiteral("day-clash-overbooked"), dark);
+        checkBackground(env.get(), dark);
+    }
+
+    void theConflictsFilterShowsOnlyRowsWithAConflict()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        QVERIFY(findItem(content, QStringLiteral("row-cal:personal/dentist.ics")));
+        QVERIFY(findItem(content, QStringLiteral("row-deck:card:503")));
+        env->controller->setConflictsOnly(true);
+        QTRY_VERIFY(!findItem(content, QStringLiteral("row-deck:card:503")));
+        QVERIFY(findItem(content, QStringLiteral("row-cal:personal/dentist.ics")));
+        QVERIFY(findItem(content, QStringLiteral("row-cal:work/call.ics")));
+        env->controller->setConflictsOnly(false);
+    }
+
+    void editingTheAgentOfATaskOffersSelfAndMyAgentsAndSendsTheNewList_data() { darkRows(); }
+
+    void editingTheAgentOfATaskOffersSelfAndMyAgentsAndSendsTheNewList()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark, [](FakeTransport *t) { routeGanttAgentEdit(t); });
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("gantt:task:111"));
+        auto *picker = findItem(content, QStringLiteral("agentPicker"));
+        QVERIFY(picker && picker->isVisible());
+        QVERIFY(shown(content, QStringLiteral("agentChoice-SELF")));
+        QVERIFY(shown(content, QStringLiteral("agentChoice-AG-0001")));
+        QVERIFY(shown(content, QStringLiteral("agentChoice-AG-0003"))); // paused: shown greyed
+        QVERIFY(!findItem(content, QStringLiteral("agentChoice-AG-0004"))); // retired: not listed
+        QVERIFY(!findItem(content, QStringLiteral("agentChoice-AG-0002"))); // somebody else's agent
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Paused")));
+        shoot(env.get(), QStringLiteral("edit-agent-gantt"), dark);
+
+        click(env->window, findItem(content, QStringLiteral("agentChoice-AG-0001")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Saved.")));
+        bool found = false;
+        for (const auto &r : env->transport->requests) {
+            if (r.verb == "PUT" && r.url.path() == QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/tasks/111")) {
+                const auto resources = parseObject(r.body).value(QStringLiteral("resources")).toArray();
+                QCOMPARE(resources.size(), 2);
+                QCOMPARE(resources.at(0).toObject().value(QStringLiteral("resource_id")).toInt(), 1);
+                QCOMPARE(resources.at(0).toObject().value(QStringLiteral("work")).toDouble(), 6.0); // mine is untouched
+                QCOMPARE(resources.at(1).toObject().value(QStringLiteral("resource_id")).toInt(), 11);
+                found = true;
+            }
+        }
+        QVERIFY(found);
+        QCOMPARE(env->agenda->edit()->queue().pendingCount(), 0);
+    }
+
+    void anAgentThatIsNotInTheProjectYetAsksTheProjectManager_data() { darkRows(); }
+
+    void anAgentThatIsNotInTheProjectYetAsksTheProjectManager()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark, [](FakeTransport *t) {
+            QJsonArray visible;
+            for (const auto &r : fixtureJson(QStringLiteral("gantt/resources.json")).toArray()) {
+                if (r.toObject().value(QStringLiteral("id")).toInt() != 11) {
+                    visible.append(r);
+                }
+            }
+            prepend(t, "GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/resources"), 200, ocsBody(visible));
+        });
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("gantt:task:111"));
+        QTRY_VERIFY(shown(content, QStringLiteral("agentPicker")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Ask your project manager to add")));
+        QVERIFY(hasText(env->window, QStringLiteral("Writer-Bot")));
+        QVERIFY(shown(content, QStringLiteral("openInButton")));
+        QVERIFY(hasText(env->window, QStringLiteral("Open in NoGantt")));
+        shoot(env.get(), QStringLiteral("edit-agent-not-in-project"), dark);
+        // Choosing it sends nothing.
+        env->transport->requests.clear();
+        click(env->window, findItem(content, QStringLiteral("agentChoice-AG-0001")));
+        QTest::qWait(100);
+        for (const auto &r : env->transport->requests) {
+            QVERIFY2(r.verb != "PUT", "nothing may be sent for an agent that is not in the project");
+        }
+    }
+
+    void aNewEventHasSelfPreselectedAndNeedsAnAgent_data() { darkRows(); }
+
+    void aNewEventHasSelfPreselectedAndNeedsAnAgent()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        click(env->window, findItem(content, QStringLiteral("newButton")));
+        QVERIFY(shown(content, QStringLiteral("newMenu")));
+        click(env->window, findItem(content, QStringLiteral("newEventItem")));
+        QTRY_VERIFY(shown(content, QStringLiteral("newItemDialog")));
+        QVERIFY(hasText(env->window, QStringLiteral("New event")));
+        QVERIFY(hasText(env->window, QStringLiteral("Agent")));
+        QVERIFY(shown(content, QStringLiteral("newAgentPicker")));
+        QVERIFY(shown(content, QStringLiteral("agentChoice-SELF")));
+        QVERIFY(shown(content, QStringLiteral("agentChoice-AG-0001")));
+        QVERIFY(hasText(env->window, QStringLiteral("Self")));
+        // The date of the day in view is already in the form.
+        auto *startDate = findItem(content, QStringLiteral("fieldStartDate"));
+        QVERIFY(startDate);
+        QCOMPARE(startDate->property("text").toString(), QStringLiteral("2026-10-28"));
+        findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Planning with Sara"));
+        QTest::qWait(60);
+        shoot(env.get(), QStringLiteral("new-event"), dark);
+
+        // Self is preselected: the new event has neither an agent id nor an agent tag.
+        click(env->window, findItem(content, QStringLiteral("newSaveButton")));
+        QTest::qWait(100);
+        const auto puts = env->transport->of("PUT");
+        QCOMPARE(puts.size(), 1);
+        QVERIFY(puts.first().url.path().startsWith(QStringLiteral("/remote.php/dav/calendars/ali/")));
+        QVERIFY(puts.first().url.path().endsWith(QStringLiteral(".ics")));
+        QCOMPARE(ScriptedTransport::header(puts.first(), "If-None-Match"), QByteArrayLiteral("*"));
+        const QString body = QString::fromUtf8(puts.first().body);
+        QVERIFY(body.contains(QStringLiteral("SUMMARY:Planning with Sara")));
+        QVERIFY(body.contains(QStringLiteral("DTSTART:20261028T090000Z")));
+        QVERIFY(!body.contains(QStringLiteral("X-NOURAX-AGENT-ID")));
+        QVERIFY(!body.contains(QStringLiteral("CATEGORIES")));
+    }
+
+    void aNewItemNeedsATitleAndAnAgent()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        auto *edit = env->controller->editController();
+        QVariantMap values{{QStringLiteral("kind"), QStringLiteral("event")}, {QStringLiteral("calendarUri"), QStringLiteral("work")}, {QStringLiteral("title"), QStringLiteral("x")},
+            {QStringLiteral("startDate"), QStringLiteral("2026-10-29")}, {QStringLiteral("startTime"), QStringLiteral("09:00")}, {QStringLiteral("endDate"), QStringLiteral("2026-10-29")}, {QStringLiteral("endTime"), QStringLiteral("10:00")}};
+        QCOMPARE(edit->create(values), QStringLiteral("Choose who does it: Self or one of your agents."));
+        values.insert(QStringLiteral("agentId"), QStringLiteral("SELF"));
+        values.insert(QStringLiteral("title"), QStringLiteral("  "));
+        QCOMPARE(edit->create(values), QStringLiteral("Give it a title."));
+        values.insert(QStringLiteral("title"), QStringLiteral("x"));
+        values.insert(QStringLiteral("endTime"), QStringLiteral("08:00"));
+        QCOMPARE(edit->create(values), QStringLiteral("The end can't be before the start."));
+        values.insert(QStringLiteral("endTime"), QStringLiteral("10:00"));
+        values.insert(QStringLiteral("startDate"), QStringLiteral("29/10/2026"));
+        QVERIFY(edit->create(values).contains(QStringLiteral("2026-11-04")));
+        // Nobody else's agent, and not a paused one.
+        values.insert(QStringLiteral("startDate"), QStringLiteral("2026-10-29"));
+        values.insert(QStringLiteral("agentId"), QStringLiteral("AG-0002"));
+        QVERIFY(!edit->create(values).isEmpty());
+        values.insert(QStringLiteral("agentId"), QStringLiteral("AG-0003"));
+        QVERIFY(!edit->create(values).isEmpty());
+        QCOMPARE(env->transport->count("PUT"), 0);
+        // A new to-do with one of my agents writes the id and the tag.
+        QVariantMap todo{{QStringLiteral("kind"), QStringLiteral("todo")}, {QStringLiteral("calendarUri"), QStringLiteral("personal")}, {QStringLiteral("title"), QStringLiteral("Call the bank")},
+            {QStringLiteral("dueDate"), QStringLiteral("2026-10-30")}, {QStringLiteral("agentId"), QStringLiteral("AG-0001")}};
+        QCOMPARE(edit->create(todo), QString());
+        QTest::qWait(60);
+        const auto puts = env->transport->of("PUT");
+        QCOMPARE(puts.size(), 1);
+        const QString body = QString::fromUtf8(puts.first().body);
+        QVERIFY(body.contains(QStringLiteral("BEGIN:VTODO")));
+        QVERIFY(body.contains(QStringLiteral("DUE;VALUE=DATE:20261030")));
+        QVERIFY(body.contains(QStringLiteral("X-NOURAX-AGENT-ID:AG-0001")));
+        QVERIFY(body.contains(QStringLiteral("CATEGORIES:agent:AG-0001")));
+    }
+
+    void anEditThatCollidesIsKeptAsNotSentAndCanBeAppliedAgain_data() { darkRows(); }
+
+    void anEditThatCollidesIsKeptAsNotSentAndCanBeAppliedAgain()
+    {
+        QFETCH(bool, dark);
+        const QString path = QStringLiteral("/remote.php/dav/calendars/ali/personal/dentist.ics");
+        const auto env = open(QStringLiteral("ali"), dark, [&](FakeTransport *t) {
+            // the dentist's appointment was changed in the web page meanwhile: another ETag
+            prepend(t, "GET", path, 200, ics(QStringLiteral("ci-dentist"), QStringLiteral("Dentist at 10")), {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"e9\"")}});
+        });
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
+        click(env->window, findItem(content, QStringLiteral("editButton")));
+        QVERIFY(shown(content, QStringLiteral("editor")));
+        findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Dentist (moved)"));
+        click(env->window, findItem(content, QStringLiteral("saveButton")));
+        auto *panel = findItem(content, QStringLiteral("notSentPanel"));
+        QTRY_VERIFY(panel && panel->isVisible());
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Not sent")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("This changed somewhere else while you were editing. NoAgenda kept the other change.")));
+        QVERIFY(hasText(env->window, QStringLiteral("Apply my change again")));
+        QVERIFY(hasText(env->window, QStringLiteral("Keep the other change")));
+        QCOMPARE(env->transport->count("PUT"), 0); // the other change wins: nothing was written
+        QCOMPARE(env->agenda->edit()->queue().conflicts().size(), 1);
+        shoot(env.get(), QStringLiteral("edit-conflict"), dark);
+
+        // "Apply my change again": one fresh read and one write with the new ETag.
+        prepend(env->transport, "PUT", path, 204, QByteArray(), {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"e10\"")}});
+        env->transport->requests.clear();
+        click(env->window, findItem(content, QStringLiteral("applyAgainButton")));
+        QTRY_VERIFY(!panel->isVisible());
+        const auto puts = env->transport->of("PUT");
+        QCOMPARE(puts.size(), 1);
+        QCOMPARE(ScriptedTransport::header(puts.first(), "If-Match"), QByteArrayLiteral("\"e9\""));
+        QVERIFY(QString::fromUtf8(puts.first().body).contains(QStringLiteral("SUMMARY:Dentist (moved)")));
+        QCOMPARE(env->agenda->edit()->queue().conflicts().size(), 0);
+    }
+
+    void keepingTheOtherChangeDropsTheEdit()
+    {
+        const QString path = QStringLiteral("/remote.php/dav/calendars/ali/personal/dentist.ics");
+        const auto env = open(QStringLiteral("ali"), false, [&](FakeTransport *t) {
+            prepend(t, "GET", path, 200, ics(QStringLiteral("ci-dentist"), QStringLiteral("Dentist at 10")), {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"e9\"")}});
+        });
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
+        click(env->window, findItem(content, QStringLiteral("editButton")));
+        findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Mine"));
+        click(env->window, findItem(content, QStringLiteral("saveButton")));
+        auto *panel = findItem(content, QStringLiteral("notSentPanel"));
+        QTRY_VERIFY(panel && panel->isVisible());
+        click(env->window, findItem(content, QStringLiteral("keepOtherButton")));
+        QTRY_VERIFY(!panel->isVisible());
+        QCOMPARE(env->transport->count("PUT"), 0);
+        QCOMPARE(env->agenda->edit()->queue().conflicts().size(), 0);
+    }
+
+    void aChangeMadeOfflineWaitsAndShowsTheClock_data() { darkRows(); }
+
+    void aChangeMadeOfflineWaitsAndShowsTheClock()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
+        click(env->window, findItem(content, QStringLiteral("editButton")));
+        findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Dentist (new time)"));
+        env->transport->offline = true; // the network goes away; NoDrive itself still thinks it is connected
+        click(env->window, findItem(content, QStringLiteral("saveButton")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Waiting to send 1 change")));
+        QTRY_VERIFY(shown(content, QStringLiteral("badgePending")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Dentist (new time)"))); // drawn at once
+        QCOMPARE(env->agenda->edit()->queue().pendingCount(), 1);
+        QVERIFY(env->agenda->edit()->queue().conflicts().isEmpty());
+        shoot(env.get(), QStringLiteral("pending-offline"), dark);
+    }
+
+    void deletingNeedsTheConfirmationAndMovesToTheTrashBin_data() { darkRows(); }
+
+    void deletingNeedsTheConfirmationAndMovesToTheTrashBin()
+    {
+        QFETCH(bool, dark);
+        const QString path = QStringLiteral("/remote.php/dav/calendars/ali/personal/dentist.ics");
+        const auto env = open(QStringLiteral("ali"), dark, [&](FakeTransport *t) { prepend(t, "DELETE", path, 204, QByteArray()); });
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
+        click(env->window, findItem(content, QStringLiteral("deleteButton")));
+        QTRY_VERIFY(shown(content, QStringLiteral("confirmDeleteDialog")));
+        QVERIFY(hasText(env->window, QStringLiteral("Delete this event? It moves to the calendar's trash bin.")));
+        shoot(env.get(), QStringLiteral("delete-confirm"), dark);
+        // Cancel: nothing is sent.
+        click(env->window, findItem(content, QStringLiteral("cancelDeleteButton")));
+        QVERIFY(!shown(content, QStringLiteral("confirmDeleteDialog")));
+        QCOMPARE(env->transport->count("DELETE"), 0);
+        // Delete: one DELETE with If-Match.
+        click(env->window, findItem(content, QStringLiteral("deleteButton")));
+        click(env->window, findItem(content, QStringLiteral("confirmDeleteButton")));
+        QTRY_COMPARE(env->transport->count("DELETE"), 1);
+        QCOMPARE(ScriptedTransport::header(env->transport->of("DELETE").first(), "If-Match"), QByteArrayLiteral("\"e1\""));
+        QTRY_VERIFY(!findItem(content, QStringLiteral("row-cal:personal/dentist.ics")));
+    }
+
+    void aRepeatingEventOnlyOffersTheCalendarPage_data() { darkRows(); }
+
+    void aRepeatingEventOnlyOffersTheCalendarPage()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("cal:work/standup.ics#20261028T093000Z"));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("This repeats. Change it in NoCalendar.")));
+        QVERIFY(!shown(content, QStringLiteral("editButton")));
+        QVERIFY(!shown(content, QStringLiteral("deleteButton")));
+        QVERIFY(!shown(content, QStringLiteral("agentPicker")));
+        QVERIFY(shown(content, QStringLiteral("openInButton")));
+        QVERIFY(hasText(env->window, QStringLiteral("Open in NoCalendar")));
+        shoot(env.get(), QStringLiteral("repeating-locked"), dark);
+        QCOMPARE(env->transport->count("PUT"), 0);
+    }
+
+    void aProjectIViewOnlyIsLockedWithAPlainReason_data() { darkRows(); }
+
+    void aProjectIViewOnlyIsLockedWithAPlainReason()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark, [](FakeTransport *t) {
+            auto projects = fixtureJson(QStringLiteral("gantt/projects-ali.json")).toArray();
+            auto first = projects.at(0).toObject();
+            first.insert(QStringLiteral("permission"), QStringLiteral("viewer"));
+            projects.replace(0, first);
+            prepend(t, "GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/projects"), 200, ocsBody(projects));
+        });
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("gantt:task:111"));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("You can view this project only. Ask the project manager for editor rights.")));
+        QVERIFY(!shown(content, QStringLiteral("editButton")));
+        QVERIFY(!shown(content, QStringLiteral("doneButton")));
+        QVERIFY(shown(content, QStringLiteral("openInButton")));
+        shoot(env.get(), QStringLiteral("viewer-locked"), dark);
+    }
+
+    void aCardIsNeverDeletedAndOffersItsDueDate()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        selectAndWait(env.get(), QStringLiteral("deck:card:503"));
+        QVERIFY(shown(content, QStringLiteral("editButton")));
+        QVERIFY(shown(content, QStringLiteral("doneButton")));
+        QVERIFY(!shown(content, QStringLiteral("deleteButton")));
+        QVERIFY(hasText(env->window, QStringLiteral("Open in NoBoard")));
+    }
+
+    void noTextOfTheEditorSaysTheServerSoftwareName()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        for (const auto &key : {QStringLiteral("cal:personal/dentist.ics"), QStringLiteral("gantt:task:111"), QStringLiteral("deck:card:503")}) {
+            selectAndWait(env.get(), key);
+            if (auto *edit = findItem(content, QStringLiteral("editButton")); edit && edit->isVisible()) {
+                click(env->window, edit);
+            }
+            QVERIFY2(!allText(env->window).contains(QStringLiteral("nextcloud"), Qt::CaseInsensitive), qPrintable(key));
+        }
+        click(env->window, findItem(content, QStringLiteral("newButton")));
+        click(env->window, findItem(content, QStringLiteral("newEventItem")));
+        QTRY_VERIFY(shown(content, QStringLiteral("newItemDialog")));
+        QVERIFY(!allText(env->window).contains(QStringLiteral("nextcloud"), Qt::CaseInsensitive));
     }
 
     void liveDataFromTheServerTest()

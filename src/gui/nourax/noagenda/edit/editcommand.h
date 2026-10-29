@@ -17,6 +17,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
+#include <QMetaType>
 #include <QString>
 #include <QStringList>
 #include <QTimeZone>
@@ -128,3 +129,6 @@ EditCommand deckAgent(const AgendaItem &item, const QString &agentId, const QStr
 QString normalizeVersion(const QString &version);
 
 } // namespace OCC::Nourax::Agenda
+
+Q_DECLARE_METATYPE(OCC::Nourax::Agenda::EditCommand)
+Q_DECLARE_METATYPE(OCC::Nourax::Agenda::EditResult)

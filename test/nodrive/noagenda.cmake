@@ -12,6 +12,11 @@ set(NODRIVE_AGENDA_TESTS
     NoDriveAgendaRules
     NoDriveAgendaCache
     NoDriveAgendaService
+    NoDriveAgendaICalPatch
+    NoDriveAgendaEdit
+    NoDriveAgendaGanttAgent
+    NoDriveAgendaQueue
+    NoDriveAgendaConflicts
     NoDriveAgendaUi
     NoDriveAgendaServer
 )

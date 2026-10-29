@@ -92,11 +92,11 @@ QJsonObject GanttWriter::updateBody(const EditCommand &command, const QJsonObjec
     const QString mode = freshTask.value(QLatin1String("progress_mode")).toString();
     bool dates = false;
     if (c.contains(QLatin1String("start_date"))) {
-        body.insert(QStringLiteral("start_date"), c.value(QLatin1String("start_date")).toString() + WriterUtil::timePartOf(freshTask.value(QLatin1String("start_date")).toString()));
+        body.insert(QStringLiteral("start_date"), QString(c.value(QLatin1String("start_date")).toString() + WriterUtil::timePartOf(freshTask.value(QLatin1String("start_date")).toString())));
         dates = true;
     }
     if (c.contains(QLatin1String("end_date"))) {
-        body.insert(QStringLiteral("end_date"), c.value(QLatin1String("end_date")).toString() + WriterUtil::timePartOf(freshTask.value(QLatin1String("end_date")).toString()));
+        body.insert(QStringLiteral("end_date"), QString(c.value(QLatin1String("end_date")).toString() + WriterUtil::timePartOf(freshTask.value(QLatin1String("end_date")).toString())));
         dates = true;
     }
     if (c.contains(QLatin1String("manual_progress"))) {
