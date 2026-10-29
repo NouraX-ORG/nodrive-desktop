@@ -120,6 +120,8 @@ for app in nc_gantt deck calendar tasks; do
   docker exec "$SERVER" chown -R www-data:www-data "/var/www/html/custom_apps/$app"
 done
 occ app:enable calendar tasks deck nc_gantt > /dev/null
+# The first-run wizard of the server would cover the web pages that tools/ci/agenda-webedit.py drives.
+occ app:disable firstrunwizard > /dev/null 2>&1 || true
 apps_json=$(occ app:list --output=json)
 versions=$(printf '%s' "$apps_json" | python3 -c '
 import json,sys

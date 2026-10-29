@@ -145,6 +145,28 @@ def type_title(page, old, new):
     return False
 
 
+def dump_fields(page, app):
+    """What the page offers to type into (names and lengths, never the values), to adjust the selectors."""
+    rows = []
+    for kind in ("input", "textarea", "[contenteditable=true]"):
+        locator = page.locator(kind)
+        for i in range(min(locator.count(), 60)):
+            field = locator.nth(i)
+            try:
+                rows.append({"kind": kind, "visible": field.is_visible(), "type": field.get_attribute("type"), "placeholder": field.get_attribute("placeholder"),
+                             "class": field.get_attribute("class"), "aria": field.get_attribute("aria-label"), "valueLength": len(field.input_value() if kind != "[contenteditable=true]" else (field.inner_text() or ""))})
+            except Exception:
+                continue
+    buttons = []
+    locator = page.get_by_role("button")
+    for i in range(min(locator.count(), 60)):
+        try:
+            buttons.append({"text": (locator.nth(i).inner_text() or "")[:40], "visible": locator.nth(i).is_visible()})
+        except Exception:
+            continue
+    json.dump({"fields": rows, "buttons": buttons, "url": page.url}, open(os.path.join(OUT, "%s-fields.json" % app), "w"), indent=1)
+
+
 def click_save(page):
     for name in ("Save", "Update", "Done"):
         try:
@@ -176,6 +198,7 @@ def drive(app, page, url, old, new, calendar, name, tag):
         page.wait_for_timeout(5000)
         if not type_title(page, old, new):
             page.screenshot(path=os.path.join(OUT, "%s-no-title-field.png" % app))
+            dump_fields(page, app)
             entry["detail"] = "the title field was not found in the page"
             return
         if app == "tasks":
@@ -213,7 +236,7 @@ def main():
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        context = browser.new_context(viewport={"width": 1400, "height": 900}, locale="en-GB")
+        context = browser.new_context(viewport={"width": 1400, "height": 900}, locale="en-GB", timezone_id="Europe/Berlin")
         page = context.new_page()
         page.set_default_timeout(30000)
         try:

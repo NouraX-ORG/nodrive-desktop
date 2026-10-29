@@ -29,6 +29,7 @@
 
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -724,6 +725,28 @@ private:
         refresh(agenda);
     }
 
+    /// The id of the waiting "Not sent" entry of one item (refused changes of other items stay in the list until a click).
+    static QString conflictOf(AccountAgenda *agenda, const QString &itemKey)
+    {
+        for (const auto &c : agenda->edit()->queue().conflicts()) {
+            if (c.itemKey == itemKey) {
+                return c.id;
+            }
+        }
+        return QString();
+    }
+
+    static int responsesIn(const HttpResult &r)
+    {
+        return static_cast<int>(QString::fromUtf8(r.body).count(QRegularExpression(QStringLiteral("<(?:\\w+:)?response[ >]"))));
+    }
+
+    HttpResult trashBin(AccountTransport *transport)
+    {
+        return dav(transport, "PROPFIND", QStringLiteral("remote.php/dav/calendars/%1/trashbin/").arg(_user),
+            QByteArrayLiteral("<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:displayname/></d:prop></d:propfind>"), 1);
+    }
+
     static QString isoDay(int offset)
     {
         return QDateTime::currentDateTimeUtc().date().addDays(offset).toString(Qt::ISODate);
@@ -877,6 +900,7 @@ private:
         check(QStringLiteral("create: to-do"), result.done(), why(result));
         check(QStringLiteral("create: server has the to-do"), QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("ci-edit-todo.ics")).body).contains(QStringLiteral("BEGIN:VTODO")), QString());
 
+        const auto trashBefore = trashBin(&transport);
         AgendaItem gone;
         gone.key = QStringLiteral("cal:work/") + createdUid + QStringLiteral(".ics");
         gone.kind = ItemKind::Event;
@@ -888,10 +912,16 @@ private:
         result = run(agenda.get(), EditCommands::calendarDelete(gone));
         check(QStringLiteral("delete: event"), result.done(), why(result));
         check(QStringLiteral("delete: the event is gone from the calendar"), object(&transport, QStringLiteral("work"), createdUid + QStringLiteral(".ics")).status == 404, QString());
-        const auto trash = dav(&transport, "PROPFIND", QStringLiteral("remote.php/dav/calendars/%1/trashbin/").arg(_user), QByteArrayLiteral("<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:displayname/></d:prop></d:propfind>"), 1);
-        const bool trashAnswers = trash.status == 207;
-        check(QStringLiteral("delete: the calendar trash bin holds the event (information when the server has no trash bin listing)"),
-            !trashAnswers || QString::fromUtf8(trash.body).contains(createdUid), QStringLiteral("trash bin listing HTTP %1").arg(trash.status));
+        const auto trash = trashBin(&transport);
+        if (!_outDir.isEmpty()) {
+            QFile trashFile(_outDir + QStringLiteral("/trashbin-after-delete.xml"));
+            if (trashFile.open(QIODevice::WriteOnly)) {
+                trashFile.write(trash.body); // names of deleted objects of the throwaway server only
+            }
+        }
+        check(QStringLiteral("delete: the calendar's trash bin holds the deleted event"),
+            trash.status == 207 && (QString::fromUtf8(trash.body).contains(createdUid) || responsesIn(trash) == responsesIn(trashBefore) + 1),
+            QStringLiteral("trash bin HTTP %1, %2 entries before and %3 after").arg(trash.status).arg(responsesIn(trashBefore)).arg(responsesIn(trash)));
 
         // A repeating event is refused and left alone.
         const auto standupBefore = object(&transport, QStringLiteral("work"), QStringLiteral("standup.ics"));
@@ -940,7 +970,7 @@ private:
         check(QStringLiteral("the change waits in the Not sent list"), agenda->edit()->queue().conflicts().size() == 1 && agenda->edit()->queue().pendingCount() == 0, QString());
 
         // "Apply my change again": both changes are there afterwards.
-        const QString id = agenda->edit()->queue().conflicts().isEmpty() ? QString() : agenda->edit()->queue().conflicts().first().id;
+        const QString id = conflictOf(agenda.get(), seen.key);
         QSignalSpy spy(agenda->edit(), &EditService::finished);
         agenda->edit()->applyAgain(id);
         if (spy.isEmpty()) {
@@ -1109,7 +1139,8 @@ private:
             check(QStringLiteral("conflict: found by updated_at"), clash.outcome == EditResult::Outcome::Conflict, why(clash));
             const auto serverTask = taskOf(&transport, website, crossId);
             check(QStringLiteral("conflict: the server has the other change only"), serverTask.value(QStringLiteral("title")).toString() == QLatin1String("Cross pairing (renamed elsewhere)") && !serverTask.value(QStringLiteral("end_date")).toString().startsWith(isoWorkday(4)), QString());
-            const QString id = agenda->edit()->queue().conflicts().isEmpty() ? QString() : agenda->edit()->queue().conflicts().first().id;
+            const QString id = conflictOf(agenda.get(), seen.key);
+            check(QStringLiteral("conflict: the change waits in the Not sent list"), !id.isEmpty(), QString());
             QSignalSpy spy(agenda->edit(), &EditService::finished);
             agenda->edit()->applyAgain(id);
             if (spy.isEmpty()) {
