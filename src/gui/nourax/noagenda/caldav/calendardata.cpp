@@ -108,6 +108,7 @@ QJsonObject CalRecord::toJson() const
     o.insert(QStringLiteral("uid"), uid);
     o.insert(QStringLiteral("summary"), summary);
     o.insert(QStringLiteral("description"), description);
+    o.insert(QStringLiteral("descriptionCut"), descriptionCut);
     o.insert(QStringLiteral("location"), location);
     o.insert(QStringLiteral("allDay"), allDay);
     o.insert(QStringLiteral("approx"), timeApproximated);
@@ -148,6 +149,7 @@ CalRecord CalRecord::fromJson(const QJsonObject &o)
     r.uid = o.value(QLatin1String("uid")).toString();
     r.summary = o.value(QLatin1String("summary")).toString();
     r.description = o.value(QLatin1String("description")).toString();
+    r.descriptionCut = o.value(QLatin1String("descriptionCut")).toBool();
     r.location = o.value(QLatin1String("location")).toString();
     r.allDay = o.value(QLatin1String("allDay")).toBool();
     r.timeApproximated = o.value(QLatin1String("approx")).toBool();

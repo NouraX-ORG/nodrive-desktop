@@ -9,7 +9,11 @@
 #include "ganttagentchange.h"
 #include "writerutil.h"
 
+#include <QLoggingCategory>
+
 namespace OCC::Nourax::Agenda {
+
+Q_LOGGING_CATEGORY(lcAgendaGanttWrite, "nodrive.agenda.ganttwrite", QtInfoMsg)
 
 namespace {
 
@@ -42,27 +46,28 @@ QString refusalFor(const QByteArray &body, int status)
 
 } // namespace
 
-void GanttWriter::withFreshTask(HttpTransport *transport, const EditCommand &command, const std::function<void(const QJsonObject &, const EditResult &)> &next)
+void GanttWriter::withFreshTask(HttpTransport *transport, const EditCommand &command,
+    const std::function<void(const QJsonObject &task, const QJsonArray &projectTasks, const EditResult &)> &next)
 {
     const int projectId = command.change.value(QLatin1String("projectId")).toInt();
     const int taskId = command.change.value(QLatin1String("taskId")).toInt();
     auto request = ocsGet(*transport, apiBase() + QStringLiteral("projects/") + QString::number(projectId) + QStringLiteral("/tasks?format=json"));
     transport->send(request, [command, taskId, next](const HttpResult &got) {
         EditResult problem;
-        if (WriterUtil::commonFailure(got, &problem)) {
-            if (problem.outcome == EditResult::Outcome::Refused) {
+        if (WriterUtil::commonFailure(got, &problem, QStringLiteral("NoGantt"))) {
+            if (problem.outcome == EditResult::Outcome::Refused && problem.httpStatus == 403) {
                 problem.message = AgendaText::tr("You can view this project only. Ask the project manager for editor rights.");
             }
-            next(QJsonObject(), problem);
+            next(QJsonObject(), QJsonArray(), problem);
             return;
         }
         if (got.status == 404) {
-            next(QJsonObject(), WriterUtil::conflict(QStringLiteral("gone"), AgendaText::tr("This task was removed somewhere else while you were editing.")));
+            next(QJsonObject(), QJsonArray(), WriterUtil::conflict(QStringLiteral("gone"), AgendaText::tr("This task was removed somewhere else while you were editing.")));
             return;
         }
         const auto reply = parseOcs(got);
         if (!reply.ok() || !reply.data.isArray()) {
-            next(QJsonObject(), WriterUtil::failed(AgendaText::tr("NoGantt could not be read, so nothing was changed."), got.status));
+            next(QJsonObject(), QJsonArray(), WriterUtil::failed(AgendaText::tr("NoGantt could not be read, so nothing was changed."), got.status));
             return;
         }
         QJsonObject found;
@@ -72,16 +77,16 @@ void GanttWriter::withFreshTask(HttpTransport *transport, const EditCommand &com
             }
         }
         if (found.isEmpty()) {
-            next(QJsonObject(), WriterUtil::conflict(QStringLiteral("gone"), AgendaText::tr("This task was removed somewhere else while you were editing.")));
+            next(QJsonObject(), QJsonArray(), WriterUtil::conflict(QStringLiteral("gone"), AgendaText::tr("This task was removed somewhere else while you were editing.")));
             return;
         }
         if (!command.baseVersion.isEmpty() && found.value(QLatin1String("updated_at")).toString() != command.baseVersion) {
-            next(found, WriterUtil::conflict(QStringLiteral("changed"), AgendaText::tr("This changed somewhere else while you were editing. NoAgenda kept the other change.")));
+            next(found, reply.data.toArray(), WriterUtil::conflict(QStringLiteral("changed"), AgendaText::tr("This changed somewhere else while you were editing. NoAgenda kept the other change.")));
             return;
         }
         EditResult ok;
         ok.outcome = EditResult::Outcome::Done;
-        next(found, ok);
+        next(found, reply.data.toArray(), ok);
     });
 }
 
@@ -131,7 +136,7 @@ QJsonObject GanttWriter::updateBody(const EditCommand &command, const QJsonObjec
 void GanttWriter::run(HttpTransport *transport, const EditCommand &command, const EditContext &context, const EditDone &done)
 {
     if (command.kind == EditKind::GanttUpdate) {
-        withFreshTask(transport, command, [transport, command, done](const QJsonObject &task, const EditResult &state) {
+        withFreshTask(transport, command, [transport, command, done](const QJsonObject &task, const QJsonArray &, const EditResult &state) {
             if (state.outcome != EditResult::Outcome::Done) {
                 done(state);
                 return;
@@ -151,15 +156,15 @@ void GanttWriter::run(HttpTransport *transport, const EditCommand &command, cons
         return;
     }
     // My agent: the visible planning people are read fresh too (the server drops a row that is not visible to me).
-    withFreshTask(transport, command, [transport, command, context, done](const QJsonObject &task, const EditResult &state) {
+    withFreshTask(transport, command, [transport, command, context, done](const QJsonObject &task, const QJsonArray &projectTasks, const EditResult &state) {
         if (state.outcome != EditResult::Outcome::Done) {
             done(state);
             return;
         }
         auto request = ocsGet(*transport, apiBase() + QStringLiteral("resources?format=json"));
-        transport->send(request, [transport, command, context, done, task](const HttpResult &got) {
+        transport->send(request, [transport, command, context, done, task, projectTasks](const HttpResult &got) {
             EditResult problem;
-            if (WriterUtil::commonFailure(got, &problem)) {
+            if (WriterUtil::commonFailure(got, &problem, QStringLiteral("NoGantt"))) {
                 done(problem);
                 return;
             }
@@ -169,7 +174,8 @@ void GanttWriter::run(HttpTransport *transport, const EditCommand &command, cons
                 return;
             }
             const auto planned = GanttAgentChange::plan(task, reply.data.toArray(), context.registry, command.change.value(QLatin1String("me")).toString(),
-                context.myName, command.change.value(QLatin1String("agentId")).toString(), context.hoursPerPt);
+                context.myName, command.change.value(QLatin1String("agentId")).toString(), context.hoursPerPt,
+                GanttProjectInfo::of(context.ganttProjectOwners.value(command.change.value(QLatin1String("projectId")).toInt()), projectTasks));
             if (!planned.ok) {
                 done(WriterUtil::refused(planned.refusal));
                 return;
@@ -193,8 +199,8 @@ void GanttWriter::put(HttpTransport *transport, const EditCommand &command, cons
     auto request = WriterUtil::jsonRequest(*transport, "PUT", apiBase() + QStringLiteral("tasks/") + QString::number(taskId) + QStringLiteral("?format=json"), body);
     transport->send(request, [freshTask, sentResources, datesChanged, done](const HttpResult &sent) {
         EditResult r;
-        if (WriterUtil::commonFailure(sent, &r)) {
-            if (r.outcome == EditResult::Outcome::Refused) {
+        if (WriterUtil::commonFailure(sent, &r, QStringLiteral("NoGantt"))) {
+            if (r.outcome == EditResult::Outcome::Refused && r.httpStatus == 403) {
                 r.message = AgendaText::tr("You can view this project only. Ask the project manager for editor rights.");
             }
             done(r);
@@ -234,6 +240,16 @@ void GanttWriter::put(HttpTransport *transport, const EditCommand &command, cons
             }
         }
         if (!sentResources.isEmpty() && !GanttAgentChange::sameResources(sentResources, task.value(QLatin1String("resources")).toArray())) {
+            // Only planning person ids (numbers) go to the log, never a name or a value of the task.
+            QStringList sentIds;
+            QStringList returnedIds;
+            for (const auto &row : sentResources) {
+                sentIds.append(QString::number(intOf(row.toObject().value(QLatin1String("resource_id")))));
+            }
+            for (const auto &row : task.value(QLatin1String("resources")).toArray()) {
+                returnedIds.append(QString::number(intOf(row.toObject().value(QLatin1String("resource_id")))));
+            }
+            qCInfo(lcAgendaGanttWrite) << "NoGantt answered with another list of people: sent" << sentIds << "returned" << returnedIds;
             ok.checkInNoGantt = true;
             ok.note = AgendaText::tr("Check this task in NoGantt");
         }
@@ -246,7 +262,7 @@ void GanttWriter::undo(HttpTransport *transport, const QString &opId, const Edit
     auto request = WriterUtil::jsonRequest(*transport, "POST", apiBase() + QStringLiteral("changes/") + opId + QStringLiteral("/revert?format=json"), QJsonObject());
     transport->send(request, [done](const HttpResult &sent) {
         EditResult r;
-        if (WriterUtil::commonFailure(sent, &r)) {
+        if (WriterUtil::commonFailure(sent, &r, QStringLiteral("NoGantt"))) {
             done(r);
             return;
         }

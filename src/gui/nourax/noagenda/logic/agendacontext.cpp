@@ -33,6 +33,48 @@ QDate localDateOfIso(const QString &text, const QTimeZone &zone, QDateTime *utcO
     return dt.toTimeZone(zone).date();
 }
 
+namespace {
+
+QDateTime utcOfTimedText(const QString &text, const QTimeZone &zone)
+{
+    if (text.size() <= 10) {
+        return QDateTime();
+    }
+    QString iso = text;
+    if (iso.at(10) == QLatin1Char(' ')) {
+        iso[10] = QLatin1Char('T');
+    }
+    const QString tail = iso.mid(11);
+    const bool hasZone = iso.endsWith(QLatin1Char('Z'), Qt::CaseInsensitive) || tail.contains(QLatin1Char('+')) || tail.contains(QLatin1Char('-'));
+    const auto parsed = QDateTime::fromString(iso, Qt::ISODate);
+    if (!parsed.isValid()) {
+        return QDateTime();
+    }
+    return (hasZone ? parsed : QDateTime(parsed.date(), parsed.time(), zone)).toUTC();
+}
+
+} // namespace
+
+bool timeSlotOfIso(const QString &startText, const QString &endText, const QTimeZone &zoneIn, QDateTime *startUtc, QDateTime *endUtc)
+{
+    const QTimeZone zone = zoneIn.isValid() ? zoneIn : QTimeZone(QTimeZone::UTC);
+    const auto start = utcOfTimedText(startText, zone);
+    const auto end = utcOfTimedText(endText, zone);
+    if (!start.isValid() || !end.isValid() || end <= start) {
+        return false;
+    }
+    if (start.toTimeZone(zone).date() != end.toTimeZone(zone).date()) {
+        return false;
+    }
+    if (startUtc) {
+        *startUtc = start;
+    }
+    if (endUtc) {
+        *endUtc = end;
+    }
+    return true;
+}
+
 ProblemFlag makeFlag(ProblemFlag::Kind kind, ProblemFlag::Audience audience, const QString &text)
 {
     ProblemFlag f;

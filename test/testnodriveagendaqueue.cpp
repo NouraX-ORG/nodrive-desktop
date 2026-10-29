@@ -282,6 +282,142 @@ private Q_SLOTS:
         QCOMPARE(ScriptedTransport::header(t.of("DELETE").first(), "If-Match"), QByteArrayLiteral("\"e2\""));
     }
 
+    void queuedNoGanttAndNoBoardEditsWaitForTheVersionGuardAndNeverHoldUpCalendarEdits()
+    {
+        ScriptedTransport t;
+        const auto calendar = calendarHandler();
+        t.handler = [calendar](const HttpRequest &r) { return r.url.path().contains(QStringLiteral("/apps/nc_gantt/")) ? ScriptedTransport::answer(404) : calendar(r); };
+        auto context = std::make_shared<EditContext>(aliContext());
+        context->ganttGuard = AppGuard::Unknown; // reconnected: no read has run the guard yet
+        context->deckGuard = AppGuard::Unknown;
+        EditService svc(&t, _dir.path() + QStringLiteral("/guard"), [context] { return *context; });
+        QSignalSpy finished(&svc, &EditService::finished);
+        svc.submit(EditCommands::ganttUpdate(ganttItem(), QJsonObject{{QStringLiteral("end_date"), QStringLiteral("2026-11-04")}}));
+        svc.submit(EditCommands::deckCard(cardItem(), QJsonObject{{QStringLiteral("due"), QStringLiteral("2026-11-05")}}));
+        svc.submit(EditCommands::calendarPatch(eventNamed(QStringLiteral("a.ics")), titleChange(QStringLiteral("A"))));
+        // The calendar edit went out; the other two were not sent blind and are still waiting.
+        QCOMPARE(t.count("PUT"), 1);
+        QCOMPARE(svc.queue().pendingCount(), 2);
+        for (const auto &r : std::as_const(t.requests)) {
+            QVERIFY2(!r.url.path().contains(QStringLiteral("/apps/nc_gantt/")) && !r.url.path().contains(QStringLiteral("/apps/deck/")), qPrintable(r.url.path()));
+        }
+        // A read has run the guard: NoGantt is fine, NoBoard is not a tested version.
+        context->ganttGuard = AppGuard::Writable;
+        context->deckGuard = AppGuard::ReadOnly;
+        t.requests.clear();
+        svc.retry();
+        bool ganttAsked = false;
+        for (const auto &r : std::as_const(t.requests)) {
+            ganttAsked = ganttAsked || r.url.path().contains(QStringLiteral("/apps/nc_gantt/"));
+            QVERIFY(!r.url.path().contains(QStringLiteral("/apps/deck/")));
+        }
+        QVERIFY2(ganttAsked, "the NoGantt command is sent once the guard allows it");
+        QCOMPARE(svc.queue().pendingCount(), 0);
+        bool deckNotSent = false;
+        for (const auto &c : svc.queue().conflicts()) {
+            if (c.kind == EditKind::DeckCardUpdate) {
+                deckNotSent = true;
+                QCOMPARE(c.conflictKind, QStringLiteral("refused"));
+                QVERIFY(c.message.contains(QStringLiteral("Read only")));
+                QCOMPARE(c.home, QStringLiteral("board"));
+            }
+        }
+        QVERIFY2(deckNotSent, "the NoBoard command is in Not sent with the read-only sentence");
+        QCOMPARE(qvariant_cast<EditResult>(finished.last().at(1)).outcome, EditResult::Outcome::Refused); // the answer for the NoBoard command
+    }
+
+    void a401FromNoBoardIsNotASignInProblemAndTheNextCalendarEditGoesOut()
+    {
+        ScriptedTransport t;
+        const auto calendar = calendarHandler();
+        t.handler = [calendar](const HttpRequest &r) { return r.url.path().contains(QStringLiteral("/apps/deck/")) ? ScriptedTransport::answer(401) : calendar(r); };
+        auto svc = service(&t, QStringLiteral("deck401"));
+        QSignalSpy login(svc.get(), &EditService::loginNeeded);
+        svc->submit(EditCommands::deckCard(cardItem(), QJsonObject{{QStringLiteral("due"), QStringLiteral("2026-11-05")}}));
+        svc->submit(EditCommands::calendarPatch(eventNamed(QStringLiteral("a.ics")), titleChange(QStringLiteral("A"))));
+        QCOMPARE(login.count(), 0);
+        QCOMPARE(svc->queue().pendingCount(), 0);
+        QCOMPARE(t.count("PUT"), 1); // the calendar edit was not left waiting behind the card
+        QCOMPARE(svc->queue().conflicts().size(), 1);
+        const auto &c = svc->queue().conflicts().first();
+        QCOMPARE(c.conflictKind, QStringLiteral("refused"));
+        QVERIFY2(c.message.contains(QStringLiteral("Open in NoBoard")), qPrintable(c.message));
+        // a 401 of the calendar itself is a real sign-in problem and holds the queue
+        ScriptedTransport dav;
+        dav.handler = [](const HttpRequest &) { return ScriptedTransport::answer(401); };
+        auto second = service(&dav, QStringLiteral("dav401"));
+        QSignalSpy loginAgain(second.get(), &EditService::loginNeeded);
+        second->submit(EditCommands::calendarPatch(eventNamed(QStringLiteral("a.ics")), titleChange(QStringLiteral("A"))));
+        QCOMPARE(loginAgain.count(), 1);
+        QCOMPARE(second->queue().pendingCount(), 1);
+    }
+
+    void aServerErrorIsTriedThreeTimesThenMovesToNotSent()
+    {
+        ScriptedTransport t;
+        t.handler = [](const HttpRequest &) { return ScriptedTransport::answer(500); };
+        auto svc = service(&t, QStringLiteral("three-tries"));
+        svc->submit(EditCommands::calendarPatch(eventNamed(QStringLiteral("a.ics")), titleChange(QStringLiteral("A"))));
+        QCOMPARE(svc->queue().pendingCount(), 1); // first try: waits
+        QCOMPARE(svc->queue().conflicts().size(), 0);
+        svc->retry();
+        QCOMPARE(svc->queue().pendingCount(), 1); // second try: waits
+        QCOMPARE(svc->queue().commands().first().attempts, 2);
+        svc->retry();
+        QCOMPARE(svc->queue().pendingCount(), 0); // third try: Not sent
+        QCOMPARE(svc->queue().conflicts().size(), 1);
+        QCOMPARE(svc->queue().conflicts().first().conflictKind, QStringLiteral("refused"));
+        // a later edit is not held up by it
+        t.handler = calendarHandler();
+        svc->submit(EditCommands::calendarPatch(eventNamed(QStringLiteral("b.ics")), titleChange(QStringLiteral("B"))));
+        QCOMPARE(svc->queue().pendingCount(), 0);
+        QCOMPARE(t.count("PUT"), 1);
+    }
+
+    void undoTellsWhetherNoGanttUndidTheMove()
+    {
+        ScriptedTransport t;
+        int status = 200;
+        t.handler = [&status](const HttpRequest &) { return ScriptedTransport::answer(status, QByteArray("{}")); };
+        auto svc = service(&t, QStringLiteral("undo"));
+        QSignalSpy undone(svc.get(), &EditService::undoFinished);
+        QSignalSpy refresh(svc.get(), &EditService::refreshNeeded);
+        svc->undo(QStringLiteral("op-1"));
+        QCOMPARE(undone.count(), 1);
+        QVERIFY(qvariant_cast<EditResult>(undone.last().at(0)).done());
+        QCOMPARE(refresh.count(), 1);
+        status = 500;
+        svc->undo(QStringLiteral("op-2"));
+        QCOMPARE(undone.count(), 2);
+        const auto failed = qvariant_cast<EditResult>(undone.last().at(0));
+        QVERIFY(!failed.done());
+        QVERIFY(failed.message.contains(QStringLiteral("could not undo")));
+        QCOMPARE(refresh.count(), 1);
+        status = 401;
+        svc->undo(QStringLiteral("op-3"));
+        QCOMPARE(qvariant_cast<EditResult>(undone.last().at(0)).outcome, EditResult::Outcome::Refused);
+        // no connection: nothing is sent and the person is told
+        svc->setOnline(false);
+        t.requests.clear();
+        svc->undo(QStringLiteral("op-4"));
+        QCOMPARE(t.requests.size(), 0);
+        QCOMPARE(undone.count(), 4);
+        QCOMPARE(qvariant_cast<EditResult>(undone.last().at(0)).outcome, EditResult::Outcome::Offline);
+    }
+
+    void aCommandThatWasCutShortIsMarkedSoItsRetryKnowsItsOwnPartOfTheChange()
+    {
+        const QString dir = _dir.path() + QStringLiteral("/partial");
+        EditQueue queue(dir);
+        const QString id = queue.enqueue(EditCommands::deckAgent(cardItem(), QStringLiteral("AG-0001"), QStringLiteral("ali")));
+        QVERIFY(queue.markPartial(id));
+        QVERIFY(!queue.markPartial(QStringLiteral("nothing")));
+        QVERIFY(queue.save());
+        EditQueue again(dir);
+        again.load();
+        QVERIFY(again.commands().first().change.value(QStringLiteral("partial")).toBool());
+    }
+
     void theOverlayDrawsEveryKindOfPendingChange()
     {
         ScriptedTransport t;

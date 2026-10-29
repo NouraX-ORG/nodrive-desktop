@@ -51,6 +51,8 @@ public:
     [[nodiscard]] QString sendingId() const { return _sendingId; }
     /// Takes the command out of the waiting list (it was sent).
     bool remove(const QString &id);
+    /// The command started a change that did not finish (see EditResult::partialChange): its retry skips the version check.
+    bool markPartial(const QString &id);
     /// Moves a waiting command to the "Not sent" list.
     bool moveToConflict(const QString &id, const QString &message, const QString &conflictKind);
     /// "Apply my change again": the conflict goes back to the waiting list, with the newer base version.

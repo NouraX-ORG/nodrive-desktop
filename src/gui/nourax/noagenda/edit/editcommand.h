@@ -66,14 +66,22 @@ struct EditCommand
     void merge(const EditCommand &newer);
 };
 
+/// What the version guard of an app on the server said at the last read (design 5: NoAgenda never writes blind).
+/// Unknown = no read of this app has finished since the last (re)connection: its commands wait.
+enum class AppGuard { Unknown, Writable, ReadOnly };
+
 /// What the writers need besides the command itself.
 struct EditContext
 {
+    AppGuard ganttGuard = AppGuard::Unknown; ///< NoGantt: the contract check of the last read
+    AppGuard deckGuard = AppGuard::Unknown; ///< NoBoard: the tested-version check of the last read
+
     QString me; ///< user id of the person
     QString myName; ///< display name
     QString davUser;
     AgentRegistry registry;
     QJsonArray ganttResources; ///< NoGantt planning people visible to me (from the last read)
+    QMap<int, QString> ganttProjectOwners; ///< project id -> owner user id (from the last read)
     double hoursPerPt = 8.0;
     QDateTime now; ///< UTC
     QTimeZone zone;
@@ -101,6 +109,9 @@ struct EditResult
     QString undoOpId; ///< NoGantt: "Undo" for 10 seconds
     QString note; ///< a sentence to show next to the result (for example a linked card that did not move)
     bool checkInNoGantt = false; ///< NoGantt answered with another list than the one sent
+    /// NoBoard agent label: the answer was lost after the old label was already taken off. The retry must not count
+    /// NoAgenda's own partial change as "changed somewhere else".
+    bool partialChange = false;
 
     [[nodiscard]] bool done() const { return outcome == Outcome::Done; }
 };

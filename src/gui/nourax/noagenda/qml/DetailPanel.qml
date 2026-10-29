@@ -330,13 +330,13 @@ Rectangle {
                         font.pixelSize: 12
                     }
                     Text {
-                        visible: d.form.canProgress === true
+                        visible: d.form.canStatus === true
                         text: qsTr("Status")
                         color: d.st.textMuted
                         font.pixelSize: 12
                     }
                     Flow {
-                        visible: d.form.canProgress === true
+                        visible: d.form.canStatus === true
                         width: parent.width
                         spacing: 6
                         Repeater {
@@ -361,6 +361,16 @@ Rectangle {
                     st: d.st
                     label: qsTr("Description")
                     multiline: true
+                    enabledField: d.form.descriptionLocked !== true
+                }
+                Text {
+                    objectName: "descriptionReason"
+                    visible: d.form.descriptionLocked === true
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: d.form.descriptionReason ? d.form.descriptionReason : ""
+                    color: d.st.textMuted
+                    font.pixelSize: 12
                 }
 
                 Row {

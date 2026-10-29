@@ -84,6 +84,7 @@ void map(const BuildContext &ctx, const CalendarSnapshot &snapshot, QList<Agenda
         }
         item.title = rec.summary.isEmpty() ? AgendaText::tr("(no title)") : rec.summary;
         item.description = rec.description;
+        item.descriptionCut = rec.descriptionCut || rec.description.size() >= 2000; // an older saved copy has no flag
         item.location = rec.location;
         item.sourceKey = QStringLiteral("cal:") + cal->uri;
         item.sourceName = cal->name;
@@ -98,6 +99,7 @@ void map(const BuildContext &ctx, const CalendarSnapshot &snapshot, QList<Agenda
         item.repeating = rec.repeating;
         item.timeApproximated = rec.timeApproximated;
         item.readOnly = cal->readOnly;
+        item.teamCalendar = mode == CalendarMode::Team;
         if (cal->readOnly) {
             item.readOnlyReason = cal->subscribed ? AgendaText::tr("This is a subscription and can't be changed.") : AgendaText::tr("This calendar is read only for you.");
         }

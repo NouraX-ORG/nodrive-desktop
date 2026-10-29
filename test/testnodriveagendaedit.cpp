@@ -223,6 +223,58 @@ private Q_SLOTS:
         QVERIFY(body.contains(QStringLiteral("PRODID:-//Nourax//NoAgenda//EN")));
     }
 
+    void aCreateThatGets412IsDoneWhenTheItemOnTheServerIsOurs()
+    {
+        QJsonObject fields{{QStringLiteral("title"), QStringLiteral("Lunch")}, {QStringLiteral("start"), QStringLiteral("2026-11-06T11:00:00Z")}, {QStringLiteral("end"), QStringLiteral("2026-11-06T12:00:00Z")}};
+        const auto command = EditCommands::calendarCreate(QStringLiteral("work"), false, QStringLiteral("uid-77"), fields, QStringLiteral("Lunch"));
+        for (const bool ours : {true, false}) {
+            ScriptedTransport t;
+            t.handler = [ours](const HttpRequest &r) {
+                if (r.verb == "PUT") {
+                    return ScriptedTransport::answer(412);
+                }
+                const QByteArray there = ours ? QByteArray("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:uid-77\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+                                              : QByteArray("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:another\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n");
+                return ScriptedTransport::answer(200, there, etag("\"n1\""));
+            };
+            const auto result = run([&](const EditDone &done) { CalDavWriter::run(&t, command, aliContext(), done); });
+            if (ours) {
+                // our own create whose answer was lost: it is on the server, so it is done
+                QVERIFY2(result.done(), qPrintable(result.message));
+                QCOMPARE(result.newVersion, QStringLiteral("\"n1\""));
+            } else {
+                // a real clash of ids can never work again: it is a refusal, not "Apply my change again"
+                QCOMPARE(result.outcome, EditResult::Outcome::Refused);
+                QCOMPARE(result.conflictKind, QStringLiteral("refused"));
+            }
+        }
+    }
+
+    void applyingADeleteAgainReadsTheItemAndDeletesThatVersion()
+    {
+        auto item = eventItem();
+        item.version = QString(); // "Apply my change again" has no base version
+        ScriptedTransport t;
+        t.handler = [](const HttpRequest &r) {
+            if (r.verb == "GET") {
+                return ScriptedTransport::answer(200, eventIcs(), etag("\"e7\""));
+            }
+            return ScriptedTransport::answer(204);
+        };
+        const auto command = EditCommands::calendarDelete(item);
+        QVERIFY(command.baseVersion.isEmpty());
+        const auto result = run([&](const EditDone &done) { CalDavWriter::run(&t, command, aliContext(), done); });
+        QVERIFY2(result.done(), qPrintable(result.message));
+        QCOMPARE(t.count("GET"), 1);
+        QCOMPARE(t.count("DELETE"), 1);
+        QCOMPARE(ScriptedTransport::header(t.of("DELETE").first(), "If-Match"), QByteArrayLiteral("\"e7\""));
+        // already gone: nothing is lost, nothing is deleted
+        ScriptedTransport gone;
+        gone.handler = [](const HttpRequest &) { return ScriptedTransport::answer(404); };
+        QVERIFY(run([&](const EditDone &done) { CalDavWriter::run(&gone, command, aliContext(), done); }).done());
+        QCOMPARE(gone.count("DELETE"), 0);
+    }
+
     void aDeleteIsADeleteWithIfMatch()
     {
         ScriptedTransport t;
@@ -265,6 +317,42 @@ private Q_SLOTS:
         QVERIFY(body.contains(QStringLiteral("STATUS:COMPLETED")));
         QVERIFY(body.contains(QStringLiteral("COMPLETED:20261028T120000Z")));
         QVERIFY(body.contains(QStringLiteral("PERCENT-COMPLETE:100")));
+    }
+
+    void a401FromNoGanttOrNoBoardIsARefusalByThatAppNotASignInProblem()
+    {
+        // NoGantt: the read, the write and the undo
+        {
+            ScriptedTransport t;
+            t.handler = [](const HttpRequest &) { return ScriptedTransport::answer(401); };
+            const auto command = EditCommands::ganttUpdate(ganttItem(), QJsonObject{{QStringLiteral("end_date"), QStringLiteral("2026-11-04")}});
+            const auto r = run([&](const EditDone &done) { GanttWriter::run(&t, command, aliContext(), done); });
+            QCOMPARE(r.outcome, EditResult::Outcome::Refused);
+            QCOMPARE(r.conflictKind, QStringLiteral("refused"));
+            QVERIFY2(r.message.contains(QStringLiteral("Open in NoGantt")), qPrintable(r.message));
+            const auto undone = run([&](const EditDone &done) { GanttWriter::undo(&t, QStringLiteral("op-1"), done); });
+            QCOMPARE(undone.outcome, EditResult::Outcome::Refused);
+        }
+        // NoBoard: the card read and the label steps
+        {
+            ScriptedTransport t;
+            t.handler = [](const HttpRequest &) { return ScriptedTransport::answer(401); };
+            const auto command = EditCommands::deckCard(cardItem(), QJsonObject{{QStringLiteral("due"), QStringLiteral("2026-11-05")}});
+            const auto r = run([&](const EditDone &done) { DeckWriter::run(&t, command, aliContext(), done); });
+            QCOMPARE(r.outcome, EditResult::Outcome::Refused);
+            QVERIFY2(r.message.contains(QStringLiteral("Open in NoBoard")), qPrintable(r.message));
+            // a 403 keeps its own words
+            ScriptedTransport forbidden;
+            forbidden.handler = [](const HttpRequest &) { return ScriptedTransport::answer(403); };
+            const auto f = run([&](const EditDone &done) { DeckWriter::run(&forbidden, command, aliContext(), done); });
+            QCOMPARE(f.outcome, EditResult::Outcome::Refused);
+            QCOMPARE(f.message, QStringLiteral("You can see this board but not change it."));
+        }
+        // CalDAV still asks for a new sign-in
+        ScriptedTransport dav;
+        dav.handler = [](const HttpRequest &) { return ScriptedTransport::answer(401); };
+        const auto c = EditCommands::calendarPatch(eventItem(), QJsonObject{{QStringLiteral("title"), QStringLiteral("Mine")}});
+        QCOMPARE(run([&](const EditDone &done) { CalDavWriter::run(&dav, c, aliContext(), done); }).outcome, EditResult::Outcome::NeedsLogin);
     }
 
     void noConnectionASignInProblemAndARefusalAreTold()
@@ -466,6 +554,24 @@ private Q_SLOTS:
         QVERIFY(!body.contains(QStringLiteral("color")));
     }
 
+    void aNewDueDateKeepsTheTimeOfDayOfTheCard()
+    {
+        QJsonObject card = deckCardJson();
+        card.insert(QStringLiteral("duedate"), QStringLiteral("2026-10-30T14:30:00+00:00"));
+        ScriptedTransport t;
+        t.handler = [&](const HttpRequest &r) { return r.verb == "GET" ? ScriptedTransport::answer(200, json(card)) : ScriptedTransport::answer(200, json(deckCardJson(QStringLiteral("etag504")))); };
+        const auto command = EditCommands::deckCard(cardItem(), QJsonObject{{QStringLiteral("due"), QStringLiteral("2026-11-05")}});
+        QVERIFY(run([&](const EditDone &done) { DeckWriter::run(&t, command, aliContext(), done); }).done());
+        QCOMPARE(parseObject(t.of("PUT").first().body).value(QStringLiteral("duedate")).toString(), QStringLiteral("2026-11-05T14:30:00Z"));
+        // in another zone the time of day is the local one: 14:30 UTC is 23:30 in Tokyo, and the day stays the 5th there
+        auto tokyo = aliContext();
+        tokyo.zone = QTimeZone(QByteArrayLiteral("Asia/Tokyo"));
+        ScriptedTransport u;
+        u.handler = t.handler;
+        QVERIFY(run([&](const EditDone &done) { DeckWriter::run(&u, command, tokyo, done); }).done());
+        QCOMPARE(parseObject(u.of("PUT").first().body).value(QStringLiteral("duedate")).toString(), QStringLiteral("2026-11-05T14:30:00Z"));
+    }
+
     void tickingACardDoneKeepsTheDueDate()
     {
         ScriptedTransport t;
@@ -585,6 +691,74 @@ private Q_SLOTS:
         QVERIFY(puts.last().url.path().endsWith(QStringLiteral("/assignLabel")));
     }
 
+    void aLabelSwitchCutShortByALostConnectionPutsNothingBackAndItsRetryIsNotAConflict()
+    {
+        QJsonObject card = deckCardJson();
+        card.insert(QStringLiteral("labels"), QJsonArray{QJsonObject{{QStringLiteral("id"), 3}, {QStringLiteral("title"), QString::fromUtf8("\xF0\x9F\xA4\x96 Research-Bot")}}});
+        QJsonObject board{{QStringLiteral("id"), 10}, {QStringLiteral("permissions"), QJsonObject{{QStringLiteral("PERMISSION_MANAGE"), false}}},
+            {QStringLiteral("labels"), QJsonArray{QJsonObject{{QStringLiteral("id"), 1}, {QStringLiteral("title"), QString::fromUtf8("\xF0\x9F\xA4\x96 Writer-Bot")}}}}};
+        bool lost = true;
+        ScriptedTransport t;
+        t.handler = [&](const HttpRequest &r) {
+            const QString path = r.url.path();
+            if (r.verb == "GET" && path.endsWith(QStringLiteral("/cards/501"))) {
+                return ScriptedTransport::answer(200, json(card));
+            }
+            if (r.verb == "GET" && path.endsWith(QStringLiteral("/boards/10"))) {
+                return ScriptedTransport::answer(200, json(board));
+            }
+            if (path.endsWith(QStringLiteral("/assignLabel")) && lost) {
+                HttpResult cut;
+                cut.networkError = true; // the connection is lost after the old label was taken off
+                return cut;
+            }
+            return ScriptedTransport::answer(200, QByteArray("{}"));
+        };
+        const auto command = EditCommands::deckAgent(cardItem(), QStringLiteral("AG-0001"), QStringLiteral("ali"));
+        const auto first = run([&](const EditDone &done) { DeckWriter::run(&t, command, aliContext(), done); });
+        QCOMPARE(first.outcome, EditResult::Outcome::Offline);
+        QVERIFY2(first.partialChange, "the card was already changed by NoAgenda itself");
+        // the retry: the card has another version (our own change), and it is not "changed somewhere else"
+        card.insert(QStringLiteral("labels"), QJsonArray());
+        card.insert(QStringLiteral("ETag"), QStringLiteral("etag-after-our-change"));
+        lost = false;
+        auto again = command;
+        again.change.insert(QStringLiteral("partial"), true);
+        t.requests.clear();
+        const auto second = run([&](const EditDone &done) { DeckWriter::run(&t, again, aliContext(), done); });
+        QVERIFY2(second.done(), qPrintable(second.message));
+        const auto puts = t.of("PUT");
+        QCOMPARE(puts.size(), 1);
+        QVERIFY(puts.first().url.path().endsWith(QStringLiteral("/cards/501/assignLabel")));
+        // without the mark the same retry is a conflict
+        ScriptedTransport u;
+        u.handler = t.handler;
+        const auto conflict = run([&](const EditDone &done) { DeckWriter::run(&u, command, aliContext(), done); });
+        QCOMPARE(conflict.outcome, EditResult::Outcome::Conflict);
+    }
+
+    void aNewAgentLabelHasTheNouraxColour()
+    {
+        ScriptedTransport t;
+        QJsonObject board{{QStringLiteral("id"), 10}, {QStringLiteral("permissions"), QJsonObject{{QStringLiteral("PERMISSION_MANAGE"), true}}}, {QStringLiteral("labels"), QJsonArray()}};
+        t.handler = [&](const HttpRequest &r) {
+            const QString path = r.url.path();
+            if (r.verb == "GET" && path.endsWith(QStringLiteral("/cards/501"))) {
+                return ScriptedTransport::answer(200, json(deckCardJson()));
+            }
+            if (r.verb == "GET" && path.endsWith(QStringLiteral("/boards/10"))) {
+                return ScriptedTransport::answer(200, json(board));
+            }
+            if (r.verb == "POST") {
+                return ScriptedTransport::answer(200, json(QJsonObject{{QStringLiteral("id"), 42}}));
+            }
+            return ScriptedTransport::answer(200, QByteArray("{}"));
+        };
+        const auto command = EditCommands::deckAgent(cardItem(), QStringLiteral("AG-0001"), QStringLiteral("ali"));
+        QVERIFY(run([&](const EditDone &done) { DeckWriter::run(&t, command, aliContext(), done); }).done());
+        QCOMPARE(parseObject(t.of("POST").first().body).value(QStringLiteral("color")).toString(), QStringLiteral("2563EB"));
+    }
+
     // ---- what may be changed ----------------------------------------------------------------------------------------------------
 
     void repeatingInvitedAndLockedRowsAreRefusedWithPlainReasons()
@@ -627,6 +801,18 @@ private Q_SLOTS:
         e = EditRules::of(deckMode);
         QVERIFY(e.canEdit && !e.canProgress);
         QCOMPARE(e.progressReason, QStringLiteral("% done comes from NoBoard"));
+
+        QVERIFY2(e.canStatus, "the status can be changed even when % done comes from the board");
+        QVERIFY(EditRules::of(ganttItem()).canStatus);
+
+        // a shared team calendar: only the organiser changes the event
+        auto teamEvent = eventItem();
+        teamEvent.teamCalendar = true;
+        e = EditRules::of(teamEvent);
+        QVERIFY(!e.canEdit && e.locked);
+        QCOMPARE(e.reason, QStringLiteral("Only the organiser can change this event."));
+        teamEvent.organizerIsMe = true;
+        QVERIFY(EditRules::of(teamEvent).canEdit);
 
         auto team = ganttItem();
         team.workKind = WorkKind::Team;

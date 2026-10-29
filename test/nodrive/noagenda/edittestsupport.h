@@ -116,6 +116,8 @@ inline QJsonObject parseObject(const QByteArray &body)
 inline EditContext aliContext()
 {
     EditContext c;
+    c.ganttGuard = AppGuard::Writable; // the version guard of both apps has been run by a read
+    c.deckGuard = AppGuard::Writable;
     c.me = QStringLiteral("ali");
     c.myName = QStringLiteral("Ali");
     c.davUser = QStringLiteral("ali");

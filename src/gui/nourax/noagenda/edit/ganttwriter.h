@@ -26,7 +26,8 @@ public:
     static QJsonObject updateBody(const EditCommand &command, const QJsonObject &freshTask, QString *refusal);
 
 private:
-    static void withFreshTask(HttpTransport *transport, const EditCommand &command, const std::function<void(const QJsonObject &, const EditResult &)> &next);
+    static void withFreshTask(HttpTransport *transport, const EditCommand &command,
+        const std::function<void(const QJsonObject &task, const QJsonArray &projectTasks, const EditResult &)> &next);
     static void put(HttpTransport *transport, const EditCommand &command, const QJsonObject &freshTask, const QJsonObject &body, const QJsonArray &sentResources, const EditDone &done);
 };
 

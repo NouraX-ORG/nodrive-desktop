@@ -182,6 +182,11 @@ void AccountAgenda::setOnline(bool online)
         return;
     }
     _online = online;
+    if (!online) {
+        // Edits queued while offline are sent only after a read has run the guard again (design 5: never writes blind).
+        _ganttGuard = AppGuard::Unknown;
+        _deckGuard = AppGuard::Unknown;
+    }
     _edit->setOnline(online);
     rebuild();
 }
@@ -263,7 +268,13 @@ EditContext AccountAgenda::editContext() const
     c.me = _server.uid.isEmpty() ? c.davUser : _server.uid;
     c.myName = _server.displayName.isEmpty() ? c.me : _server.displayName;
     c.registry = _registry;
+    c.ganttGuard = _ganttGuard;
+    c.deckGuard = _deckGuard;
     c.ganttResources = _gantt.resources;
+    for (const auto &p : _gantt.projects) {
+        const auto project = p.toObject();
+        c.ganttProjectOwners.insert(project.value(QLatin1String("id")).toInt(), project.value(QLatin1String("owner_id")).toString());
+    }
     const double hoursPerPt = _gantt.settings.value(QLatin1String("hours_per_pt")).toDouble(8.0);
     c.hoursPerPt = hoursPerPt > 0 ? hoursPerPt : 8.0;
     c.now = now();
@@ -432,6 +443,7 @@ void AccountAgenda::startSources()
             const QString key = QStringLiteral("gantt");
             if (r.ok) {
                 self->_gantt = r.snapshot;
+                self->_ganttGuard = (self->_gantt.unavailable || !self->_gantt.contractOk) ? AppGuard::ReadOnly : AppGuard::Writable;
                 self->_cache.saveGantt(self->_gantt);
                 self->markStatus(key, self->_gantt.unavailable ? SourceStatus::State::Unavailable : SourceStatus::State::Fresh, nowStamp);
                 self->succeeded(key);
@@ -461,6 +473,7 @@ void AccountAgenda::startSources()
             const QString key = QStringLiteral("board");
             if (r.ok) {
                 self->_deck = r.snapshot;
+                self->_deckGuard = (self->_deck.unavailable || !DeckClient::versionIsTested(self->_deck.version)) ? AppGuard::ReadOnly : AppGuard::Writable;
                 self->_cache.saveDeck(self->_deck);
                 self->markStatus(key, self->_deck.unavailable ? SourceStatus::State::Unavailable : SourceStatus::State::Fresh, nowStamp);
                 self->succeeded(key);

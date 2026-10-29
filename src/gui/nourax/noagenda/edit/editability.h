@@ -17,7 +17,8 @@ struct Editability
     bool canEdit = false; ///< title, time, dates, description (events, to-dos), dates (NoGantt), due date (cards)
     bool canDelete = false; ///< only events and to-dos
     bool canDone = false;
-    bool canProgress = false; ///< NoGantt: % done and status
+    bool canProgress = false; ///< NoGantt: % done (read only when it comes from the board)
+    bool canStatus = false; ///< NoGantt: the status (design 9: also when % done comes from the board)
     bool canChangeAgent = false;
     bool repeats = false;
     bool locked = false; ///< show the lock: the person may see this row but not change it

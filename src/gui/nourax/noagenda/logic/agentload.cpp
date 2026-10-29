@@ -6,6 +6,7 @@
 #include "agentload.h"
 
 #include "agendacontext.h"
+#include "conflicts.h"
 
 #include <QLocale>
 #include <QMap>
@@ -88,12 +89,20 @@ double loadOn(const Agent &agent, const QList<AgendaItem> &items, const QDate &d
         if (item.agent.isSelf || item.agent.id != agent.id || item.problemOnly || item.agentLoad || item.done) {
             continue;
         }
-        if (item.kind == ItemKind::Event) {
-            if (!item.timed || !item.start.isValid()) {
+        if (item.kind == ItemKind::Event || item.kind == ItemKind::Card) {
+            // The agent's timed events and its timed cards (a card with real times on one day).
+            QDateTime start;
+            QDateTime end;
+            if (item.kind == ItemKind::Event) {
+                if (!item.timed || !item.start.isValid()) {
+                    continue;
+                }
+                start = item.start;
+                end = item.end.isValid() && item.end > item.start ? item.end : item.start;
+            } else if (!DayModel::timeSlot(item, &start, &end)) {
                 continue;
             }
-            const QDateTime end = item.end.isValid() && item.end > item.start ? item.end : item.start;
-            const QDateTime a = qMax(item.start, dayStart);
+            const QDateTime a = qMax(start, dayStart);
             const QDateTime b = qMin(end, dayEnd);
             if (a < b) {
                 load += a.secsTo(b) / 3600.0;

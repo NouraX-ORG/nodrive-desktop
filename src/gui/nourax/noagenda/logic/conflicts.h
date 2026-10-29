@@ -38,8 +38,12 @@ public:
     /// The number of working days from `first` to `last`, both included (capped at two years).
     [[nodiscard]] int workingDaysBetween(const QDate &first, const QDate &last) const;
 
-    /// An event of mine that blocks my time: mine (agent Self), not free, not information, not a problem row.
+    /// An event, a timed card or a task with real times that blocks my time: mine (agent Self), not free, not
+    /// information, not a problem row, not done.
     static bool blocksMyTime(const AgendaItem &item);
+    /// The time an item takes: the start and end of a timed event, or the slot of a card or task with real times.
+    /// An event without an end takes one minute. False when the item has no time.
+    static bool timeSlot(const AgendaItem &item, QDateTime *start, QDateTime *end);
 
 private:
     WorkingHours _hours;

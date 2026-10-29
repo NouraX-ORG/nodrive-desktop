@@ -11,6 +11,23 @@
 #include <QSet>
 #include <QtMath>
 
+namespace OCC::Nourax::Agenda {
+
+GanttProjectInfo GanttProjectInfo::of(const QString &ownerId, const QJsonArray &tasks)
+{
+    GanttProjectInfo info;
+    info.known = true;
+    info.ownerId = ownerId;
+    for (const auto &t : tasks) {
+        for (const auto &row : t.toObject().value(QLatin1String("resources")).toArray()) {
+            info.resourceIdsOnTasks.insert(intOf(row.toObject().value(QLatin1String("resource_id"))));
+        }
+    }
+    return info;
+}
+
+} // namespace OCC::Nourax::Agenda
+
 namespace OCC::Nourax::Agenda::GanttAgentChange {
 
 namespace {
@@ -69,12 +86,12 @@ bool hasWork(const QJsonValue &work)
 
 } // namespace
 
-int resourceFor(const Agent &agent, const AgentRegistry &registry, const QJsonArray &visibleResources, const QStringList &myNames)
+QList<int> resourcesFor(const Agent &agent, const QJsonArray &visibleResources, const QStringList &myNames)
 {
-    Q_UNUSED(registry)
+    QList<int> out;
     for (const int id : agent.ganttResourceIds) {
-        if (!resourceById(visibleResources, id).isEmpty()) {
-            return id;
+        if (!resourceById(visibleResources, id).isEmpty() && !out.contains(id)) {
+            out.append(id);
         }
     }
     for (const auto &r : visibleResources) {
@@ -83,10 +100,33 @@ int resourceFor(const Agent &agent, const AgentRegistry &registry, const QJsonAr
             continue;
         }
         const QString name = AgentRegistry::normalize(o.value(QLatin1String("name")).toString());
+        const int id = intOf(o.value(QLatin1String("id")));
         for (const auto &mine : myNames) {
-            if (name == AgentRegistry::normalize(AgentRegistry::planningPersonName(agent.name, mine))) {
-                return intOf(o.value(QLatin1String("id")));
+            if (name == AgentRegistry::normalize(AgentRegistry::planningPersonName(agent.name, mine)) && !out.contains(id)) {
+                out.append(id);
             }
+        }
+    }
+    return out;
+}
+
+int resourceFor(const Agent &agent, const QJsonArray &visibleResources, const QStringList &myNames, const GanttProjectInfo &project)
+{
+    const auto ids = resourcesFor(agent, visibleResources, myNames);
+    if (ids.isEmpty()) {
+        return 0;
+    }
+    if (!project.known) {
+        return ids.first();
+    }
+    for (const int id : ids) {
+        if (project.resourceIdsOnTasks.contains(id)) {
+            return id;
+        }
+    }
+    for (const int id : ids) {
+        if (!project.ownerId.isEmpty() && resourceById(visibleResources, id).value(QLatin1String("owner_id")).toString().compare(project.ownerId, Qt::CaseInsensitive) == 0) {
+            return id;
         }
     }
     return 0;
@@ -103,7 +143,8 @@ int myResourceId(const QString &me, const QJsonArray &visibleResources)
     return 0;
 }
 
-QList<GanttAgentChoice> choices(const QString &me, const QString &myName, const AgentRegistry &registry, const QJsonArray &visibleResources)
+QList<GanttAgentChoice> choices(const QString &me, const QString &myName, const AgentRegistry &registry, const QJsonArray &visibleResources,
+    const GanttProjectInfo &project)
 {
     QList<GanttAgentChoice> out;
     const auto names = myNamesOf(me, myName, visibleResources);
@@ -113,7 +154,8 @@ QList<GanttAgentChoice> choices(const QString &me, const QString &myName, const 
         c.name = agent->name;
         c.paused = agent->isPaused();
         c.retired = agent->isRetired();
-        c.resourceId = resourceFor(*agent, registry, visibleResources, names);
+        c.resourceIds = resourcesFor(*agent, visibleResources, names);
+        c.resourceId = resourceFor(*agent, visibleResources, names, project);
         if (c.resourceId <= 0) {
             c.askManagerText = AgendaText::tr("Ask your project manager to add %1 to this project").arg(robot() + QLatin1Char(' ') + agent->name);
         }
@@ -123,7 +165,7 @@ QList<GanttAgentChoice> choices(const QString &me, const QString &myName, const 
 }
 
 GanttAgentPlan plan(const QJsonObject &freshTask, const QJsonArray &visibleResources, const AgentRegistry &registry, const QString &me,
-    const QString &myName, const QString &chosenAgentId, double hoursPerPt)
+    const QString &myName, const QString &chosenAgentId, double hoursPerPt, const GanttProjectInfo &project)
 {
     GanttAgentPlan result;
     const auto rows = freshTask.value(QLatin1String("resources")).toArray();
@@ -145,11 +187,17 @@ GanttAgentPlan plan(const QJsonObject &freshTask, const QJsonArray &visibleResou
         return result;
     }
 
-    const auto all = choices(me, myName, registry, visibleResources);
+    const auto all = choices(me, myName, registry, visibleResources, project);
+    // Every planning person that stands for one of my agents is mine (an agent can have one per manager pool, and
+    // a placeholder with its exact name counts too), so no old row of an agent stays behind.
     QSet<int> myAgentResources;
+    QSet<int> onTask;
+    for (const auto &rowValue : rows) {
+        onTask.insert(intOf(rowValue.toObject().value(QLatin1String("resource_id"))));
+    }
     for (const auto &c : all) {
-        if (c.resourceId > 0) {
-            myAgentResources.insert(c.resourceId);
+        for (const int id : c.resourceIds) {
+            myAgentResources.insert(id);
         }
     }
 
@@ -169,11 +217,20 @@ GanttAgentPlan plan(const QJsonObject &freshTask, const QJsonArray &visibleResou
             result.refusal = AgendaText::tr("This agent can't be chosen now.");
             return result;
         }
-        if (chosen->resourceId <= 0) {
+        // A planning person of the agent that is already on the task stays; otherwise the one of this project.
+        for (const int id : chosen->resourceIds) {
+            if (onTask.contains(id)) {
+                chosenResource = id;
+                break;
+            }
+        }
+        if (chosenResource <= 0) {
+            chosenResource = chosen->resourceId;
+        }
+        if (chosenResource <= 0) {
             result.refusal = chosen->askManagerText;
             return result;
         }
-        chosenResource = chosen->resourceId;
     }
 
     // The new list: every other row exactly as it is, in its order; my other agents are removed.
@@ -228,15 +285,12 @@ GanttAgentPlan plan(const QJsonObject &freshTask, const QJsonArray &visibleResou
 
     // The server recomputes the total work of the task from the rows. Refuse when that would change it.
     double total = 0;
-    bool anyWork = false;
     for (const auto &rowValue : std::as_const(newRows)) {
         const auto row = rowValue.toObject();
         if (hasWork(row.value(QLatin1String("work")))) {
-            anyWork = true;
             total += workInPt(row.value(QLatin1String("work")), resourceById(visibleResources, intOf(row.value(QLatin1String("resource_id")))), hoursPerPt);
         }
     }
-    Q_UNUSED(anyWork)
     const double current = numberOf(freshTask.value(QLatin1String("work")), 0);
     if (qAbs(qRound(total * 100) / 100.0 - current) > 0.01) {
         result.refusal = AgendaText::tr("Changing the agent here would change the task's work estimate. Open in NoGantt.");

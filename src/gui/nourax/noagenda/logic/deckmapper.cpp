@@ -162,6 +162,7 @@ void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> 
                 item.description = card.value(QLatin1String("description")).toString().left(2000);
                 item.due = due;
                 item.endDate = due;
+                timeSlotOfIso(card.value(QLatin1String("startdate")).toString(), card.value(QLatin1String("duedate")).toString(), ctx.zone, &item.slotStart, &item.slotEnd);
                 item.sourceKey = QStringLiteral("board:") + QString::number(boardId);
                 item.sourceName = boardTitle;
                 item.sourceColor = boardColor;

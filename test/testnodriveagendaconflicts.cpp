@@ -9,6 +9,7 @@
 
 #include "nodrive/noagenda/agendatestsupport.h"
 
+#include "gui/nourax/noagenda/logic/agendacontext.h"
 #include "gui/nourax/noagenda/logic/agentload.h"
 #include "gui/nourax/noagenda/logic/conflicts.h"
 #include "gui/nourax/noagenda/logic/workload.h"
@@ -49,6 +50,21 @@ AgendaItem allDayEvent(const QString &title, const QDate &first, const QDate &la
     i.allDay = true;
     i.startDate = first;
     i.endDate = last;
+    i.workKind = WorkKind::Self;
+    return i;
+}
+
+AgendaItem timedCard(const QString &title, const QDateTime &start, const QDateTime &end)
+{
+    AgendaItem i;
+    i.key = QStringLiteral("deck:card:") + title;
+    i.kind = ItemKind::Card;
+    i.home = Home::Board;
+    i.title = title;
+    i.due = start.date();
+    i.endDate = start.date();
+    i.slotStart = start;
+    i.slotEnd = end;
     i.workKind = WorkKind::Self;
     return i;
 }
@@ -203,15 +219,73 @@ private Q_SLOTS:
     void freeEventsAndAgentItemsDoNotReduceMyFreeTimeAndAgentWorkIsNotMine()
     {
         QList<AgendaItem> items{timedEvent(QStringLiteral("Free"), at(28, 9), at(28, 17)), timedEvent(QStringLiteral("Bot"), at(28, 9), at(28, 17)),
-            task(QStringLiteral("Supervise"), QDate(2026, 10, 28), QDate(2026, 10, 28), 1), task(QStringLiteral("BotTask"), QDate(2026, 10, 28), QDate(2026, 10, 28), 6)};
+            task(QStringLiteral("Supervise"), QDate(2026, 10, 28), QDate(2026, 10, 28), 1), task(QStringLiteral("BotTask"), QDate(2026, 10, 28), QDate(2026, 10, 28), 1)};
         items[0].transparent = true;
         items[1].workKind = WorkKind::MyAgent;
         items[1].agent = agentRef(QStringLiteral("AG-0001"));
+        // On the agent's task my own planning person holds my 1 h of review; the agent's own 6 h are not mine.
         items[3].workKind = WorkKind::MyAgent;
         items[3].agent = agentRef(QStringLiteral("AG-0001"));
+        items[3].agentWorkHours = 6;
         const auto load = Workload::forDay(items, model(items), QDate(2026, 10, 28));
         QCOMPARE(load.free, 8.0);
-        QCOMPARE(load.planned, 1.0); // only my own share counts
+        QCOMPARE(load.planned, 2.0); // my 1 h on my own task + my 1 h of supervision; the agent's 6 h do not count
+    }
+
+    void aTimedCardAndATaskWithRealTimesClashWithEventsAndTakeBusyTime()
+    {
+        auto card = timedCard(QStringLiteral("Call supplier"), at(28, 10), at(28, 11));
+        auto timedTask = task(QStringLiteral("Workshop"), QDate(2026, 10, 28), QDate(2026, 10, 28), 2);
+        timedTask.slotStart = at(28, 10, 30);
+        timedTask.slotEnd = at(28, 12);
+        QList<AgendaItem> items{timedEvent(QStringLiteral("Dentist"), at(28, 10), at(28, 10, 45)), card, timedTask,
+            timedEvent(QStringLiteral("Lunch"), at(28, 12), at(28, 13))};
+        Conflicts::annotate(&items, model(items));
+        QVERIFY2(items.at(0).clash, "the event clashes with the card");
+        QVERIFY2(items.at(1).clash, "the card clashes with the event");
+        QVERIFY2(items.at(2).clash, "the task with real times clashes with the card");
+        QVERIFY(!items.at(3).clash);
+        QVERIFY(items.at(0).clashWith.contains(QStringLiteral("Call supplier")));
+        // A card or a task without a time slot (a due date only) never clashes.
+        QList<AgendaItem> dateOnly{timedEvent(QStringLiteral("Dentist"), at(28, 10), at(28, 11)), timedCard(QStringLiteral("Due card"), at(28, 10), at(28, 11)),
+            task(QStringLiteral("Plain"), QDate(2026, 10, 28), QDate(2026, 10, 28), 2)};
+        dateOnly[1].slotStart = QDateTime();
+        dateOnly[1].slotEnd = QDateTime();
+        Conflicts::annotate(&dateOnly, model(dateOnly));
+        QVERIFY(!dateOnly.at(0).clash && !dateOnly.at(1).clash && !dateOnly.at(2).clash);
+        // A done card, and a card of my agent, never clash with mine.
+        QList<AgendaItem> others{timedEvent(QStringLiteral("Dentist"), at(28, 10), at(28, 11)), timedCard(QStringLiteral("Done card"), at(28, 10), at(28, 11)),
+            timedCard(QStringLiteral("Bot card"), at(28, 10), at(28, 11))};
+        others[1].done = true;
+        others[2].workKind = WorkKind::MyAgent;
+        others[2].agent = agentRef(QStringLiteral("AG-0001"));
+        Conflicts::annotate(&others, model(others));
+        QVERIFY(!others.at(0).clash && !others.at(1).clash && !others.at(2).clash);
+        // The card takes busy time; the task is counted by its hours instead (no double count).
+        QList<AgendaItem> busy{card, timedTask};
+        const auto load = Workload::forDay(busy, model(busy), QDate(2026, 10, 28));
+        QCOMPARE(load.busy, 1.0);
+        QCOMPARE(load.free, 7.0);
+    }
+
+    void thePlacesOfRealTimesAreFoundFromTheTextOfACardAndATask()
+    {
+        QDateTime s;
+        QDateTime e;
+        const QTimeZone utc(QTimeZone::UTC);
+        QVERIFY(timeSlotOfIso(QStringLiteral("2026-10-28T10:00:00+00:00"), QStringLiteral("2026-10-28T11:30:00+00:00"), utc, &s, &e));
+        QCOMPARE(s, at(28, 10));
+        QCOMPARE(e, at(28, 11, 30));
+        // NoGantt writes "Y-m-d H:i:s" without a zone: it is read in the zone of the person
+        QVERIFY(timeSlotOfIso(QStringLiteral("2026-10-28 09:00:00"), QStringLiteral("2026-10-28 10:30:00"), utc, &s, &e));
+        QCOMPARE(s, at(28, 9));
+        QVERIFY(timeSlotOfIso(QStringLiteral("2026-10-28 09:00:00"), QStringLiteral("2026-10-28 10:30:00"), QTimeZone(QByteArrayLiteral("Asia/Tokyo")), &s, &e));
+        QCOMPARE(s, at(28, 0));
+        QVERIFY(!timeSlotOfIso(QStringLiteral("2026-10-28"), QStringLiteral("2026-10-28"), utc, &s, &e)); // only dates
+        QVERIFY(!timeSlotOfIso(QStringLiteral("2026-10-28 00:00:00"), QStringLiteral("2026-10-28 00:00:00"), utc, &s, &e)); // both at midnight
+        QVERIFY(!timeSlotOfIso(QStringLiteral("2026-10-28 09:00:00"), QStringLiteral("2026-10-29 10:00:00"), utc, &s, &e)); // over two days
+        QVERIFY(!timeSlotOfIso(QStringLiteral("2026-10-28 11:00:00"), QStringLiteral("2026-10-28 10:00:00"), utc, &s, &e)); // end before start
+        QVERIFY(!timeSlotOfIso(QString(), QStringLiteral("2026-10-28 10:00:00"), utc, &s, &e));
     }
 
     void aTaskWithoutAnEstimateAddsNoHoursButIsCounted()
@@ -376,6 +450,20 @@ private Q_SLOTS:
         QVERIFY(AgentLoad::compute(small, {gantt}, QDate(2026, 10, 26), QDate(2026, 11, 2), QTimeZone(QTimeZone::UTC), QStringLiteral("ali")).isEmpty());
         gantt.agentWorkHours = 15; // 5 h a day: over
         QCOMPARE(AgentLoad::compute(small, {gantt}, QDate(2026, 10, 26), QDate(2026, 11, 2), QTimeZone(QTimeZone::UTC), QStringLiteral("ali")).size(), 3);
+    }
+
+    void anAgentsTimedCardsCountInItsLoad()
+    {
+        const auto registry = aliContextRegistry();
+        const auto *writer = registry.byId(QStringLiteral("AG-0001"));
+        QVERIFY(writer);
+        auto card = timedCard(QStringLiteral("Bot card"), at(28, 9), at(28, 11));
+        card.workKind = WorkKind::MyAgent;
+        card.agent = agentRef(QStringLiteral("AG-0001"));
+        QCOMPARE(AgentLoad::loadOn(*writer, {card}, QDate(2026, 10, 28), QTimeZone(QTimeZone::UTC)), 2.0);
+        card.slotStart = QDateTime(); // a due date only: no time
+        card.slotEnd = QDateTime();
+        QCOMPARE(AgentLoad::loadOn(*writer, {card}, QDate(2026, 10, 28), QTimeZone(QTimeZone::UTC)), 0.0);
     }
 
     void aTimeZoneMovesTheDayOfAnAgentsEvents()

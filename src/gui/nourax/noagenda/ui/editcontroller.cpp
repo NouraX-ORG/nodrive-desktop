@@ -104,6 +104,7 @@ EditController::EditController(AccountAgenda *agenda, QObject *parent)
     connect(&_toastTimer, &QTimer::timeout, this, &EditController::dismissToast);
     if (auto *edit = agenda->edit()) {
         connect(edit, &EditService::finished, this, &EditController::onFinished);
+        connect(edit, &EditService::undoFinished, this, &EditController::onUndoFinished);
         connect(edit, &EditService::changed, this, [this] { rebuild(); });
     }
     rebuild();
@@ -198,7 +199,12 @@ QVariantList EditController::agentChoicesFor(const AgendaItem &item, const Edita
     });
     QList<GanttAgentChoice> ganttChoices;
     if (item.home == Home::Gantt) {
-        ganttChoices = GanttAgentChange::choices(ctx.me, ctx.myName, ctx.registry, ctx.ganttResources);
+        GanttProjectInfo project;
+        const auto data = _agenda->ganttSnapshot().projectData.value(item.projectId);
+        if (data.loaded) {
+            project = GanttProjectInfo::of(ctx.ganttProjectOwners.value(item.projectId), data.tasks);
+        }
+        ganttChoices = GanttAgentChange::choices(ctx.me, ctx.myName, ctx.registry, ctx.ganttResources, project);
     }
     for (const auto *agent : ctx.registry.ofPerson(ctx.me)) {
         if (agent->isRetired()) {
@@ -248,12 +254,17 @@ QVariantMap EditController::formFor(const AgendaItem &item) const
     f.insert(QStringLiteral("canDelete"), e.canDelete);
     f.insert(QStringLiteral("canDone"), e.canDone);
     f.insert(QStringLiteral("canProgress"), e.canProgress);
+    f.insert(QStringLiteral("canStatus"), e.canStatus);
     f.insert(QStringLiteral("progressReason"), e.progressReason);
     f.insert(QStringLiteral("canAgent"), e.canChangeAgent);
     f.insert(QStringLiteral("showAgentPicker"), (e.canChangeAgent || item.invitation) && !item.problemOnly && !item.agentLoad && item.workKind != WorkKind::Team
             && (item.kind == ItemKind::Event || item.kind == ItemKind::Todo || item.kind == ItemKind::GanttTask || item.kind == ItemKind::Card));
     f.insert(QStringLiteral("agentReason"), e.agentReason);
     f.insert(QStringLiteral("openLabel"), e.openLabel);
+    // A long description is shown cut: it is not offered for changes, so the rest of the text can never be lost.
+    const bool descriptionLocked = item.descriptionCut && (item.kind == ItemKind::Event || item.kind == ItemKind::Todo);
+    f.insert(QStringLiteral("descriptionLocked"), descriptionLocked);
+    f.insert(QStringLiteral("descriptionReason"), descriptionLocked ? AgendaText::tr("This description is too long to change here. %1.").arg(e.openLabel) : QString());
     f.insert(QStringLiteral("fields"), fieldsOf(item));
     f.insert(QStringLiteral("agentChoices"), agentChoicesFor(item, e));
     f.insert(QStringLiteral("pending"), item.pending == PendingState::Waiting);
@@ -317,7 +328,10 @@ void EditController::rebuild()
             if (cal.readOnly || cal.subscribed || cal.ignored || cal.deckBoard || cal.birthdays) {
                 continue;
             }
-            if (settings.calendarMode(cal, taskCopy) == CalendarMode::Hidden) {
+            // Only my own calendars (Personal and Work): in a shared team calendar a new item would have no person,
+            // so it would disappear from the list at the next refresh and show to the team (design 4.2, plan 2.4).
+            const auto mode = settings.calendarMode(cal, taskCopy);
+            if (mode != CalendarMode::Personal && mode != CalendarMode::Work) {
                 continue;
             }
             const QVariantMap entry{{QStringLiteral("uri"), cal.uri}, {QStringLiteral("name"), cal.name}, {QStringLiteral("color"), cal.color}};
@@ -418,6 +432,9 @@ QString EditController::save(const QVariantMap &v)
             fields.insert(QStringLiteral("title"), title);
         }
         if (differs(QStringLiteral("description"))) {
+            if (_item.descriptionCut) {
+                return AgendaText::tr("This description is too long to change here. %1.").arg(e.openLabel);
+            }
             fields.insert(QStringLiteral("description"), v.value(QStringLiteral("description")).toString());
         }
         if (_item.kind == ItemKind::Event) {
@@ -513,6 +530,8 @@ QString EditController::save(const QVariantMap &v)
             if (asNumber != current) {
                 fields.insert(QStringLiteral("manual_progress"), asNumber);
             }
+        }
+        if (e.canStatus) {
             const QString status = v.value(QStringLiteral("status")).toString();
             if (!status.isEmpty() && status != _item.status) {
                 if (status == QLatin1String("done")) {
@@ -764,8 +783,23 @@ void EditController::undo()
         return;
     }
     const QString op = _undoOp;
+    // "Undone." is shown only when NoGantt has said so (onUndoFinished); until then the person is told it is being done.
+    showToast(AgendaText::tr("Undoing the move."), QStringLiteral("info"));
     _agenda->edit()->undo(op);
-    showToast(AgendaText::tr("Undone."), QStringLiteral("ok"));
+}
+
+void EditController::onUndoFinished(const EditResult &result)
+{
+    if (result.done()) {
+        showToast(AgendaText::tr("Undone."), QStringLiteral("ok"));
+        return;
+    }
+    QString text = result.message.isEmpty() ? AgendaText::tr("NoGantt could not undo the move.") : result.message;
+    const QString open = AgendaText::tr("Open in NoGantt");
+    if (!text.contains(open)) {
+        text += QLatin1Char(' ') + open + QLatin1Char('.');
+    }
+    showToast(text, QStringLiteral("warn"));
 }
 
 void EditController::onFinished(const EditCommand &command, const EditResult &result)

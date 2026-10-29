@@ -75,6 +75,7 @@ Q_SIGNALS:
 private:
     void rebuild();
     void onFinished(const EditCommand &command, const EditResult &result);
+    void onUndoFinished(const EditResult &result);
     [[nodiscard]] QVariantList agentChoicesFor(const AgendaItem &item, const Editability &e) const;
     [[nodiscard]] QVariantMap fieldsOf(const AgendaItem &item) const;
     [[nodiscard]] QJsonObject agentField(const QString &agentId) const;

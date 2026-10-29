@@ -703,6 +703,11 @@ private:
                 agenda->edit()->retry();
             }
             spy.wait(100);
+            // A NoGantt or NoBoard command waits until a read has run the version guard of that app. When the busy
+            // throwaway server failed that read, read again (NoAgenda does the same at its next refresh).
+            if (i > 0 && i % 60 == 0 && !agenda->isRefreshing() && !agenda->edit()->isBusy() && agenda->edit()->queue().find(id)) {
+                agenda->refresh(true);
+            }
         }
         return EditResult();
     }
@@ -1217,10 +1222,12 @@ private:
         check(QStringLiteral("card row found"), pay != nullptr, QString());
         if (pay) {
             check(QStringLiteral("card may be edited"), EditRules::of(*pay).canEdit && !EditRules::of(*pay).canDelete, QString());
+            const auto colourBefore = cardOf(&transport, board, stack, payId).value(QStringLiteral("color"));
             auto result = run(agenda.get(), EditCommands::deckCard(*pay, QJsonObject{{QStringLiteral("due"), isoDay(4)}}));
             check(QStringLiteral("due date: sent"), result.done(), why(result));
             auto card = cardOf(&transport, board, stack, payId);
             check(QStringLiteral("due date: the server has it"), card.value(QStringLiteral("duedate")).toString().startsWith(isoDay(4)), card.value(QStringLiteral("duedate")).toString());
+            check(QStringLiteral("due date: the card colour is kept (the colour is never sent)"), card.value(QStringLiteral("color")) == colourBefore, card.value(QStringLiteral("color")).toString());
             check(QStringLiteral("due date: description and start date are kept"), card.value(QStringLiteral("description")).toString() == QLatin1String("Keep this text") && card.value(QStringLiteral("startdate")).toString().startsWith(isoDay(-2)),
                 card.value(QStringLiteral("startdate")).toString());
             settle(agenda.get());

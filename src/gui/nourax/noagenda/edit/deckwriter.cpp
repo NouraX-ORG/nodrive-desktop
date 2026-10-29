@@ -65,8 +65,8 @@ void DeckWriter::freshCard(HttpTransport *transport, const EditCommand &command,
 {
     transport->send(getRequest(*transport, cardPath(command.change)), [command, next](const HttpResult &got) {
         EditResult problem;
-        if (WriterUtil::commonFailure(got, &problem)) {
-            if (problem.outcome == EditResult::Outcome::Refused) {
+        if (WriterUtil::commonFailure(got, &problem, QStringLiteral("NoBoard"))) {
+            if (problem.outcome == EditResult::Outcome::Refused && problem.httpStatus == 403) {
                 problem.message = AgendaText::tr("You can see this board but not change it.");
             }
             next(QJsonObject(), problem);
@@ -83,7 +83,9 @@ void DeckWriter::freshCard(HttpTransport *transport, const EditCommand &command,
         }
         const auto card = doc.object();
         const QString base = normalizeVersion(command.baseVersion);
-        const bool same = base.isEmpty() || base == normalizeVersion(card.value(QLatin1String("ETag")).toString())
+        // A label switch that was cut short by a lost connection has already changed the card itself: its retry is not a conflict.
+        const bool ownPartialChange = command.kind == EditKind::DeckAgentLabel && command.change.value(QLatin1String("partial")).toBool();
+        const bool same = base.isEmpty() || ownPartialChange || base == normalizeVersion(card.value(QLatin1String("ETag")).toString())
             || base == QString::number(intOf(card.value(QLatin1String("lastModified"))));
         if (!same) {
             next(card, WriterUtil::conflict(QStringLiteral("changed"), AgendaText::tr("This changed somewhere else while you were editing. NoAgenda kept the other change.")));
@@ -113,9 +115,18 @@ QJsonObject DeckWriter::updateBody(const EditCommand &command, const QJsonObject
         if (text.isEmpty() || !day.isValid()) {
             due = QJsonValue(QJsonValue::Null);
         } else {
-            // Local midnight, so the day reads back the same in the reader (which shows the due date in the local zone).
+            // The day reads back the same in the reader (which shows the due date in the local zone). The time of day of
+            // the card is kept; a card without a time is due at local midnight.
             const QTimeZone zone = context.zone.isValid() ? context.zone : QTimeZone(QTimeZone::UTC);
-            due = QDateTime(day, QTime(0, 0), zone).toUTC().toString(Qt::ISODate);
+            QTime timeOfDay(0, 0);
+            const QString oldDue = card.value(QLatin1String("duedate")).toString();
+            if (oldDue.size() > 10) {
+                const auto old = QDateTime::fromString(oldDue, Qt::ISODate);
+                if (old.isValid()) {
+                    timeOfDay = old.toTimeZone(zone).time();
+                }
+            }
+            due = QDateTime(day, timeOfDay, zone).toUTC().toString(Qt::ISODate);
         }
     }
     body.insert(QStringLiteral("duedate"), due);
@@ -148,8 +159,8 @@ void DeckWriter::cardUpdate(HttpTransport *transport, const EditCommand &command
         const auto body = updateBody(command, card, context);
         transport->send(WriterUtil::jsonRequest(*transport, "PUT", cardPath(command.change), body), [done](const HttpResult &sent) {
             EditResult r;
-            if (WriterUtil::commonFailure(sent, &r)) {
-                if (r.outcome == EditResult::Outcome::Refused) {
+            if (WriterUtil::commonFailure(sent, &r, QStringLiteral("NoBoard"))) {
+                if (r.outcome == EditResult::Outcome::Refused && r.httpStatus == 403) {
                     r.message = AgendaText::tr("You can see this board but not change it.");
                 }
                 done(r);
@@ -243,21 +254,29 @@ void DeckWriter::agentLabel(HttpTransport *transport, const EditCommand &command
                     });
                     return;
                 }
+                // Labels that were already taken off before this step failed.
+                const int takenOff = qMin(failedIndex, removed);
                 EditResult r;
-                if (WriterUtil::commonFailure(answer, &r) && r.outcome != EditResult::Outcome::Refused) {
+                if (WriterUtil::commonFailure(answer, &r, QStringLiteral("NoBoard")) && r.outcome != EditResult::Outcome::Refused) {
+                    // No connection: putting the old labels back would fail too. The retry knows that the card was changed
+                    // by NoAgenda itself (it is not "changed somewhere else").
+                    r.partialChange = takenOff > 0;
                     done(r);
                     return;
                 }
-                if (failedIndex >= removed) {
-                    // Adding the new label failed: put the old labels back.
+                if (takenOff > 0) {
+                    // A step failed after some labels were taken off: put those back.
                     auto back = std::make_shared<QList<HttpRequest>>();
-                    for (const int id : removeIds) {
+                    for (int i = 0; i < takenOff; ++i) {
                         QJsonObject body;
-                        body.insert(QStringLiteral("labelId"), id);
+                        body.insert(QStringLiteral("labelId"), removeIds.at(i));
                         back->append(WriterUtil::jsonRequest(*transport, "PUT", cardBase + QStringLiteral("/assignLabel"), body));
                     }
-                    runSteps(transport, back, 0, [done, answer](int, const HttpResult &) {
-                        done(WriterUtil::refused(AgendaText::tr("NoBoard did not accept the new agent. The old agent was put back."), answer.status));
+                    const bool adding = failedIndex >= removed;
+                    runSteps(transport, back, 0, [done, answer, adding](int, const HttpResult &) {
+                        done(WriterUtil::refused(adding ? AgendaText::tr("NoBoard did not accept the new agent. The old agent was put back.")
+                                                        : AgendaText::tr("NoBoard did not accept this change. Open in NoBoard."),
+                            answer.status));
                     });
                     return;
                 }
@@ -272,8 +291,8 @@ void DeckWriter::agentLabel(HttpTransport *transport, const EditCommand &command
         // The chosen agent's label on the board: it may have to be created (needs the "manage" permission).
         transport->send(getRequest(*transport, boardPath), [transport, boardPath, chosen, finish, done](const HttpResult &got) {
             EditResult problem;
-            if (WriterUtil::commonFailure(got, &problem)) {
-                if (problem.outcome == EditResult::Outcome::Refused) {
+            if (WriterUtil::commonFailure(got, &problem, QStringLiteral("NoBoard"))) {
+                if (problem.outcome == EditResult::Outcome::Refused && problem.httpStatus == 403) {
                     problem.message = AgendaText::tr("You can see this board but not change it.");
                 }
                 done(problem);
@@ -302,11 +321,11 @@ void DeckWriter::agentLabel(HttpTransport *transport, const EditCommand &command
             }
             QJsonObject body;
             body.insert(QStringLiteral("title"), chosen->boardLabel);
-            body.insert(QStringLiteral("color"), QStringLiteral("31CC7C"));
+            body.insert(QStringLiteral("color"), QStringLiteral("2563EB"));
             transport->send(WriterUtil::jsonRequest(*transport, "POST", boardPath + QStringLiteral("/labels"), body), [finish, done](const HttpResult &created) {
                 const auto labelDoc = QJsonDocument::fromJson(created.body);
                 EditResult r;
-                if (WriterUtil::commonFailure(created, &r)) {
+                if (WriterUtil::commonFailure(created, &r, QStringLiteral("NoBoard"))) {
                     done(r);
                     return;
                 }

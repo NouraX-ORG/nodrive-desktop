@@ -65,6 +65,10 @@ struct BuildContext
 QDate dateOfText(const QJsonValue &value);
 /// A Deck due date: "2026-11-02T00:00:00+00:00" (shown in the local zone) or a plain date.
 QDate localDateOfIso(const QString &text, const QTimeZone &zone, QDateTime *utcOut = nullptr);
+/// The real times of a card or a NoGantt task ("Y-m-dTH:i:s+00:00" or "Y-m-d H:i:s", the latter read in `zone`):
+/// true when both texts carry a time, the end is after the start and both are on the same local day. A date-only text,
+/// a text at midnight on both ends and a span over days give false (the item has no time slot).
+bool timeSlotOfIso(const QString &startText, const QString &endText, const QTimeZone &zone, QDateTime *startUtc, QDateTime *endUtc);
 
 ProblemFlag makeFlag(ProblemFlag::Kind kind, ProblemFlag::Audience audience, const QString &text);
 

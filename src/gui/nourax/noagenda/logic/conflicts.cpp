@@ -33,9 +33,39 @@ DayModel::DayModel(const QList<AgendaItem> &items, const WorkingHours &hours, co
     }
 }
 
+bool DayModel::timeSlot(const AgendaItem &item, QDateTime *start, QDateTime *end)
+{
+    QDateTime s;
+    QDateTime e;
+    if (item.kind == ItemKind::Event) {
+        if (!item.timed || !item.start.isValid()) {
+            return false;
+        }
+        s = item.start;
+        e = item.end.isValid() && item.end > item.start ? item.end : item.start.addSecs(60);
+    } else if (item.kind == ItemKind::Card || item.kind == ItemKind::GanttTask) {
+        if (!item.slotStart.isValid() || !item.slotEnd.isValid() || item.slotEnd <= item.slotStart) {
+            return false;
+        }
+        s = item.slotStart;
+        e = item.slotEnd;
+    } else {
+        return false;
+    }
+    if (start) {
+        *start = s;
+    }
+    if (end) {
+        *end = e;
+    }
+    return true;
+}
+
 bool DayModel::blocksMyTime(const AgendaItem &item)
 {
-    return item.kind == ItemKind::Event && item.workKind == WorkKind::Self && !item.transparent && !item.info && !item.problemOnly && !item.declined;
+    const bool timedOrAllDayEvent = item.kind == ItemKind::Event;
+    const bool timedWork = (item.kind == ItemKind::Card || item.kind == ItemKind::GanttTask) && !item.done && timeSlot(item, nullptr, nullptr);
+    return (timedOrAllDayEvent || timedWork) && item.workKind == WorkKind::Self && !item.transparent && !item.info && !item.problemOnly && !item.declined;
 }
 
 bool DayModel::isWorkingDay(const QDate &day) const
@@ -112,13 +142,11 @@ void annotate(QList<AgendaItem> *items, const DayModel &model)
     QList<Slot> slots;
     for (int i = 0; i < items->size(); ++i) {
         const auto &item = items->at(i);
-        if (!DayModel::blocksMyTime(item) || !item.timed || !item.start.isValid()) {
+        Slot s;
+        if (!DayModel::blocksMyTime(item) || !DayModel::timeSlot(item, &s.start, &s.end)) {
             continue;
         }
-        Slot s;
         s.index = i;
-        s.start = item.start;
-        s.end = item.end.isValid() && item.end > item.start ? item.end : item.start.addSecs(60);
         s.tentative = item.tentative;
         slots.append(s);
     }

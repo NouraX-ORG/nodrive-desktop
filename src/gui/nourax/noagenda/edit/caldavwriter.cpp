@@ -173,15 +173,24 @@ void CalDavWriter::create(HttpTransport *transport, const EditCommand &command, 
         return;
     }
     const QString path = objectPath(context.davUser, command.change.value(QLatin1String("calendarUri")).toString(), uid + QStringLiteral(".ics"));
-    auto put = withBody(withHeader(makeRequest("PUT", transport->url(path)), "If-None-Match", "*"), created.text.toUtf8(), "text/calendar; charset=utf-8");
-    transport->send(put, [done](const HttpResult &sent) {
+    const auto url = transport->url(path);
+    auto put = withBody(withHeader(makeRequest("PUT", url), "If-None-Match", "*"), created.text.toUtf8(), "text/calendar; charset=utf-8");
+    transport->send(put, [transport, done, url, uid](const HttpResult &sent) {
         EditResult r;
         if (WriterUtil::commonFailure(sent, &r)) {
             done(r);
             return;
         }
         if (sent.status == 412) {
-            done(WriterUtil::conflict(QStringLiteral("changed"), AgendaText::tr("An item with this id already exists.")));
+            // The same id again is most often our own create whose answer was lost: look at what is there. Sending it
+            // again can never work, so it is never offered as "Apply my change again".
+            transport->send(makeRequest("GET", url), [done, uid](const HttpResult &there) {
+                if (there.ok() && QString::fromUtf8(there.body).contains(QStringLiteral("UID:") + uid)) {
+                    done(WriterUtil::done(QString::fromLatin1(there.headers.value("etag"))));
+                    return;
+                }
+                done(WriterUtil::refused(AgendaText::tr("An item with this id already exists. Open in NoCalendar."), 412));
+            });
             return;
         }
         if (!sent.ok()) {
@@ -195,29 +204,54 @@ void CalDavWriter::create(HttpTransport *transport, const EditCommand &command, 
 void CalDavWriter::remove(HttpTransport *transport, const EditCommand &command, const EditContext &context, const EditDone &done)
 {
     const QString path = objectPath(context.davUser, command.change.value(QLatin1String("calendarUri")).toString(), command.change.value(QLatin1String("objectUri")).toString());
-    auto request = makeRequest("DELETE", transport->url(path));
+    const auto url = transport->url(path);
+    auto sendDelete = [transport, done, url](const QString &etag) {
+        auto request = makeRequest("DELETE", url);
+        if (!etag.isEmpty()) {
+            request = withHeader(request, "If-Match", quoted(etag).toUtf8());
+        }
+        transport->send(request, [done](const HttpResult &sent) {
+            EditResult r;
+            if (WriterUtil::commonFailure(sent, &r)) {
+                done(r);
+                return;
+            }
+            if (sent.status == 412) {
+                done(WriterUtil::conflict(QStringLiteral("changed"), AgendaText::tr("This changed somewhere else while you were editing. NoAgenda kept the other change.")));
+                return;
+            }
+            if (sent.status == 404) {
+                done(WriterUtil::done()); // it is gone already: nothing is lost
+                return;
+            }
+            if (!sent.ok()) {
+                done(WriterUtil::failed(AgendaText::tr("The server did not delete it."), sent.status));
+                return;
+            }
+            done(WriterUtil::done());
+        });
+    };
     if (!command.baseVersion.isEmpty()) {
-        request = withHeader(request, "If-Match", quoted(command.baseVersion).toUtf8());
+        sendDelete(command.baseVersion);
+        return;
     }
-    transport->send(request, [done](const HttpResult &sent) {
+    // "Apply my change again": read the item fresh, then delete exactly that version (never without If-Match).
+    transport->send(makeRequest("GET", url), [done, sendDelete](const HttpResult &got) {
         EditResult r;
-        if (WriterUtil::commonFailure(sent, &r)) {
+        if (WriterUtil::commonFailure(got, &r)) {
             done(r);
             return;
         }
-        if (sent.status == 412) {
-            done(WriterUtil::conflict(QStringLiteral("changed"), AgendaText::tr("This changed somewhere else while you were editing. NoAgenda kept the other change.")));
-            return;
-        }
-        if (sent.status == 404) {
+        if (got.status == 404) {
             done(WriterUtil::done()); // it is gone already: nothing is lost
             return;
         }
-        if (!sent.ok()) {
-            done(WriterUtil::failed(AgendaText::tr("The server did not delete it."), sent.status));
+        const QString etag = QString::fromLatin1(got.headers.value("etag"));
+        if (!got.ok() || etag.isEmpty()) {
+            done(WriterUtil::failed(AgendaText::tr("The server did not say which version this is, so nothing was deleted."), got.status));
             return;
         }
-        done(WriterUtil::done());
+        sendDelete(etag);
     });
 }
 

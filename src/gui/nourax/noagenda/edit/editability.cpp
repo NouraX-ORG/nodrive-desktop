@@ -92,6 +92,13 @@ Editability of(const AgendaItem &item)
             e.agentReason = AgendaText::tr("You were invited, so this is always Self.");
             return e;
         }
+        if (item.teamCalendar && item.kind == ItemKind::Event && !item.organizerIsMe) {
+            // Plan 2.4: an event of a shared team calendar can be changed only by its organiser.
+            e.locked = true;
+            e.reason = AgendaText::tr("Only the organiser can change this event.");
+            e.agentReason = e.reason;
+            return e;
+        }
         e.canEdit = true;
         e.canDelete = true;
         e.canDone = todo;
@@ -109,6 +116,7 @@ Editability of(const AgendaItem &item)
         }
         e.canEdit = true;
         e.canDone = true;
+        e.canStatus = true;
         e.canChangeAgent = true;
         if (item.progressMode == QLatin1String("deck")) {
             e.canProgress = false;

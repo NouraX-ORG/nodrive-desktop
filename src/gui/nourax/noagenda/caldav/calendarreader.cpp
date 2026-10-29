@@ -50,7 +50,9 @@ CalRecord fromComponent(const QString &calendarUri, const QString &href, const Q
     r.isTodo = isTodo;
     r.uid = c.text(QStringLiteral("UID"));
     r.summary = c.text(QStringLiteral("SUMMARY"));
-    r.description = c.text(QStringLiteral("DESCRIPTION")).left(2000);
+    const QString fullDescription = c.text(QStringLiteral("DESCRIPTION"));
+    r.description = fullDescription.left(2000);
+    r.descriptionCut = fullDescription.size() > 2000;
     r.location = c.text(QStringLiteral("LOCATION"));
     r.status = c.text(QStringLiteral("STATUS")).toUpper();
     r.transp = c.text(QStringLiteral("TRANSP")).toUpper();

@@ -282,6 +282,7 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                 item.startDate = start;
                 item.endDate = end;
                 item.due = end;
+                timeSlotOfIso(task.value(QLatin1String("start_date")).toString(), task.value(QLatin1String("end_date")).toString(), ctx.zone, &item.slotStart, &item.slotEnd);
                 item.sourceKey = QStringLiteral("gantt:") + QString::number(projectId);
                 item.sourceName = projectTitle;
                 item.sourceColor = color;

@@ -1014,6 +1014,73 @@ private Q_SLOTS:
         QVERIFY(!body.contains(QStringLiteral("CATEGORIES")));
     }
 
+    void newItemsAreOfferedOnlyInMyOwnCalendarsNeverInASharedTeamCalendar()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        auto *edit = env->controller->editController();
+        const auto choices = edit->newChoices();
+        QStringList events;
+        for (const auto &v : choices.value(QStringLiteral("events")).toList()) {
+            events.append(v.toMap().value(QStringLiteral("uri")).toString());
+        }
+        QStringList lists;
+        for (const auto &v : choices.value(QStringLiteral("lists")).toList()) {
+            lists.append(v.toMap().value(QStringLiteral("uri")).toString());
+        }
+        QVERIFY2(events.contains(QStringLiteral("work")) && events.contains(QStringLiteral("personal")), qPrintable(events.join(QLatin1Char(','))));
+        QVERIFY2(!events.contains(QStringLiteral("mara-team_shared_by_mara")), "a new event in the shared team calendar would have no person");
+        QVERIFY(!lists.contains(QStringLiteral("mara-team_shared_by_mara")));
+        QVERIFY(choices.value(QStringLiteral("defaultEvent")).toString() != QLatin1String("mara-team_shared_by_mara"));
+        // and the editor refuses it even when it is asked for by name
+        QVariantMap values{{QStringLiteral("kind"), QStringLiteral("event")}, {QStringLiteral("calendarUri"), QStringLiteral("mara-team_shared_by_mara")}, {QStringLiteral("title"), QStringLiteral("x")},
+            {QStringLiteral("startDate"), QStringLiteral("2026-10-29")}, {QStringLiteral("startTime"), QStringLiteral("09:00")}, {QStringLiteral("endDate"), QStringLiteral("2026-10-29")},
+            {QStringLiteral("endTime"), QStringLiteral("10:00")}, {QStringLiteral("agentId"), QStringLiteral("SELF")}};
+        QCOMPARE(edit->create(values), QStringLiteral("Choose a calendar."));
+        QCOMPARE(env->transport->count("PUT"), 0);
+    }
+
+    void aLongDescriptionIsNotOfferedForChangesSoNothingAfterTheCutIsLost()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        auto *edit = env->controller->editController();
+        auto item = eventItem();
+        item.description = QString(2000, QLatin1Char('x'));
+        item.descriptionCut = true;
+        const auto form = edit->formFor(item);
+        QVERIFY(form.value(QStringLiteral("descriptionLocked")).toBool());
+        QVERIFY(form.value(QStringLiteral("descriptionReason")).toString().contains(QStringLiteral("too long to change here")));
+        QVERIFY(form.value(QStringLiteral("descriptionReason")).toString().contains(QStringLiteral("Open in NoCalendar")));
+        edit->setSelected(&item);
+        QVariantMap values{{QStringLiteral("title"), item.title}, {QStringLiteral("description"), QStringLiteral("a shorter text")}};
+        const QString answer = edit->save(values);
+        QVERIFY2(answer.contains(QStringLiteral("too long to change here")), qPrintable(answer));
+        QCOMPARE(env->transport->count("PUT"), 0);
+        QCOMPARE(env->agenda->edit()->queue().pendingCount(), 0);
+        // a description of a normal length stays open for changes
+        auto normal = eventItem();
+        normal.description = QStringLiteral("short");
+        QVERIFY(!edit->formFor(normal).value(QStringLiteral("descriptionLocked")).toBool());
+    }
+
+    void undoSaysUndoneOnlyWhenNoGanttHasUndoneTheMove()
+    {
+        const QString revert = QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/changes/op-1/revert");
+        const auto env = open(QStringLiteral("ali"), false);
+        auto *edit = env->controller->editController();
+        // no answer from NoGantt: the move is not undone, and the person is told so
+        edit->showToast(QStringLiteral("Saved."), QStringLiteral("ok"), QStringLiteral("op-1"));
+        edit->undo();
+        QTRY_VERIFY2(edit->toastText().contains(QStringLiteral("could not undo")), qPrintable(edit->toastText()));
+        QVERIFY(edit->toastText().contains(QStringLiteral("Open in NoGantt")));
+        QVERIFY(!edit->toastText().contains(QStringLiteral("Undone.")));
+        QCOMPARE(edit->toastTone(), QStringLiteral("warn"));
+        // NoGantt undoes it
+        prepend(env->transport, "POST", revert, 200, ocsBody(QJsonObject()));
+        edit->showToast(QStringLiteral("Saved."), QStringLiteral("ok"), QStringLiteral("op-1"));
+        edit->undo();
+        QTRY_COMPARE(edit->toastText(), QStringLiteral("Undone."));
+    }
+
     void aNewItemNeedsATitleAndAnAgent()
     {
         const auto env = open(QStringLiteral("ali"), false);

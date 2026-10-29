@@ -41,11 +41,21 @@ DayLoad forDay(const QList<AgendaItem> &items, const DayModel &model, const QDat
     const QDateTime to(day, model.hours().to, zone);
     QList<QPair<QDateTime, QDateTime>> spans;
     for (const auto &item : items) {
-        if (!DayModel::blocksMyTime(item) || !item.timed || !item.start.isValid()) {
+        if (!DayModel::blocksMyTime(item) || item.kind == ItemKind::GanttTask) {
+            continue; // a task with real times is already counted by its hours below
+        }
+        QDateTime start;
+        QDateTime end;
+        if (item.kind == ItemKind::Event) {
+            if (!item.timed || !item.start.isValid()) {
+                continue;
+            }
+            start = item.start;
+            end = item.end.isValid() && item.end > item.start ? item.end : item.start;
+        } else if (!DayModel::timeSlot(item, &start, &end)) {
             continue;
         }
-        const QDateTime end = item.end.isValid() && item.end > item.start ? item.end : item.start;
-        const QDateTime a = qMax(item.start, from);
+        const QDateTime a = qMax(start, from);
         const QDateTime b = qMin(end, to);
         if (a < b) {
             spans.append({a, b});
@@ -64,9 +74,10 @@ DayLoad forDay(const QList<AgendaItem> &items, const DayModel &model, const QDat
     load.busy = busySeconds / 3600.0;
     load.free = qMax(0.0, load.working - load.busy);
 
-    // Planned: my own share of work on the NoGantt tasks that are active today.
+    // Planned: my own share of work on the NoGantt tasks that are active today. On a task my agent does, my own share
+    // (myWorkHours) is my review or supervision time and counts; the agent's hours (agentWorkHours) never do.
     for (const auto &item : items) {
-        if (item.kind != ItemKind::GanttTask || item.workKind != WorkKind::Self || item.problemOnly || item.done) {
+        if (item.kind != ItemKind::GanttTask || (item.workKind != WorkKind::Self && item.workKind != WorkKind::MyAgent) || item.problemOnly || item.agentLoad || item.done) {
             continue;
         }
         const QDate first = item.startDate.isValid() ? item.startDate : item.endDate;
@@ -75,7 +86,9 @@ DayLoad forDay(const QList<AgendaItem> &items, const DayModel &model, const QDat
             continue;
         }
         if (item.myWorkHours < 0) {
-            ++load.noEstimate;
+            if (item.workKind == WorkKind::Self) {
+                ++load.noEstimate; // an agent's task without time for my review is normal: nothing to warn about
+            }
             continue;
         }
         const int days = model.workingDaysBetween(first, last);

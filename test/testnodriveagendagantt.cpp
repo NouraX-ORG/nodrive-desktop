@@ -373,6 +373,31 @@ private Q_SLOTS:
         QVERIFY(item->agent.displayText().contains(QStringLiteral("(unknown agent)")));
     }
 
+    void aTaskWithRealTimesOnOneDayTakesThatTime()
+    {
+        auto input = loadScenario(QStringLiteral("ali"));
+        auto data = input.gantt.projectData.value(1);
+        QJsonArray tasks;
+        for (const auto &t : std::as_const(data.tasks)) {
+            auto task = t.toObject();
+            if (task.value(QStringLiteral("id")).toInt() == 101) {
+                task.insert(QStringLiteral("start_date"), QStringLiteral("2026-10-28 09:00:00"));
+                task.insert(QStringLiteral("end_date"), QStringLiteral("2026-10-28 10:30:00"));
+            }
+            tasks.append(task);
+        }
+        data.tasks = tasks;
+        input.gantt.projectData.insert(1, data);
+        const auto out = AgendaBuilder::build(input);
+        const auto *timed = find(out.items, QStringLiteral("gantt:task:101"));
+        QVERIFY(timed);
+        QCOMPARE(timed->slotStart, QDateTime(QDate(2026, 10, 28), QTime(9, 0), QTimeZone::UTC));
+        QCOMPARE(timed->slotEnd, QDateTime(QDate(2026, 10, 28), QTime(10, 30), QTimeZone::UTC));
+        const auto *dates = find(out.items, QStringLiteral("gantt:task:102"));
+        QVERIFY(dates);
+        QVERIFY2(!dates->slotStart.isValid(), "midnight dates over several days are not a time slot");
+    }
+
     void workInPersonDaysIsConvertedToHours()
     {
         auto input = loadScenario(QStringLiteral("ali"));

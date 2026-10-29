@@ -109,6 +109,17 @@ const EditCommand *EditQueue::findConflict(const QString &id) const
     return nullptr;
 }
 
+bool EditQueue::markPartial(const QString &id)
+{
+    for (auto &c : _commands) {
+        if (c.id == id) {
+            c.change.insert(QStringLiteral("partial"), true);
+            return true;
+        }
+    }
+    return false;
+}
+
 const EditCommand *EditQueue::next() const
 {
     return _commands.isEmpty() ? nullptr : &_commands.first();

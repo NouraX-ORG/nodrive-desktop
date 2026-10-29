@@ -9,11 +9,18 @@
 
 namespace OCC::Nourax::Agenda::WriterUtil {
 
-bool commonFailure(const HttpResult &answer, EditResult *result)
+bool commonFailure(const HttpResult &answer, EditResult *result, const QString &app)
 {
     if (answer.networkError || answer.status == 0) {
         result->outcome = EditResult::Outcome::Offline;
         result->message = AgendaText::tr("There is no connection to the server.");
+        return true;
+    }
+    if (answer.status == 401 && !app.isEmpty()) {
+        result->outcome = EditResult::Outcome::Refused;
+        result->httpStatus = answer.status;
+        result->conflictKind = QStringLiteral("refused");
+        result->message = AgendaText::tr("%1 does not accept this sign-in. Open in %1.").arg(app);
         return true;
     }
     if (answer.status == 401) {

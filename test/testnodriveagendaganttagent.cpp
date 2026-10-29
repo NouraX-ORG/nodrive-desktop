@@ -42,6 +42,37 @@ QList<int> ids(const QJsonArray &rows)
 
 // Resources of the fixtures: 1 Ali, 2 Sara, 11 Writer-Bot (Ali), 12 Design-Bot (Sara), 13 Research-Bot (Ali), 14 Temp worker, 20 Designer (role, PT)
 
+/// The fixture registry where Writer-Bot (AG-0001) stands for two planning people (31 is one in the pool of another manager)
+/// and Research-Bot (AG-0003) can be chosen. Resource 31 is added to the visible planning people.
+AgentRegistry registryWithTwoIdsForWriterBot()
+{
+    auto doc = QJsonDocument::fromJson(fixture(QStringLiteral("agent-registry.json")));
+    auto root = doc.object();
+    auto agents = root.value(QStringLiteral("agents")).toArray();
+    for (int i = 0; i < agents.size(); ++i) {
+        auto agent = agents.at(i).toObject();
+        auto links = agent.value(QStringLiteral("links")).toObject();
+        if (agent.value(QStringLiteral("id")).toString() == QLatin1String("AG-0001")) {
+            links.insert(QStringLiteral("nogantt_resource_ids"), QJsonArray{11, 31});
+        }
+        if (agent.value(QStringLiteral("id")).toString() == QLatin1String("AG-0003")) {
+            agent.insert(QStringLiteral("status"), QStringLiteral("active"));
+        }
+        agent.insert(QStringLiteral("links"), links);
+        agents.replace(i, agent);
+    }
+    root.insert(QStringLiteral("agents"), agents);
+    return AgentRegistry::parse(QJsonDocument(root).toJson());
+}
+
+QJsonArray resourcesWithTheSecondId()
+{
+    QJsonArray out = aliContext().ganttResources;
+    out.append(QJsonObject{{QStringLiteral("id"), 31}, {QStringLiteral("name"), QString::fromUtf8("\xF0\x9F\xA4\x96 Writer-Bot (Ali)")}, {QStringLiteral("type"), QStringLiteral("person")},
+        {QStringLiteral("uid"), QString()}, {QStringLiteral("unit"), QStringLiteral("h")}, {QStringLiteral("owner_id"), QStringLiteral("zed")}});
+    return out;
+}
+
 } // namespace
 
 class TestNoDriveAgendaGanttAgent : public QObject
@@ -149,6 +180,68 @@ private Q_SLOTS:
         const auto p = plan(fresh, QString());
         QVERIFY(!p.ok);
         QVERIFY(p.refusal.contains(QStringLiteral("main person")));
+    }
+
+    void switchingToSelfRemovesEveryPlanningPersonOfTheAgentNotOnlyTheFirst()
+    {
+        const auto registry = registryWithTwoIdsForWriterBot();
+        const auto visible = resourcesWithTheSecondId();
+        // The task carries the agent's second id only: before, the change was a "Saved." that did nothing.
+        auto p = plan(task({row(1, 6), row(31, none())}, 0.75), QString(), visible, &registry);
+        QVERIFY2(p.ok, qPrintable(p.refusal));
+        QVERIFY2(!p.noChange, "the second id of the agent is removed too");
+        QCOMPARE(ids(p.resources), (QList<int>{1}));
+        // both ids on the task: both go
+        p = plan(task({row(1, 6), row(11, none()), row(31, none())}, 0.75), QString(), visible, &registry);
+        QVERIFY2(p.ok, qPrintable(p.refusal));
+        QCOMPARE(ids(p.resources), (QList<int>{1}));
+    }
+
+    void switchingToAnotherAgentLeavesNeitherOldRowBehind()
+    {
+        const auto registry = registryWithTwoIdsForWriterBot();
+        const auto visible = resourcesWithTheSecondId();
+        // Research-Bot (13) replaces Writer-Bot, whichever of its two ids is on the task: never "Two agents for Ali"
+        const auto p = plan(task({row(1, 6), row(11, none()), row(31, none())}, 0.75), QStringLiteral("AG-0003"), visible, &registry);
+        QVERIFY2(p.ok, qPrintable(p.refusal));
+        QCOMPARE(ids(p.resources), (QList<int>{1, 13}));
+        // the agent that is already on the task by its second id is kept as it is
+        const auto same = plan(task({row(1, 6), row(31, none())}, 0.75), QStringLiteral("AG-0001"), visible, &registry);
+        QVERIFY2(same.ok, qPrintable(same.refusal));
+        QVERIFY(same.noChange);
+    }
+
+    void theChosenAgentsPlanningPersonMustBelongToThisProject()
+    {
+        const auto registry = registryWithTwoIdsForWriterBot();
+        const auto visible = resourcesWithTheSecondId();
+        const auto fresh = task({row(1, 6)}, 0.75);
+        // the owner of the project is "mara" like resource 11, and no task of the project has either: 11
+        auto p = plan(fresh, QStringLiteral("AG-0001"), visible, &registry);
+        QVERIFY2(p.ok, qPrintable(p.refusal));
+        // (no project information: the first visible id)
+        QCOMPARE(ids(p.resources), (QList<int>{1, 11}));
+        const auto owned = GanttProjectInfo::of(QStringLiteral("mara"), QJsonArray{fresh});
+        p = GAC::plan(fresh, visible, registry, QStringLiteral("ali"), QStringLiteral("Ali"), QStringLiteral("AG-0001"), 8.0, owned);
+        QVERIFY2(p.ok, qPrintable(p.refusal));
+        QCOMPARE(ids(p.resources), (QList<int>{1, 11}));
+        // another task of the project already has the second id: that one is the agent's planning person here
+        const auto onATask = GanttProjectInfo::of(QStringLiteral("nobody"), QJsonArray{task({row(2, 1), row(31, none())}, 0.2)});
+        p = GAC::plan(fresh, visible, registry, QStringLiteral("ali"), QStringLiteral("Ali"), QStringLiteral("AG-0001"), 8.0, onATask);
+        QVERIFY2(p.ok, qPrintable(p.refusal));
+        QCOMPARE(ids(p.resources), (QList<int>{1, 31}));
+        // neither of its planning people belongs to this project: ask the project manager, send nothing
+        const auto foreign = GanttProjectInfo::of(QStringLiteral("somebody-else"), QJsonArray{fresh});
+        p = GAC::plan(fresh, visible, registry, QStringLiteral("ali"), QStringLiteral("Ali"), QStringLiteral("AG-0001"), 8.0, foreign);
+        QVERIFY(!p.ok);
+        QVERIFY(p.refusal.startsWith(QStringLiteral("Ask your project manager to add")));
+        const auto choices = GAC::choices(QStringLiteral("ali"), QStringLiteral("Ali"), registry, visible, foreign);
+        for (const auto &c : choices) {
+            if (c.agentId == QLatin1String("AG-0001")) {
+                QVERIFY(!c.choosable());
+                QCOMPARE(c.resourceIds, (QList<int>{11, 31}));
+            }
+        }
     }
 
     void nothingIsSentWhenThereIsNothingToChange()

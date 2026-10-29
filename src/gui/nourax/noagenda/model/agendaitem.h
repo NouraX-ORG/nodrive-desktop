@@ -88,6 +88,10 @@ struct AgendaItem
     QDate startDate;
     QDate endDate;
     QDate due;
+    /// A card or a NoGantt task with real times on one day (UTC). It takes that time like an event does: it can clash
+    /// and it is busy time; the row itself is still placed by its dates. Events use start / end.
+    QDateTime slotStart;
+    QDateTime slotEnd;
 
     QString sourceKey;
     QString sourceName;
@@ -125,6 +129,7 @@ struct AgendaItem
     bool problemOnly = false;
 
     QString description;
+    bool descriptionCut = false; ///< the description is shown cut to 2,000 characters: changing it here would lose the rest
     QString location;
     QString version; ///< ETag, updated_at or lastModified (the base version of an edit)
 
@@ -153,6 +158,7 @@ struct AgendaItem
     QString uid;
     QString recurrenceId;
     bool organizerIsMe = false;
+    bool teamCalendar = false; ///< the item is in a shared calendar that the person set to "Team"
     QString myPartstat;
     double myWorkHours = -1;
 

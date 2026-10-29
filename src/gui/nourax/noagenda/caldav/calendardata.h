@@ -55,6 +55,7 @@ struct CalRecord
     QString uid;
     QString summary;
     QString description; ///< first 2,000 characters
+    bool descriptionCut = false; ///< the description was longer than that: it can't be changed here
     QString location;
     bool allDay = false;
     bool timeApproximated = false;

@@ -48,7 +48,7 @@ public:
 
     void applyAgain(const QString &commandId);
     void keepOther(const QString &commandId);
-    /// "Undo" of a NoGantt move (the op id of the result).
+    /// "Undo" of a NoGantt move (the op id of the result). The answer comes with undoFinished().
     void undo(const QString &opId);
 
     /// Draws the waiting commands, the "Not sent" ones and the ones that were just sent (until the next refresh
@@ -71,8 +71,14 @@ Q_SIGNALS:
     /// The data on the server changed: read it again.
     void refreshNeeded();
     void loginNeeded();
+    /// The answer of undo(): done, or the plain words of why NoGantt did not undo the move (also when there is no connection).
+    void undoFinished(const OCC::Nourax::Agenda::EditResult &result);
 
 private:
+    /// The first waiting command that may be sent now. A NoGantt or NoBoard command waits until a read after the
+    /// last (re)connection has run the version guard of that app; when the guard says read only, the command goes to
+    /// "Not sent" (design 5: never writes blind). Null when nothing can be sent.
+    const EditCommand *nextSendable();
     void dispatch(const EditCommand &command, const EditDone &done);
     void finishCommand(const EditCommand &command, const EditResult &result);
 

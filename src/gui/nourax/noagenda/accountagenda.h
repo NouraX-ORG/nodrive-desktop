@@ -164,6 +164,9 @@ private:
     bool _forceSlow = false;
     QDateTime _lastCalendarFull;
     QPointer<QObject> _guard;
+    /// The version guard of NoGantt and NoBoard as the last read in this connection found it (Unknown until then).
+    AppGuard _ganttGuard = AppGuard::Unknown;
+    AppGuard _deckGuard = AppGuard::Unknown;
 };
 
 } // namespace OCC::Nourax::Agenda

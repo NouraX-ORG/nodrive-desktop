@@ -8,6 +8,7 @@
 #include "caldavwriter.h"
 #include "deckwriter.h"
 #include "ganttwriter.h"
+#include "writerutil.h"
 
 #include <QLoggingCategory>
 #include <QPointer>
@@ -123,7 +124,7 @@ void EditService::process()
     if (_busy || !_online || _stalled) {
         return;
     }
-    const auto *next = _queue.next();
+    const auto *next = nextSendable();
     if (!next) {
         return;
     }
@@ -137,6 +138,42 @@ void EditService::process()
             self->finishCommand(command, result);
         }
     });
+}
+
+const EditCommand *EditService::nextSendable()
+{
+    const auto context = _context();
+    for (;;) {
+        const EditCommand *found = nullptr;
+        const EditCommand *readOnly = nullptr;
+        for (const auto &c : _queue.commands()) {
+            AppGuard guard = AppGuard::Writable;
+            if (c.kind == EditKind::GanttUpdate || c.kind == EditKind::GanttAgentChange) {
+                guard = context.ganttGuard;
+            } else if (c.kind == EditKind::DeckCardUpdate || c.kind == EditKind::DeckAgentLabel) {
+                guard = context.deckGuard;
+            }
+            if (guard == AppGuard::Unknown) {
+                continue; // waits for the next read; later commands of other apps are not held up by it
+            }
+            if (guard == AppGuard::ReadOnly) {
+                readOnly = &c;
+                break;
+            }
+            found = &c;
+            break;
+        }
+        if (found || !readOnly) {
+            return found;
+        }
+        const EditCommand command = *readOnly;
+        const QString message = AgendaText::tr("Read only: this version of the app on the server has not been checked yet.");
+        _queue.moveToConflict(command.id, message, QStringLiteral("refused"));
+        _queue.save();
+        qCInfo(lcAgendaEdit) << "edit" << EditCommand::kindName(command.kind) << "held back by the version guard";
+        Q_EMIT finished(command, WriterUtil::refused(message));
+        Q_EMIT changed();
+    }
 }
 
 void EditService::dispatch(const EditCommand &command, const EditDone &done)
@@ -191,6 +228,9 @@ void EditService::finishCommand(const EditCommand &command, const EditResult &re
         return;
     case EditResult::Outcome::Offline:
         _stalled = true;
+        if (result.partialChange) {
+            _queue.markPartial(command.id);
+        }
         _queue.save();
         Q_EMIT finished(command, result);
         Q_EMIT changed();
@@ -246,10 +286,21 @@ void EditService::undo(const QString &opId)
         return;
     }
     QPointer<EditService> self(this);
+    if (!_online) {
+        EditResult offline;
+        offline.outcome = EditResult::Outcome::Offline;
+        offline.message = AgendaText::tr("There is no connection to the server.");
+        Q_EMIT undoFinished(offline);
+        return;
+    }
     GanttWriter::undo(_transport, opId, [self](const EditResult &result) {
-        if (self && result.done()) {
+        if (!self) {
+            return;
+        }
+        if (result.done()) {
             Q_EMIT self->refreshNeeded();
         }
+        Q_EMIT self->undoFinished(result);
     });
 }
 
@@ -335,6 +386,10 @@ void EditService::applyCommand(AgendaItem *item, const EditCommand &command, con
         return;
     }
     case EditKind::GanttUpdate: {
+        if (c.contains(QLatin1String("start_date")) || c.contains(QLatin1String("end_date"))) {
+            item->slotStart = QDateTime(); // the real times are read again at the next refresh
+            item->slotEnd = QDateTime();
+        }
         if (c.contains(QLatin1String("start_date"))) {
             item->startDate = QDate::fromString(c.value(QLatin1String("start_date")).toString().left(10), Qt::ISODate);
         }
@@ -365,6 +420,8 @@ void EditService::applyCommand(AgendaItem *item, const EditCommand &command, con
         if (due.present) {
             item->due = due.remove ? QDate() : due.date;
             item->endDate = item->due;
+            item->slotStart = QDateTime(); // the real times are read again at the next refresh
+            item->slotEnd = QDateTime();
         }
         if (c.contains(QLatin1String("done"))) {
             item->done = c.value(QLatin1String("done")).toBool();

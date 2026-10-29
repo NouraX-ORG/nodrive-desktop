@@ -14,7 +14,9 @@ namespace OCC::Nourax::Agenda::WriterUtil {
 
 /// Fills `result` and returns true when the answer is a network error, a sign-in problem or a refusal that
 /// every writer treats the same way. Other answers return false.
-bool commonFailure(const HttpResult &answer, EditResult *result);
+/// `app` is "NoGantt" or "NoBoard" for a request to one of those apps: their 401 or 403 is a refusal by that app
+/// ("Open in ..."), never a sign-in problem of the account (design 5). Only CalDAV (`app` empty) gives NeedsLogin.
+bool commonFailure(const HttpResult &answer, EditResult *result, const QString &app = QString());
 
 EditResult conflict(const QString &kind, const QString &message);
 EditResult refused(const QString &message, int status = 0);

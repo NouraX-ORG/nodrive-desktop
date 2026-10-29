@@ -146,6 +146,45 @@ private Q_SLOTS:
         QVERIFY(!idea->hasDate());
     }
 
+    void aCardWithBothTimesOnOneDayTakesThatTime()
+    {
+        auto input = loadAliAnswered();
+        QJsonArray boards;
+        for (const auto &boardValue : std::as_const(input.deck.boards)) {
+            auto board = boardValue.toObject();
+            QJsonArray stacks;
+            for (const auto &stackValue : board.value(QStringLiteral("_stacks")).toArray()) {
+                auto stack = stackValue.toObject();
+                QJsonArray cards;
+                for (const auto &cardValue : stack.value(QStringLiteral("cards")).toArray()) {
+                    auto card = cardValue.toObject();
+                    if (card.value(QStringLiteral("id")).toInt() == 502) {
+                        card.insert(QStringLiteral("startdate"), QStringLiteral("2026-10-28T10:00:00+00:00"));
+                        card.insert(QStringLiteral("duedate"), QStringLiteral("2026-10-28T11:00:00+00:00"));
+                    }
+                    if (card.value(QStringLiteral("id")).toInt() == 503) {
+                        card.insert(QStringLiteral("startdate"), QStringLiteral("2026-10-26T00:00:00+00:00"));
+                        card.insert(QStringLiteral("duedate"), QStringLiteral("2026-10-28T00:00:00+00:00"));
+                    }
+                    cards.append(card);
+                }
+                stack.insert(QStringLiteral("cards"), cards);
+                stacks.append(stack);
+            }
+            board.insert(QStringLiteral("_stacks"), stacks);
+            boards.append(board);
+        }
+        input.deck.boards = boards;
+        const auto out = AgendaBuilder::build(input);
+        const auto *call = find(out.items, QStringLiteral("deck:card:502"));
+        QVERIFY(call);
+        QCOMPARE(call->slotStart, QDateTime(QDate(2026, 10, 28), QTime(10, 0), QTimeZone::UTC));
+        QCOMPARE(call->slotEnd, QDateTime(QDate(2026, 10, 28), QTime(11, 0), QTimeZone::UTC));
+        const auto *pay = find(out.items, QStringLiteral("deck:card:503"));
+        QVERIFY(pay);
+        QVERIFY2(!pay->slotStart.isValid(), "a start and a due date on different days are dates only");
+    }
+
     void anUnknownRobotLabelIsFlagged()
     {
         const auto out = AgendaBuilder::build(loadAliAnswered());
