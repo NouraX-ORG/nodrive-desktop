@@ -1672,6 +1672,12 @@ private Q_SLOTS:
         });
         auto *bar = barOf(env.get(), QStringLiteral("cal:personal/td4.ics"));
         QVERIFY(bar);
+        // The bar is far down the chart: scroll so that it is inside the window (a small screen makes a small window).
+        auto *flick = findItem(env->window->contentItem(), QStringLiteral("timelineFlick"));
+        QVERIFY(flick);
+        flick->setProperty("contentY", qMax(0.0, bar->y() - 120));
+        QTest::qWait(300);
+        QVERIFY(centerOf(bar).y() < env->window->height() - 20);
         const QPoint end = pressAndMove(env->window, bar, 24); // two days
         QTRY_COMPARE(env->controller->timelineController()->ghost().value(QStringLiteral("days")).toInt(), 2);
         QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
