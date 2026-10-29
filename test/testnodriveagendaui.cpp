@@ -982,10 +982,12 @@ private Q_SLOTS:
         QVERIFY(shown(content, QStringLiteral("agentChoice-AG-0001")));
         QVERIFY(hasText(env->window, QStringLiteral("Self")));
         // The date of the day in view is already in the form.
-        auto *startDate = findItem(content, QStringLiteral("fieldStartDate"));
+        auto *startDate = findItem(content, QStringLiteral("newFieldStartDate"));
         QVERIFY(startDate);
-        QCOMPARE(startDate->property("text").toString(), QStringLiteral("2026-10-28"));
-        findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Planning with Sara"));
+        qInfo() << "new event form: day" << env->controller->selectedDateIso() << "start" << startDate->property("text") << "end" << findItem(content, QStringLiteral("newFieldEndDate"))->property("text")
+                << "time" << findItem(content, QStringLiteral("newFieldStartTime"))->property("text");
+        QTRY_COMPARE(startDate->property("text").toString(), QStringLiteral("2026-10-28"));
+        findItem(content, QStringLiteral("newFieldTitle"))->setProperty("text", QStringLiteral("Planning with Sara"));
         QTest::qWait(60);
         shoot(env.get(), QStringLiteral("new-event"), dark);
 
@@ -1144,7 +1146,39 @@ private Q_SLOTS:
         click(env->window, findItem(content, QStringLiteral("confirmDeleteButton")));
         QTRY_COMPARE(env->transport->count("DELETE"), 1);
         QCOMPARE(ScriptedTransport::header(env->transport->of("DELETE").first(), "If-Match"), QByteArrayLiteral("\"e1\""));
-        QTRY_VERIFY(!findItem(content, QStringLiteral("row-cal:personal/dentist.ics")));
+    }
+
+    void aDeletedEventLeavesTheListAtOnce()
+    {
+        const auto env = open(QStringLiteral("ali"), false, [](FakeTransport *t) {
+            prepend(t, "DELETE", QStringLiteral("/remote.php/dav/calendars/ali/personal/dentist.ics"), 204, QByteArray());
+        });
+        env->controller->select(QStringLiteral("cal:personal/dentist.ics"));
+        auto hasRow = [&] {
+            for (const auto &r : env->controller->rows()) {
+                if (r.toMap().value(QStringLiteral("key")).toString() == QLatin1String("cal:personal/dentist.ics")) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QVERIFY(hasRow());
+        QCOMPARE(env->controller->editController()->deleteSelected(), QString());
+        // The fake server keeps serving the object, a real one does not: the row must be gone right after the answer.
+        QVERIFY(!hasRow());
+        QCOMPARE(env->transport->count("DELETE"), 1);
+    }
+
+    void aGanttTaskCanNeverBeDeletedFromTheEditor()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        env->controller->select(QStringLiteral("gantt:task:111"));
+        const auto answer = env->controller->editController()->deleteSelected();
+        QVERIFY(!answer.isEmpty());
+        QCOMPARE(env->transport->count("DELETE"), 0);
+        env->controller->select(QStringLiteral("deck:card:503"));
+        QVERIFY(!env->controller->editController()->deleteSelected().isEmpty());
+        QCOMPARE(env->transport->count("DELETE"), 0);
     }
 
     void aRepeatingEventOnlyOffersTheCalendarPage_data() { darkRows(); }

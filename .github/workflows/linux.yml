@@ -148,11 +148,16 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Python 3.12, so that Playwright (tools/ci/agenda-webedit.py, CI only) gets ready-made wheels.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
       # A real server in a Docker network, created for this job only and thrown away with the runner,
       # with the pinned calendar, tasks, Deck and nc_gantt 2.4.1 apps (SHA-256 checked) and the seed of
       # tools/ci/agenda-seed.py. No secret is stored anywhere: the throwaway passwords are generated and
       # masked at run time (tools/ci/agenda-server.sh). The Drive of Nourax is never contacted.
-      - name: Seven phases (tools/ci/agenda-server.sh)
+      - name: Read phases, web pages, edit phases (tools/ci/agenda-server.sh)
         run: bash tools/ci/agenda-server.sh
 
       - name: Upload the report (names, status codes, counts, key sets; screenshots)

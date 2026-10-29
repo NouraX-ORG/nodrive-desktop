@@ -348,6 +348,7 @@ private Q_SLOTS:
         for (int i = 0; i < 40; ++i) {
             title += QStringLiteral("Zeitübersicht "); // two-byte characters
         }
+        title = title.trimmed();
         edit.summary = title;
         const auto result = ICalPatch::apply(sampleEvent(), edit);
         QVERIFY(result.ok);

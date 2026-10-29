@@ -12,6 +12,7 @@ Rectangle {
     required property var ctrl
     readonly property var st: ctrl.style
     readonly property var edit: ctrl.edit
+    readonly property string dayIso: ctrl.selectedDateIso
 
     property bool open: false
     property string kind: "event"
@@ -34,11 +35,11 @@ Rectangle {
         errorText = "";
         fTitle.text = "";
         fDescription.text = "";
-        fStartDate.text = kind === "event" ? ctrl.selectedDateIso : "";
+        fStartDate.text = kind === "event" ? dayIso : "";
         fStartTime.text = "09:00";
-        fEndDate.text = ctrl.selectedDateIso;
+        fEndDate.text = dayIso;
         fEndTime.text = "10:00";
-        fDueDate.text = kind === "todo" ? ctrl.selectedDateIso : "";
+        fDueDate.text = kind === "todo" ? dayIso : "";
         fDueTime.text = "";
     }
     function show(kindName) {
@@ -154,7 +155,7 @@ Rectangle {
 
                 FieldBox {
                     id: fTitle
-                    objectName: "fieldTitle"
+                    objectName: "newFieldTitle"
                     width: parent.width
                     st: dlg.st
                     label: qsTr("Title")
@@ -162,7 +163,7 @@ Rectangle {
                 }
 
                 CheckRow {
-                    objectName: "allDayCheck"
+                    objectName: "newAllDayCheck"
                     visible: dlg.kind === "event"
                     st: dlg.st
                     label: qsTr("All day")
@@ -175,7 +176,7 @@ Rectangle {
                     spacing: 8
                     FieldBox {
                         id: fStartDate
-                        objectName: "fieldStartDate"
+                        objectName: "newFieldStartDate"
                         width: dlg.kind === "event" && !dlg.allDay ? parent.width * 0.6 - 4 : parent.width
                         st: dlg.st
                         label: qsTr("Start")
@@ -183,7 +184,7 @@ Rectangle {
                     }
                     FieldBox {
                         id: fStartTime
-                        objectName: "fieldStartTime"
+                        objectName: "newFieldStartTime"
                         visible: dlg.kind === "event" && !dlg.allDay
                         width: parent.width * 0.4 - 4
                         st: dlg.st
@@ -198,7 +199,7 @@ Rectangle {
                     spacing: 8
                     FieldBox {
                         id: fEndDate
-                        objectName: "fieldEndDate"
+                        objectName: "newFieldEndDate"
                         width: !dlg.allDay ? parent.width * 0.6 - 4 : parent.width
                         st: dlg.st
                         label: qsTr("End")
@@ -206,7 +207,7 @@ Rectangle {
                     }
                     FieldBox {
                         id: fEndTime
-                        objectName: "fieldEndTime"
+                        objectName: "newFieldEndTime"
                         visible: !dlg.allDay
                         width: parent.width * 0.4 - 4
                         st: dlg.st
@@ -221,7 +222,7 @@ Rectangle {
                     spacing: 8
                     FieldBox {
                         id: fDueDate
-                        objectName: "fieldDueDate"
+                        objectName: "newFieldDueDate"
                         width: parent.width * 0.6 - 4
                         st: dlg.st
                         label: qsTr("Due")
@@ -229,7 +230,7 @@ Rectangle {
                     }
                     FieldBox {
                         id: fDueTime
-                        objectName: "fieldDueTime"
+                        objectName: "newFieldDueTime"
                         width: parent.width * 0.4 - 4
                         st: dlg.st
                         label: " "
@@ -239,7 +240,7 @@ Rectangle {
 
                 FieldBox {
                     id: fDescription
-                    objectName: "fieldDescription"
+                    objectName: "newFieldDescription"
                     width: parent.width
                     st: dlg.st
                     label: qsTr("Description")
