@@ -91,6 +91,9 @@ folder, and run `xvfb-run -a ctest --output-on-failure -E "^UpdateChannelTest$"`
 as that user (as upstream's CI does). The AppImage script also creates
 `build-client/` in the source folder and downloads `linuxdeploy` and
 `appimagetool` from GitHub.
+The `continuous` release of `appimagetool` is not pinned upstream. On 2026-10-29 a new one began to refuse an AppDir with
+folders of mode 0700 (the Qt qml folders), which broke the AppImage job with no change of ours. `tools/rebrand.d/linux.py` now adds
+`chmod -R a+rX ./squashfs-root` before that call, which is also what lets every user run the AppImage.
 
 ## 4. Windows
 

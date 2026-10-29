@@ -137,6 +137,8 @@ rm -rf ./squashfs-root
 APPIMAGE=$(ls *.AppImage)
 ./"${APPIMAGE}" --appimage-extract
 rm ./"${APPIMAGE}"
+# NoDrive: appimagetool wants every file readable (and every folder enterable) for all users
+chmod -R a+rX ./squashfs-root
 LD_LIBRARY_PATH="$PWD/appimagetool-squashfs-root/usr/lib":$LD_LIBRARY_PATH PATH="$PWD/appimagetool-squashfs-root/usr/bin":$PATH appimagetool -n ./squashfs-root "${APPIMAGE}"
 
 #move AppImage

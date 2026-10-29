@@ -57,6 +57,16 @@ def apply(ctx):
         "export APPIMAGE_NAME=\"${APPNAME}-${NODRIVE_VERSION:-unknown}-${BUILDNR}-x86_64.AppImage\"\n",
         what="AppImage file name NoDrive-<version>-<build>-x86_64.AppImage",
     )
+    # appimagetool (the "continuous" release, newer than the first NoDrive builds) refuses an AppDir whose
+    # folders are not readable for everyone (the Qt qml folders are mode 0700). Everyone must be able to run the AppImage.
+    ctx.replace(
+        SCRIPT,
+        './"${APPIMAGE}" --appimage-extract\nrm ./"${APPIMAGE}"\n',
+        './"${APPIMAGE}" --appimage-extract\nrm ./"${APPIMAGE}"\n'
+        "# NoDrive: appimagetool wants every file readable (and every folder enterable) for all users\n"
+        "chmod -R a+rX ./squashfs-root\n",
+        what="AppImage: files readable for all users (appimagetool permission check)",
+    )
     # KDE plugin metadata of the Dolphin overlay plugin (shown in plugin lists).
     ctx.replace(
         "shell_integration/dolphin/ownclouddolphinoverlayplugin.json",
