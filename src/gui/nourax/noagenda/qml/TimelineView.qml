@@ -101,8 +101,8 @@ Item {
         anchors.left: corner.right
         anchors.right: parent.right
         st: v.st
-        top: v.tl.scaleTop
-        bottom: v.tl.scaleBottom
+        topCells: v.tl.scaleTop
+        bottomCells: v.tl.scaleBottom
         offset: flick.contentX
     }
 

@@ -358,6 +358,86 @@ Small points left open by the independent review of the edit step (none loses da
 4. NoGantt: a readable version for normal users (the version guard is a shape check today).
 5. The sync step of design section 11 (agents app, planning people, board labels) still decides how often "Ask your project manager to add ..." appears.
 
+## The Timeline (third step)
+
+Plan: `plans/noagenda-desktop-plan.md`, section 3. The header has a fourth view, **Timeline** (key `L`), next to Day, Week
+and Month. The chips (Me, My agents), the All / Work / Personal switch and the Conflicts filter apply to it too. My team
+is not drawn here (the Timeline is about my own work).
+
+### What the person sees
+
+- **Bars** for my NoGantt tasks across all projects, grouped under their **project** and **phase** (NoGantt subproject),
+  with **% done filling the bar**. My to-dos that have both a start and a due date are bars too (not repeating ones, which
+  are changed in NoTasks), grouped under "NoTasks > list name".
+- **Diamonds** for the milestones of the projects where I have tasks, and for my dated cards (grouped under
+  "NoBoard > board name").
+- **The agent** after every bar and diamond (robot marker and name, or the person marker and "Self"), the late and blocked
+  marks, and "Waiting to send" / "Not sent" for a move that has not reached the server.
+- **Dependency arrows**, read only, for the four NoGantt types (finish to start `EA`, start to start `AA`, finish to finish
+  `EE`, start to finish `AE`). Hover shows "First to Second (Finish to start), lag 2 days". A predecessor that is not on the
+  screen (somebody else's task, or hidden by a chip) is a short stub into the bar with the tooltip "After: Banner design
+  (Sara)".
+- **My busy time shaded** behind the bars: each day is tinted by the share of my working hours that my own busy events
+  take (0 to 35 % of the primary colour); days off (weekend, holiday, all-day busy event) are hatched. Today has a line.
+  An agent's events and "free" events never shade the day.
+- **Weeks** (12 px a day) and **Days** (40 px a day). The range is from 7 days before the date shown to 8 weeks after it;
+  the arrows of the header move it by four weeks, **Today** comes back and scrolls to today.
+- A fixed column of names on the left, the scale (months, weeks or days) on top, the chart scrolls sideways and down
+  (scroll bars, mouse wheel and touchpad; a finger on a touch screen).
+
+### Moving a bar
+
+- **Drag** a bar (mouse or pen) to move start and end together by whole days. A ghost bar shows the new dates
+  ("31 Oct - 2 Nov") while the bar is held; **Esc** cancels; release saves. Less than half a day moves nothing (0.49 stays,
+  0.51 moves). The detail panel's date editor does the same through the same rules.
+- **Keyboard** (a bar has the focus): Left and Right move it one day, Shift seven days, **Enter** saves, **Esc** cancels.
+- The drop goes through the **edit step**, not around it: `EditController::moveByDays` builds the same `ganttUpdate` /
+  `calendarPatch` command, so the rules, the offline queue, the conflict handling ("Apply my change again") and **Undo**
+  are the editor's. A NoGantt task sends `start_date` and `end_date` (the time of day NoGantt had is kept), `adjust_lag=true`
+  (NoGantt's own drag behaviour) and `deck_confirmed=false`; the toast says "Moved to 31 Oct - 2 Nov. Also moved: ..." and
+  offers **Undo** for 10 seconds. A to-do patches `DTSTART` and `DUE` and keeps their times of day.
+- **Locked bars** (a project I only view, a read-only calendar, the version guard, a change that is in "Not sent") show a
+  lock, do not move, and say why in a message. No command is created for them. Milestones and cards are not dragged (a
+  card's due date is in the detail panel, a milestone is changed in NoGantt).
+- Nothing in the Timeline deletes anything, and a NoGantt task or card is never created or deleted from it.
+
+### Where the code is
+
+| File (all under `src/gui/nourax/noagenda/`) | Job |
+|---|---|
+| `logic/timelinelayout.h/.cpp` | The pure maths: date to x and back, groups, rows, rectangles, arrow routes, shading, drag to dates |
+| `ui/timelinecontroller.h/.cpp` | What QML needs: rows with geometry, scale, arrows, shading, zoom, ghost, drop |
+| `ui/editcontroller.*` | `moveByDays` (the one new entry of the edit step) and the "Moved to ..." sentence |
+| `model/agendaitem.h`, `logic/ganttmapper.cpp`, `logic/calendarmapper.cpp` | The row now carries its phase, its dependencies (type, lag, title and owner of the predecessor) and the start time of a to-do |
+| `qml/Timeline*.qml`, `qml/DependencyArrows.qml`, `qml/BusyShading.qml` | The view, the bars, the diamonds, the arrows (a `Canvas`, part of QtQuick), the shading, the scale, the legend |
+
+No new library and **no new line in an upstream file**: the three small hooks of the core step are the only ones.
+
+### Choices where the plan was silent (builder's calls)
+
+- The chart `Flickable` is not interactive (the mouse belongs to the bars); wheel, touchpad, scroll bars and a touch-only
+  `DragHandler` scroll it. A `DragHandler` with `target: null` measures the distance from the press in scene pixels
+  (`centroid.scenePosition - centroid.scenePressPosition`), so the drag threshold counts too. It accepts mouse and pen only.
+- One row per item (a group header also has a row). Items without a phase come first in start order, then the phases by their
+  first start.
+- The model and the controller of the plan are one class (`TimelineController`): the rows are small maps for QML.
+- Done tasks are not drawn (the core step does not read them as my work).
+- A move of a to-do changes `DTSTART` to a date-time only when it already was one.
+- Context7 was out of quota during this step ("Monthly quota reached"), so the Qt Quick items used (`DragHandler`,
+  `HoverHandler`, `TapHandler`, `WheelHandler`, `Canvas`, `Flickable`) were taken from the official Qt 6 documentation as
+  known from the plan's earlier check; the UI tests drive them with real mouse and key events.
+
+### Open points of the Timeline step
+
+- Mid-drag, a refresh that rebuilds the rows drops the drag (nothing is sent). The 5-minute refresh is the only trigger.
+- The ghost shows whole-day moves only; NoGantt may place the result on the next working day (`adjust_lag`), the toast and the
+  next refresh show the real dates.
+- The hatching of days off is drawn with one small `Canvas` per day; with very many rows this is memory-heavy
+  (about 4 bytes per pixel of column).
+- Dependencies of a milestone (milestone as the successor) are not drawn: only tasks have arrows into them.
+- Texts are English; translations are a to-do ("Timeline", "Weeks", "Days", "After: %1 (%2)", "No dated work in this
+  range.", "%1 - %2", "Moved to %1 - %2", "lag %1 days" and the legend).
+
 ## Known limits of the core step
 
 - No account picker in the header: the tray entry opens the window of the current account (one window per account).

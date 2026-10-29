@@ -182,13 +182,13 @@ private Q_SLOTS:
         for (const auto &z : zooms) {
             const QByteArray name = z.name;
             const int zoom = static_cast<int>(z.zoom);
-            QTest::newRow((name + " 0").constData()) << zoom << 0.0 << 0;
-            QTest::newRow((name + " +0.49 stays").constData()) << zoom << 0.49 << 0;
-            QTest::newRow((name + " -0.49 stays").constData()) << zoom << -0.49 << 0;
-            QTest::newRow((name + " +0.51 moves").constData()) << zoom << 0.51 << 1;
-            QTest::newRow((name + " -0.51 moves").constData()) << zoom << -0.51 << -1;
-            QTest::newRow((name + " +2.3").constData()) << zoom << 2.3 << 2;
-            QTest::newRow((name + " -3.7").constData()) << zoom << -3.7 << -4;
+            QTest::newRow(QByteArray(name).append(" 0").constData()) << zoom << 0.0 << 0;
+            QTest::newRow(QByteArray(name).append(" +0.49 stays").constData()) << zoom << 0.49 << 0;
+            QTest::newRow(QByteArray(name).append(" -0.49 stays").constData()) << zoom << -0.49 << 0;
+            QTest::newRow(QByteArray(name).append(" +0.51 moves").constData()) << zoom << 0.51 << 1;
+            QTest::newRow(QByteArray(name).append(" -0.51 moves").constData()) << zoom << -0.51 << -1;
+            QTest::newRow(QByteArray(name).append(" +2.3").constData()) << zoom << 2.3 << 2;
+            QTest::newRow(QByteArray(name).append(" -3.7").constData()) << zoom << -3.7 << -4;
         }
     }
 

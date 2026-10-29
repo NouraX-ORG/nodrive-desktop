@@ -10,8 +10,8 @@ Item {
     id: h
 
     required property var st
-    required property var top
-    required property var bottom
+    required property var topCells
+    required property var bottomCells
     property real offset: 0
 
     clip: true
@@ -23,7 +23,7 @@ Item {
         height: parent.height
 
         Repeater {
-            model: h.top
+            model: h.topCells
             delegate: Item {
                 id: month
                 required property var modelData
@@ -49,7 +49,7 @@ Item {
             }
         }
         Repeater {
-            model: h.bottom
+            model: h.bottomCells
             delegate: Item {
                 id: cell
                 required property var modelData

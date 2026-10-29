@@ -1761,6 +1761,11 @@ private Q_SLOTS:
             const auto image = window->grabWindow();
             QDir().mkpath(_shots);
             QVERIFY(image.save(QStringLiteral("%1/live-day-%2.png").arg(_shots, dark ? QStringLiteral("dark") : QStringLiteral("light"))));
+            // The Timeline of the same seeded data.
+            controller.setViewMode(QStringLiteral("timeline"));
+            QTest::qWait(600);
+            const auto timeline = window->grabWindow();
+            QVERIFY(timeline.save(QStringLiteral("%1/live-timeline-%2.png").arg(_shots, dark ? QStringLiteral("dark") : QStringLiteral("light"))));
             delete window;
         }
     }
