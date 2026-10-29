@@ -190,6 +190,17 @@ class TestNoDriveAgendaUi : public QObject
         QVERIFY2(qAbs(c.red() - want.red()) < 6 && qAbs(c.green() - want.green()) < 6 && qAbs(c.blue() - want.blue()) < 6, qPrintable(c.name() + QStringLiteral(" vs ") + want.name()));
     }
 
+    /// Waits until the item is there and the layout has settled (a slow machine moves the buttons a moment later), then clicks it.
+    static void clickNamed(QQuickWindow *window, QQuickItem *content, const QString &name)
+    {
+        QQuickItem *item = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT((item = findItem(content, name)) && item->isVisible() && item->width() > 0 && item->height() > 0, 8000);
+        QTest::qWait(300);
+        item = findItem(content, name);
+        QVERIFY(item);
+        click(window, item);
+    }
+
     static void click(QQuickWindow *window, QQuickItem *item)
     {
         QVERIFY(item);
@@ -914,7 +925,7 @@ private Q_SLOTS:
         QTRY_VERIFY(hasText(env->window, QStringLiteral("Paused")));
         shoot(env.get(), QStringLiteral("edit-agent-gantt"), dark);
 
-        click(env->window, findItem(content, QStringLiteral("agentChoice-AG-0001")));
+        clickNamed(env->window, content, QStringLiteral("agentChoice-AG-0001"));
         QTRY_VERIFY(hasText(env->window, QStringLiteral("Saved.")));
         bool found = false;
         for (const auto &r : env->transport->requests) {
@@ -956,7 +967,7 @@ private Q_SLOTS:
         shoot(env.get(), QStringLiteral("edit-agent-not-in-project"), dark);
         // Choosing it sends nothing.
         env->transport->requests.clear();
-        click(env->window, findItem(content, QStringLiteral("agentChoice-AG-0001")));
+        clickNamed(env->window, content, QStringLiteral("agentChoice-AG-0001"));
         QTest::qWait(100);
         for (const auto &r : env->transport->requests) {
             QVERIFY2(r.verb != "PUT", "nothing may be sent for an agent that is not in the project");
@@ -971,9 +982,9 @@ private Q_SLOTS:
         const auto env = open(QStringLiteral("ali"), dark);
         show(env.get());
         auto *content = env->window->contentItem();
-        click(env->window, findItem(content, QStringLiteral("newButton")));
+        clickNamed(env->window, content, QStringLiteral("newButton"));
         QVERIFY(shown(content, QStringLiteral("newMenu")));
-        click(env->window, findItem(content, QStringLiteral("newEventItem")));
+        clickNamed(env->window, content, QStringLiteral("newEventItem"));
         QTRY_VERIFY(shown(content, QStringLiteral("newItemDialog")));
         QVERIFY(hasText(env->window, QStringLiteral("New event")));
         QVERIFY(hasText(env->window, QStringLiteral("Agent")));
@@ -984,18 +995,15 @@ private Q_SLOTS:
         // The date of the day in view is already in the form.
         auto *startDate = findItem(content, QStringLiteral("newFieldStartDate"));
         QVERIFY(startDate);
-        qInfo() << "new event form: day" << env->controller->selectedDateIso() << "start" << startDate->property("text") << "end" << findItem(content, QStringLiteral("newFieldEndDate"))->property("text")
-                << "time" << findItem(content, QStringLiteral("newFieldStartTime"))->property("text");
         QTRY_COMPARE(startDate->property("text").toString(), QStringLiteral("2026-10-28"));
         findItem(content, QStringLiteral("newFieldTitle"))->setProperty("text", QStringLiteral("Planning with Sara"));
         QTest::qWait(60);
         shoot(env.get(), QStringLiteral("new-event"), dark);
 
         // Self is preselected: the new event has neither an agent id nor an agent tag.
-        click(env->window, findItem(content, QStringLiteral("newSaveButton")));
-        QTest::qWait(100);
+        clickNamed(env->window, content, QStringLiteral("newSaveButton"));
+        QTRY_COMPARE(env->transport->of("PUT").size(), 1);
         const auto puts = env->transport->of("PUT");
-        QCOMPARE(puts.size(), 1);
         QVERIFY(puts.first().url.path().startsWith(QStringLiteral("/remote.php/dav/calendars/ali/")));
         QVERIFY(puts.first().url.path().endsWith(QStringLiteral(".ics")));
         QCOMPARE(ScriptedTransport::header(puts.first(), "If-None-Match"), QByteArrayLiteral("*"));
@@ -1056,10 +1064,10 @@ private Q_SLOTS:
         show(env.get());
         auto *content = env->window->contentItem();
         selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
-        click(env->window, findItem(content, QStringLiteral("editButton")));
+        clickNamed(env->window, content, QStringLiteral("editButton"));
         QVERIFY(shown(content, QStringLiteral("editor")));
         findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Dentist (moved)"));
-        click(env->window, findItem(content, QStringLiteral("saveButton")));
+        clickNamed(env->window, content, QStringLiteral("saveButton"));
         auto *panel = findItem(content, QStringLiteral("notSentPanel"));
         QTRY_VERIFY(panel && panel->isVisible());
         QTRY_VERIFY(hasText(env->window, QStringLiteral("Not sent")));
@@ -1073,7 +1081,7 @@ private Q_SLOTS:
         // "Apply my change again": one fresh read and one write with the new ETag.
         prepend(env->transport, "PUT", path, 204, QByteArray(), {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"e10\"")}});
         env->transport->requests.clear();
-        click(env->window, findItem(content, QStringLiteral("applyAgainButton")));
+        clickNamed(env->window, content, QStringLiteral("applyAgainButton"));
         QTRY_VERIFY(!panel->isVisible());
         const auto puts = env->transport->of("PUT");
         QCOMPARE(puts.size(), 1);
@@ -1091,12 +1099,12 @@ private Q_SLOTS:
         show(env.get());
         auto *content = env->window->contentItem();
         selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
-        click(env->window, findItem(content, QStringLiteral("editButton")));
+        clickNamed(env->window, content, QStringLiteral("editButton"));
         findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Mine"));
-        click(env->window, findItem(content, QStringLiteral("saveButton")));
+        clickNamed(env->window, content, QStringLiteral("saveButton"));
         auto *panel = findItem(content, QStringLiteral("notSentPanel"));
         QTRY_VERIFY(panel && panel->isVisible());
-        click(env->window, findItem(content, QStringLiteral("keepOtherButton")));
+        clickNamed(env->window, content, QStringLiteral("keepOtherButton"));
         QTRY_VERIFY(!panel->isVisible());
         QCOMPARE(env->transport->count("PUT"), 0);
         QCOMPARE(env->agenda->edit()->queue().conflicts().size(), 0);
@@ -1111,10 +1119,10 @@ private Q_SLOTS:
         show(env.get());
         auto *content = env->window->contentItem();
         selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
-        click(env->window, findItem(content, QStringLiteral("editButton")));
+        clickNamed(env->window, content, QStringLiteral("editButton"));
         findItem(content, QStringLiteral("fieldTitle"))->setProperty("text", QStringLiteral("Dentist (new time)"));
         env->transport->offline = true; // the network goes away; NoDrive itself still thinks it is connected
-        click(env->window, findItem(content, QStringLiteral("saveButton")));
+        clickNamed(env->window, content, QStringLiteral("saveButton"));
         QTRY_VERIFY(hasText(env->window, QStringLiteral("Waiting to send 1 change")));
         QTRY_VERIFY(shown(content, QStringLiteral("badgePending")));
         QTRY_VERIFY(hasText(env->window, QStringLiteral("Dentist (new time)"))); // drawn at once
@@ -1133,17 +1141,17 @@ private Q_SLOTS:
         show(env.get());
         auto *content = env->window->contentItem();
         selectAndWait(env.get(), QStringLiteral("cal:personal/dentist.ics"));
-        click(env->window, findItem(content, QStringLiteral("deleteButton")));
+        clickNamed(env->window, content, QStringLiteral("deleteButton"));
         QTRY_VERIFY(shown(content, QStringLiteral("confirmDeleteDialog")));
         QVERIFY(hasText(env->window, QStringLiteral("Delete this event? It moves to the calendar's trash bin.")));
         shoot(env.get(), QStringLiteral("delete-confirm"), dark);
         // Cancel: nothing is sent.
-        click(env->window, findItem(content, QStringLiteral("cancelDeleteButton")));
+        clickNamed(env->window, content, QStringLiteral("cancelDeleteButton"));
         QVERIFY(!shown(content, QStringLiteral("confirmDeleteDialog")));
         QCOMPARE(env->transport->count("DELETE"), 0);
         // Delete: one DELETE with If-Match.
-        click(env->window, findItem(content, QStringLiteral("deleteButton")));
-        click(env->window, findItem(content, QStringLiteral("confirmDeleteButton")));
+        clickNamed(env->window, content, QStringLiteral("deleteButton"));
+        clickNamed(env->window, content, QStringLiteral("confirmDeleteButton"));
         QTRY_COMPARE(env->transport->count("DELETE"), 1);
         QCOMPARE(ScriptedTransport::header(env->transport->of("DELETE").first(), "If-Match"), QByteArrayLiteral("\"e1\""));
     }
@@ -1246,8 +1254,8 @@ private Q_SLOTS:
             }
             QVERIFY2(!allText(env->window).contains(QStringLiteral("nextcloud"), Qt::CaseInsensitive), qPrintable(key));
         }
-        click(env->window, findItem(content, QStringLiteral("newButton")));
-        click(env->window, findItem(content, QStringLiteral("newEventItem")));
+        clickNamed(env->window, content, QStringLiteral("newButton"));
+        clickNamed(env->window, content, QStringLiteral("newEventItem"));
         QTRY_VERIFY(shown(content, QStringLiteral("newItemDialog")));
         QVERIFY(!allText(env->window).contains(QStringLiteral("nextcloud"), Qt::CaseInsensitive));
     }

@@ -142,6 +142,15 @@ def type_title(page, old, new):
                     return True
             except Exception:
                 continue
+    locator = page.locator("[contenteditable=true]")
+    for i in range(locator.count()):
+        field = locator.nth(i)
+        try:
+            if field.is_visible() and (field.inner_text() or "").strip() == old:
+                field.fill(new)
+                return True
+        except Exception:
+            continue
     return False
 
 
@@ -204,6 +213,17 @@ def open_task_details(page, url, old):
     except Exception:
         page.get_by_text(old).first.click()
     page.wait_for_timeout(3000)
+    # The title in the header of the details (the right part of the page) is the field: a click makes it editable.
+    matches = page.get_by_text(old, exact=True)
+    for i in range(matches.count()):
+        try:
+            box = matches.nth(i).bounding_box()
+            if box and box["x"] > 900 and matches.nth(i).is_visible():
+                matches.nth(i).click()
+                page.wait_for_timeout(1500)
+                break
+        except Exception:
+            continue
 
 
 def drive(app, page, url, old, new, calendar, name, tag, opener):
