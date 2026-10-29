@@ -75,8 +75,8 @@ All rows at commit `14ebedb5c4`: Linux run [40736612257](https://github.com/Nour
 
 ### 1.1b NoAgenda core (CI, [noagenda.md](noagenda.md))
 
-Commit `654db7e45e` (branch `feature/noagenda-core`, after the independent review): Linux run [40804574745](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40804574745),
-macOS run [40804574849](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40804574849), Windows run [40804574940](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40804574940). All three are green. CI never contacts `drive.nourax.org`.
+Commit `46f8a71e0b` (branch `feature/noagenda-core`, approved by the independent review 2; the code is the same as in `654db7e45e`, the last commit is docs only): Linux run [40809977468](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40809977468),
+macOS run [40809977074](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40809977074), Windows run [40809977148](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40809977148). All three are green. CI never contacts `drive.nourax.org`.
 The unit tests use canned answers; the Linux job `agenda-server` uses a throwaway Nextcloud 35.0.2 in Docker with the
 pinned apps calendar 6.6.4, tasks 0.18.1, Deck 1.19.1 and nc_gantt 2.4.1 and throwaway accounts.
 

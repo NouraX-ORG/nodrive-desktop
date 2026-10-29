@@ -128,7 +128,7 @@ and never written to the artifact (the job greps for them).
 
 ## Auth proof (design section 5)
 
-Measured in the job `agenda-server` (Linux run [40804574745](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40804574745), commit `654db7e45e`,
+Measured in the job `agenda-server` (Linux run [40809977468](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40809977468), commit `46f8a71e0b`,
 artifact `nodrive-linux-agenda-server`) against a throwaway Nextcloud 35.0.2 with nc_gantt 2.4.1, Deck 1.19.1,
 Calendar 6.6.4 and Tasks 0.18.1. The credential is an app password made by `occ user:auth-tokens:add`, the same kind
 of credential the client gets from Login Flow v2, used through the client's own `Account` (Basic authentication).
@@ -169,6 +169,13 @@ fixtures (a missing key or another type fails the job).
   due date and may stay "late".
 - A symbol that the server puts in a title (for example the birthday cake) is drawn as an empty box where the system
   has no emoji font. Text from the server is shown as it is.
+- Rule 4.5 (b) recognises an agent by its exact name even when its person is not on the task (design 4.5 would call that
+  "unknown agent"); the result is only a flag ("belongs to Sara, not Ali"), nobody's work changes.
+- A person is not told about an agent of theirs that sits on a task in a project that is Hidden by default (a project
+  where they have no task of their own): its tasks are not read, so only the project's manager is told.
+- A single calendar that keeps failing keeps its old records (no growth) but still shows as updated; the banner does
+  not name that calendar yet.
+- In My team, a NoBoard card with several assignees words its row by the first assignee only.
 - Rule 4.5 (b) accepts either the person's display name or the name of the person's planning person
   when it checks the exact name of an agent's planning person (a little wider than "the person's display name").
 
