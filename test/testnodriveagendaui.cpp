@@ -1467,8 +1467,12 @@ private Q_SLOTS:
         QCOMPARE(whole, 1);
         QVERIFY2(tips.contains(QStringLiteral("After: Banner design (Sara)")), qPrintable(tips.join(QStringLiteral("; "))));
         QVERIFY(stubs >= 1);
-        QVERIFY(findItem(content, QStringLiteral("arrowCanvas")));
-        QCOMPARE(findItem(content, QStringLiteral("dependencyArrows"))->width(), tl->contentWidth());
+        auto *arrowLayer = findItem(content, QStringLiteral("dependencyArrows"));
+        QVERIFY(arrowLayer);
+        QCOMPARE(arrowLayer->width(), tl->contentWidth());
+        QVERIFY(countShown(content, QStringLiteral("arrowSegment")) >= 3); // the lines of the whole arrow and the stubs
+        QVERIFY(countShown(content, QStringLiteral("arrowHead")) >= 2);
+        QVERIFY(countShown(content, QStringLiteral("arrowHit")) >= 2);
 
         // My busy time is shaded and the days off are marked; today has its line.
         QCOMPARE(countShown(content, QStringLiteral("busyDay")) + countShown(content, QStringLiteral("dayOff")), 63);
@@ -1486,6 +1490,26 @@ private Q_SLOTS:
         }
         shoot(env.get(), QStringLiteral("timeline"), dark);
         checkBackground(env.get(), dark);
+
+        // The arrow between my two tasks is really drawn: the pixels next to the end of the predecessor have the line colour.
+        QPointF from;
+        for (const auto &a : tl->layout().arrows) {
+            if (!a.stub && a.fromKey == QLatin1String("gantt:task:102")) {
+                from = a.points.first();
+            }
+        }
+        QVERIFY(!from.isNull());
+        const auto image = env->window->grabWindow();
+        const double dpr = image.devicePixelRatio();
+        const QPointF scene = arrowLayer->mapToScene(QPointF(from.x() + 4, from.y()));
+        bool drawn = false;
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -2; dy <= 2; ++dy) {
+                const QColor c = image.pixelColor(qRound(scene.x() * dpr) + dx, qRound(scene.y() * dpr) + dy);
+                drawn = drawn || (dark ? luminance(c) > 150 : luminance(c) < 150);
+            }
+        }
+        QVERIFY2(drawn, "the line of the arrow is not on screen");
     }
 
     void theZoomSwitchesBetweenWeeksAndDays()

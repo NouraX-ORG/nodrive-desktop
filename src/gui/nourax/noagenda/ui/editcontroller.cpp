@@ -383,6 +383,7 @@ QString EditController::submit(const EditCommand &command)
     if (!_agenda || !_agenda->edit()) {
         return AgendaText::tr("Nothing can be changed right now.");
     }
+    _moveTexts.remove(command.itemKey);
     _agenda->edit()->submit(command);
     return QString();
 }
@@ -769,8 +770,9 @@ QString EditController::moveByDays(const QString &itemKey, int days)
         newEnd = end.addDays(days);
         fields.insert(QStringLiteral("start_date"), isoDate(newStart));
         fields.insert(QStringLiteral("end_date"), isoDate(newEnd));
-        const QString id = _agenda->edit()->submit(EditCommands::ganttUpdate(item, fields));
-        _moveTexts.insert(id, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
+        // The sentence is kept before the command is handed over: with a quick answer the result arrives inside submit().
+        _moveTexts.insert(item.key, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
+        _agenda->edit()->submit(EditCommands::ganttUpdate(item, fields));
         return QString();
     }
     if (item.home == Home::Tasks && item.kind == ItemKind::Todo) {
@@ -790,8 +792,8 @@ QString EditController::moveByDays(const QString &itemKey, int days)
         } else {
             fields.insert(QStringLiteral("due"), isoDate(newEnd));
         }
-        const QString id = _agenda->edit()->submit(EditCommands::calendarPatch(item, fields));
-        _moveTexts.insert(id, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
+        _moveTexts.insert(item.key, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
+        _agenda->edit()->submit(EditCommands::calendarPatch(item, fields));
         return QString();
     }
     return AgendaText::tr("This can't be moved here.");
@@ -869,11 +871,11 @@ void EditController::onUndoFinished(const EditResult &result)
 void EditController::onFinished(const EditCommand &command, const EditResult &result)
 {
     if (result.outcome != EditResult::Outcome::Done && result.outcome != EditResult::Outcome::Offline) {
-        _moveTexts.remove(command.id);
+        _moveTexts.remove(command.itemKey);
     }
     switch (result.outcome) {
     case EditResult::Outcome::Done: {
-        QString text = _moveTexts.take(command.id);
+        QString text = _moveTexts.take(command.itemKey);
         if (text.isEmpty()) {
             text = AgendaText::tr("Saved.");
         } else {

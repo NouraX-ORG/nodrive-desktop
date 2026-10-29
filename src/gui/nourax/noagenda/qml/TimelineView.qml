@@ -29,13 +29,19 @@ Item {
     function scrollTo(x) {
         flick.contentX = Math.max(0, Math.min(x, Math.max(0, flick.contentWidth - flick.width)));
     }
+    // Scrolls to today; a call that runs after the window has gone does nothing.
+    function scrollToToday() {
+        if (v && v.tl) {
+            v.scrollTo(v.tl.scrollTargetX());
+        }
+    }
 
     Connections {
         target: v.tl
-        function onScrollRequested(x) { Qt.callLater(function () { v.scrollTo(x); }); }
+        function onScrollRequested(x) { Qt.callLater(function () { if (v && v.tl) v.scrollTo(x); }); }
     }
-    Component.onCompleted: Qt.callLater(function () { v.scrollTo(v.tl.scrollTargetX()); })
-    onVisibleChanged: if (visible) Qt.callLater(function () { v.scrollTo(v.tl.scrollTargetX()); })
+    Component.onCompleted: Qt.callLater(scrollToToday)
+    onVisibleChanged: if (visible) Qt.callLater(scrollToToday)
 
     // ---- the tool row ---------------------------------------------------------------------------------------------------
     Item {
@@ -58,7 +64,7 @@ Item {
             options: [{ "value": "weeks", "label": qsTr("Weeks") }, { "value": "days", "label": qsTr("Days") }]
             onPicked: function (value) {
                 v.tl.zoom = value;
-                Qt.callLater(function () { v.scrollTo(v.tl.scrollTargetX()); });
+                Qt.callLater(v.scrollToToday);
             }
         }
         Text {

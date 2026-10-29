@@ -96,7 +96,7 @@ private:
     QString _toast;
     QString _toastTone;
     QString _undoOp;
-    QHash<QString, QString> _moveTexts; ///< command id -> "Moved to 4 Nov - 8 Nov" (the Timeline)
+    QHash<QString, QString> _moveTexts; ///< item key -> "Moved to 4 Nov - 8 Nov" (the Timeline)
     QTimer _toastTimer;
 };
 
