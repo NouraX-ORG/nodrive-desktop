@@ -134,7 +134,17 @@ void projectLoop(const StatePtr &s)
             const auto relation = ProjectRelation::of(project, s->options.davUser, s->options.serverAdmin, s->options.groups,
                 s->myProjectIds, d.shares, d.sharesKnown);
             if (s->options.wantProject && !s->options.wantProject(relation)) {
-                s->result.projectData.remove(id);
+                // Hidden: its tasks are not read. The shares that were fetched stay, so that they are not
+                // fetched again on every refresh (they are read once a day).
+                if (d.sharesKnown) {
+                    GanttProjectData kept;
+                    kept.shares = d.shares;
+                    kept.sharesKnown = true;
+                    kept.sharesFetchedAt = d.sharesFetchedAt;
+                    s->result.projectData.insert(id, kept);
+                } else {
+                    s->result.projectData.remove(id);
+                }
                 ++s->projectIndex;
                 projectLoop(s);
                 return;

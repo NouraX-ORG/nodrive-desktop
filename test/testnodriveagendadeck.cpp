@@ -79,6 +79,51 @@ private Q_SLOTS:
         QCOMPARE(result.snapshot.boards.size(), 1);
     }
 
+    void aHiddenBoardStaysInTheSourcesAndCanBeShownAgain()
+    {
+        FakeTransport transport;
+        auto input = loadScenario(QStringLiteral("ali"), &transport);
+        const auto stacksPath = QStringLiteral("/index.php/apps/deck/api/v1.0/boards/10/stacks");
+        const int stacksBefore = transport.count("GET", stacksPath);
+
+        // The person switches the board to Hidden: the next refresh does not read its cards...
+        input.settings.setBoardMode(10, WorkMode::Hidden);
+        DeckFetchOptions options;
+        options.davUser = QStringLiteral("ali");
+        options.version = QStringLiteral("1.19.1");
+        options.now = fixedNow().addSecs(300);
+        options.wantBoard = [&input](const BoardRelation &relation) { return input.settings.boardMode(relation) != WorkMode::Hidden; };
+        DeckFetchResult hidden;
+        DeckClient::fetch(&transport, options, input.deck, [&hidden](const DeckFetchResult &r) { hidden = r; });
+        QVERIFY(hidden.ok);
+        QCOMPARE(transport.count("GET", stacksPath), stacksBefore);
+        // ...but the board itself is still in the snapshot, so the Sources screen still lists it.
+        QCOMPARE(hidden.snapshot.boards.size(), 1);
+        QVERIFY(!hidden.snapshot.boards.first().toObject().contains(QLatin1String("_stacks")));
+        input.deck = hidden.snapshot;
+        const auto out = AgendaBuilder::build(input);
+        const SourceEntry *entry = nullptr;
+        for (const auto &e : out.sources) {
+            if (e.type == SourceEntry::Type::Board && e.key == QLatin1String("10")) {
+                entry = &e;
+            }
+        }
+        QVERIFY2(entry, "the hidden board must stay on the Sources screen");
+        QCOMPARE(entry->mode, QStringLiteral("hidden"));
+        for (const auto &i : out.items) {
+            QVERIFY(i.boardId != 10);
+        }
+
+        // Switched back: the cards are read again.
+        input.settings.setBoardMode(10, WorkMode::Do);
+        options.now = fixedNow().addSecs(600);
+        DeckFetchResult shown;
+        DeckClient::fetch(&transport, options, input.deck, [&shown](const DeckFetchResult &r) { shown = r; });
+        QVERIFY(shown.ok);
+        QCOMPARE(transport.count("GET", stacksPath), stacksBefore + 1);
+        QVERIFY(shown.snapshot.boards.first().toObject().contains(QLatin1String("_stacks")));
+    }
+
     void myCardsHaveTheirAgentFromTheLabel()
     {
         const auto out = AgendaBuilder::build(loadAliAnswered());

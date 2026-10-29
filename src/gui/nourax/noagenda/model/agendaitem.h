@@ -40,7 +40,7 @@ struct AgentRef
     bool retired = false;
     bool paused = false;
     bool otherOrganisation = false; ///< name is hidden ("Agent of Ali")
-    QString owner; ///< display name used for "Agent of %1"
+    QString owner; ///< display name used for "Agent of %1" (empty when it is not known: never a user id)
 
     /// "Self", "Writer-Bot", "AG-0001 (unknown agent)", "Writer-Bot (retired)" or "Agent of Ali".
     [[nodiscard]] QString displayText() const;
@@ -118,6 +118,9 @@ struct AgendaItem
     bool boardBadge = false; ///< a Gantt task that is linked to a board card
     bool timeApproximated = false;
     QList<ProblemFlag> problems;
+    /// A row that only reports a problem that concerns me (for example my agent sits on a task without me).
+    /// It is not my work: no date, no workload, no clash, not in the "No date" list.
+    bool problemOnly = false;
 
     QString description;
     QString location;
@@ -148,7 +151,9 @@ struct AgendaItem
 struct SourceStatus
 {
     /// Saved: read from the cache at start, no attempt yet (no banner). Cached: the last attempt failed, the saved copy is shown.
-    enum class State { NeverLoaded, Fresh, Saved, Cached, Failed, ReadOnly, Unavailable, NotLinked, NeedsLogin };
+    /// Refused: the app on the server (NoGantt or NoBoard) answered 401 or 403 to a signed-in, connected account
+    /// (design 5: that part turns into "Open in NoGantt" / "Open in NoBoard"; the sign-in state is AccountState's).
+    enum class State { NeverLoaded, Fresh, Saved, Cached, Failed, ReadOnly, Unavailable, NotLinked, NeedsLogin, Refused };
 
     QString key; ///< calendar | gantt | board | registry
     State state = State::NeverLoaded;

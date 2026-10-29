@@ -33,7 +33,8 @@ QString AccountTransport::davUser() const
 void AccountTransport::send(const HttpRequest &request, const HttpCallback &done)
 {
     // The account's own server only: refuse anything that points elsewhere.
-    if (request.url.host() != _account->url().host() || request.url.port() != _account->url().port()) {
+    // Same scheme, host and port: never a downgrade to plain http and never another server.
+    if (request.url.scheme() != _account->url().scheme() || request.url.host() != _account->url().host() || request.url.port() != _account->url().port()) {
         HttpResult refused;
         refused.networkError = true;
         QMetaObject::invokeMethod(this, [done, refused] { done(refused); }, Qt::QueuedConnection);

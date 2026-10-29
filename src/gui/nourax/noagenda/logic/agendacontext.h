@@ -36,14 +36,26 @@ struct BuildContext
     [[nodiscard]] bool isMe(const QString &uid) const { return !uid.isEmpty() && uid.compare(me, Qt::CaseInsensitive) == 0; }
     [[nodiscard]] QSet<QString> myOrganisations() const { return registry.organisationsOf(me); }
 
+    /// Whether the name of this agent may be shown to me: my own agents and the agents of my organisations
+    /// (design 4.1: only ever shown agents of their own organisation).
+    [[nodiscard]] bool mayNameAgent(const Agent &agent) const { return isMe(agent.person) || myOrganisations().contains(agent.organisation); }
+
+    /// The name of an agent as it is written inside a problem sentence: the registry name when I may see it,
+    /// otherwise "Another organisation's agent". The same rule as the agent column (refFor).
+    [[nodiscard]] QString agentNameInText(const Agent &agent) const
+    {
+        return mayNameAgent(agent) ? agent.name : AgendaText::tr("Another organisation's agent");
+    }
+
     /// The reference shown for a registry agent. The name of an agent of another person is shown only
     /// when its organisation is one of mine (design 4.1 privacy); otherwise "Agent of <person>".
+    /// `ownerDisplayName` is a person's display name, never a user id; when it is unknown the owner is left out.
     [[nodiscard]] AgentRef refFor(const Agent &agent, const QString &ownerDisplayName) const
     {
         auto ref = AgentRegistry::refFor(agent);
-        if (!isMe(agent.person) && !myOrganisations().contains(agent.organisation)) {
+        if (!mayNameAgent(agent)) {
             ref.otherOrganisation = true;
-            ref.owner = ownerDisplayName.isEmpty() ? agent.person : ownerDisplayName;
+            ref.owner = ownerDisplayName;
         }
         return ref;
     }
@@ -62,7 +74,9 @@ QString lateDays(int days);
 QString dueToday();
 QString blockedBy(const QString &title);
 QString agentNoPerson();
+/// `owner` is the display name of the person the agent belongs to; empty when it is not known (never a user id).
 QString agentWrongPerson(const QString &agent, const QString &owner, const QString &other);
+QString agentWithoutYou(const QString &agent, const QString &item);
 QString twoAgents(const QString &person);
 QString unknownAgent(const QString &label);
 QString retiredAgent(const QString &name);

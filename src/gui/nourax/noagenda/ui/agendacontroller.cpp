@@ -528,7 +528,7 @@ QVariantMap AgendaController::rowOf(const AgendaItem &item, bool inTeam) const
         {QStringLiteral("tentative"), item.tentative},
         {QStringLiteral("transparent"), item.transparent},
         {QStringLiteral("info"), item.info},
-        {QStringLiteral("dim"), item.workKind == WorkKind::MyAgent},
+        {QStringLiteral("dim"), item.workKind == WorkKind::MyAgent && !item.problemOnly},
         {QStringLiteral("timeText"), QString()},
     };
 }
@@ -545,10 +545,17 @@ void AgendaController::addDay(const QDate &day, bool dayView, QVariantList *out,
     QList<const AgendaItem *> working;
     QList<const AgendaItem *> late;
     QList<const AgendaItem *> team;
+    QList<const AgendaItem *> attention; ///< rows that only report a problem with my agents (not my work)
     QSet<QString> teamKeys;
 
     for (const auto &item : state.items) {
         if (!visible(item)) {
+            continue;
+        }
+        if (item.problemOnly) {
+            if (isToday) {
+                attention.append(&item);
+            }
             continue;
         }
         if (item.workKind == WorkKind::Team) {
@@ -615,6 +622,7 @@ void AgendaController::addDay(const QDate &day, bool dayView, QVariantList *out,
     std::sort(working.begin(), working.end(), byKind);
     std::sort(late.begin(), late.end(), [](const AgendaItem *a, const AgendaItem *b) { return a->lateDays > b->lateDays; });
     std::sort(team.begin(), team.end(), [](const AgendaItem *a, const AgendaItem *b) { return a->title.localeAwareCompare(b->title) < 0; });
+    std::sort(attention.begin(), attention.end(), [](const AgendaItem *a, const AgendaItem *b) { return a->title.localeAwareCompare(b->title) < 0; });
 
     QVariantList rows;
     auto addItems = [&](const QList<const AgendaItem *> &list, bool inTeam) {
@@ -639,6 +647,10 @@ void AgendaController::addDay(const QDate &day, bool dayView, QVariantList *out,
         rows.append(headerRow(QStringLiteral("group"), AgendaText::tr("In progress"), working.size()));
         addItems(working, false);
     }
+    if (!attention.isEmpty()) {
+        rows.append(headerRow(QStringLiteral("group"), AgendaText::tr("Problems with your agents"), attention.size()));
+        addItems(attention, false);
+    }
     const bool teamSection = state.build.anyOversee && _chipTeam;
     if (teamSection && (isToday || !team.isEmpty())) {
         if (!team.isEmpty()) {
@@ -654,7 +666,7 @@ void AgendaController::addDay(const QDate &day, bool dayView, QVariantList *out,
     if (dayView && isToday) {
         QList<const AgendaItem *> noDate;
         for (const auto &item : state.items) {
-            if (visible(item) && item.workKind != WorkKind::Team && !item.hasDate() && !item.done) {
+            if (visible(item) && item.workKind != WorkKind::Team && !item.problemOnly && !item.hasDate() && !item.done) {
                 noDate.append(&item);
             }
         }
@@ -830,7 +842,14 @@ void AgendaController::rebuildBanners()
             if (s.key == QLatin1String("registry")) {
                 continue;
             }
-            if (s.state == SourceStatus::State::Cached) {
+            if (s.state == SourceStatus::State::Refused) {
+                const bool gantt = s.key == QLatin1String("gantt");
+                const QString text = s.savedAt.isValid()
+                    ? AgendaText::tr("%1 didn't accept NoDrive's sign-in on your server. Showing what was saved at %2.").arg(sourceLabel(s.key), savedAtText(s.savedAt))
+                    : AgendaText::tr("%1 didn't accept NoDrive's sign-in on your server. Open it in your browser instead.").arg(sourceLabel(s.key));
+                add(text, QStringLiteral("warn"), gantt ? QStringLiteral("openGantt") : QStringLiteral("openBoard"),
+                    gantt ? AgendaText::tr("Open in NoGantt") : AgendaText::tr("Open in NoBoard"));
+            } else if (s.state == SourceStatus::State::Cached) {
                 add(AgendaText::tr("%1 can't be reached; showing what was saved at %2.").arg(sourceLabel(s.key), savedAtText(s.savedAt)), QStringLiteral("warn"));
             } else if (s.state == SourceStatus::State::Failed) {
                 add(AgendaText::tr("%1 can't be reached.").arg(sourceLabel(s.key)), QStringLiteral("warn"));

@@ -10,6 +10,8 @@
 #include "../model/agendacolors.h"
 
 #include <QLoggingCategory>
+#include <QPair>
+#include <QSet>
 #include <QUrl>
 
 #include <memory>
@@ -148,7 +150,18 @@ struct ReadState
     QList<CalendarInfo> toRead;
     int index = 0;
     bool isFinished = false;
+    /// (calendar uri, true = to-dos) of every read that failed in this refresh. One entry per calendar and component.
+    QSet<QPair<QString, bool>> failedParts;
 };
+
+/// A failed read of one component of a calendar: its old records are kept, once, and nothing else of that calendar.
+void markFailed(const std::shared_ptr<ReadState> &s, const QString &uri, bool todos)
+{
+    s->failedParts.insert({uri, todos});
+    if (!s->result.failedCalendars.contains(uri)) {
+        s->result.failedCalendars.append(uri);
+    }
+}
 
 HttpRequest davRequest(HttpTransport *t, const QByteArray &verb, const QString &href, int depth, const QByteArray &body)
 {
@@ -190,7 +203,7 @@ void readTodos(const std::shared_ptr<ReadState> &s, const CalendarInfo &cal)
             }
         } else {
             qCInfo(lcAgendaCal) << "to-do query answered" << r.status;
-            s->result.failedCalendars.append(cal.uri);
+            markFailed(s, cal.uri, true);
         }
         ++s->index;
         readNext(s);
@@ -215,7 +228,7 @@ void readEvents(const std::shared_ptr<ReadState> &s, const CalendarInfo &cal)
             }
         } else {
             qCInfo(lcAgendaCal) << "event query answered" << r.status;
-            s->result.failedCalendars.append(cal.uri);
+            markFailed(s, cal.uri, false);
         }
         if (cal.hasTodos) {
             readTodos(s, cal);
@@ -256,12 +269,11 @@ void readNext(const std::shared_ptr<ReadState> &s)
         }
         return;
     }
-    // A calendar that could not be read keeps its old records.
-    for (const auto &failed : std::as_const(s->result.failedCalendars)) {
-        for (const auto &rec : s->previous.records) {
-            if (rec.calendarUri == failed) {
-                s->result.records.append(rec);
-            }
+    // A part (events or to-dos) of a calendar that could not be read keeps its old records. Only that part:
+    // the part that was read fresh must not be mixed with its old records, and nothing is added twice.
+    for (const auto &rec : s->previous.records) {
+        if (s->failedParts.contains({rec.calendarUri, rec.isTodo})) {
+            s->result.records.append(rec);
         }
     }
     s->result.loaded = true;

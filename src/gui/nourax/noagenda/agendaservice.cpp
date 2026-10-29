@@ -42,7 +42,9 @@ void AgendaService::start()
         watch(state.data());
     }
     connect(AccountManager::instance(), &AccountManager::accountAdded, this, &AgendaService::watch);
-    connect(AccountManager::instance(), &AccountManager::accountRemoved, this, &AgendaService::remove);
+    // Order of removeAccountState(): accountSyncConnectionRemoved, then accountRemoved.
+    connect(AccountManager::instance(), &AccountManager::accountSyncConnectionRemoved, this, &AgendaService::accountDeleted);
+    connect(AccountManager::instance(), &AccountManager::accountRemoved, this, &AgendaService::accountClosed);
     _timer.start();
 }
 
@@ -52,6 +54,9 @@ void AgendaService::watch(AccountState *state)
         return;
     }
     const auto id = state->account()->id();
+    if (_states.count(id) && _states[id] == state) {
+        return; // already watched
+    }
     _states[id] = state;
     connect(state, &AccountState::stateChanged, this, [this, id] {
         const auto it = _states.find(id);
@@ -71,22 +76,44 @@ void AgendaService::watch(AccountState *state)
             agenda->refresh(false);
         }
     });
+
+    // NoAgenda was opened for this account before: load its saved data now (no request), so that the
+    // 5 minute refresh keeps running after a restart even if the window is not opened.
+    if (!_agendas.count(id) && AgendaCache(AgendaCache::directoryForAccount(id)).loadSettings().everOpened) {
+        agendaFor(state);
+    }
 }
 
-void AgendaService::remove(AccountState *state)
+void AgendaService::accountDeleted(AccountState *state)
 {
     if (!state || !state->account()) {
         return;
     }
-    const auto id = state->account()->id();
+    forget(state->account()->id(), true);
+}
+
+void AgendaService::accountClosed(AccountState *state)
+{
+    if (!state || !state->account()) {
+        return;
+    }
+    forget(state->account()->id(), false);
+}
+
+void AgendaService::forget(const QString &id, bool deleteData)
+{
     Q_EMIT agendaRemoved(id); // windows close first
     const auto it = _agendas.find(id);
+    if (deleteData) {
+        // NoAgenda's own copy of the server data goes away with a removed account (it holds personal events).
+        if (it != _agendas.end()) {
+            it->second->removeCache();
+        } else {
+            AgendaCache(AgendaCache::directoryForAccount(id)).removeAll();
+        }
+    }
     if (it != _agendas.end()) {
-        // NoAgenda's own copy of the server data goes away with the account (it holds personal events).
-        it->second->removeCache();
         _agendas.erase(it);
-    } else {
-        AgendaCache(AgendaCache::directoryForAccount(id)).removeAll();
     }
     _states.erase(id);
 }

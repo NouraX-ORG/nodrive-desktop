@@ -68,6 +68,8 @@ public:
     [[nodiscard]] const Agent *byId(const QString &id) const;
     /// Board label title, compared after Unicode normalisation (NFC).
     [[nodiscard]] const Agent *byLabel(const QString &label) const;
+    /// Every agent with this board label (names are unique only within an organisation, so several can match).
+    [[nodiscard]] QList<const Agent *> allByLabel(const QString &label) const;
     [[nodiscard]] const Agent *byTag(const QString &tag) const;
     [[nodiscard]] const Agent *byResourceId(int resourceId) const;
     [[nodiscard]] QList<const Agent *> ofPerson(const QString &uid) const;

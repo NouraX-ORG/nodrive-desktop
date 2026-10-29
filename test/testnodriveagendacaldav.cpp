@@ -230,6 +230,89 @@ private Q_SLOTS:
         QCOMPARE(workAfter, workBefore);
     }
 
+    /// Counts the records of one calendar, optionally only the to-dos or only the events.
+    static int recordsOf(const CalendarSnapshot &snapshot, const QString &uri, bool todos)
+    {
+        int n = 0;
+        for (const auto &r : snapshot.records) {
+            n += (r.calendarUri == uri && r.isTodo == todos) ? 1 : 0;
+        }
+        return n;
+    }
+
+    void aCalendarWithEventsAndTodosThatFailsOnBothKeepsItsOldRecordsOnce()
+    {
+        FakeTransport transport;
+        routeScenario(&transport, QStringLiteral("ali"));
+        CalendarReadOptions options;
+        options.davUser = QStringLiteral("ali");
+        options.zone = QTimeZone(QTimeZone::UTC);
+        CalendarReader::syncWindow(QDate(2026, 10, 28), &options.from, &options.to);
+        options.now = fixedNow();
+        options.forceFull = true;
+        CalendarReadResult first;
+        CalendarReader::read(&transport, options, CalendarSnapshot(), [&first](const CalendarReadResult &r) { first = r; });
+        const int eventsBefore = recordsOf(first.snapshot, QStringLiteral("personal"), false);
+        const int todosBefore = recordsOf(first.snapshot, QStringLiteral("personal"), true);
+        const int totalBefore = static_cast<int>(first.snapshot.records.size());
+        QVERIFY(eventsBefore > 0);
+        QVERIFY(todosBefore > 0);
+        // Both queries of the default calendar (events and to-dos) now answer 500, refresh after refresh.
+        for (auto &a : transport.answers) {
+            if (a.path == QLatin1String("/remote.php/dav/calendars/ali/personal/")) {
+                a.status = 500;
+            }
+        }
+        CalendarSnapshot current = first.snapshot;
+        for (int refresh = 0; refresh < 4; ++refresh) {
+            CalendarReadResult next;
+            CalendarReader::read(&transport, options, current, [&next](const CalendarReadResult &r) { next = r; });
+            QVERIFY(next.ok);
+            QCOMPARE(next.snapshot.failedCalendars, QStringList{QStringLiteral("personal")}); // once, not twice
+            QCOMPARE(recordsOf(next.snapshot, QStringLiteral("personal"), false), eventsBefore);
+            QCOMPARE(recordsOf(next.snapshot, QStringLiteral("personal"), true), todosBefore);
+            QCOMPARE(static_cast<int>(next.snapshot.records.size()), totalBefore); // nothing grows
+            // The cache form (calendars.json) does not grow either.
+            current = CalendarSnapshot::fromJson(next.snapshot.toJson());
+            QCOMPARE(static_cast<int>(current.records.size()), totalBefore);
+        }
+    }
+
+    void aCalendarWithEventsAndTodosWhereOnlyOneQueryFailsHasNoDuplicates()
+    {
+        for (const QByteArray failing : {QByteArrayLiteral("VEVENT"), QByteArrayLiteral("VTODO")}) {
+            FakeTransport transport;
+            routeScenario(&transport, QStringLiteral("ali"));
+            CalendarReadOptions options;
+            options.davUser = QStringLiteral("ali");
+            options.zone = QTimeZone(QTimeZone::UTC);
+            CalendarReader::syncWindow(QDate(2026, 10, 28), &options.from, &options.to);
+            options.now = fixedNow();
+            options.forceFull = true;
+            CalendarReadResult first;
+            CalendarReader::read(&transport, options, CalendarSnapshot(), [&first](const CalendarReadResult &r) { first = r; });
+            const int eventsBefore = recordsOf(first.snapshot, QStringLiteral("personal"), false);
+            const int todosBefore = recordsOf(first.snapshot, QStringLiteral("personal"), true);
+            const int totalBefore = static_cast<int>(first.snapshot.records.size());
+            for (auto &a : transport.answers) {
+                if (a.path == QLatin1String("/remote.php/dav/calendars/ali/personal/") && a.bodyContains == failing) {
+                    a.status = 500;
+                }
+            }
+            CalendarSnapshot current = first.snapshot;
+            for (int refresh = 0; refresh < 3; ++refresh) {
+                CalendarReadResult next;
+                CalendarReader::read(&transport, options, current, [&next](const CalendarReadResult &r) { next = r; });
+                QVERIFY(next.ok);
+                QCOMPARE(next.snapshot.failedCalendars, QStringList{QStringLiteral("personal")});
+                QCOMPARE(recordsOf(next.snapshot, QStringLiteral("personal"), false), eventsBefore);
+                QCOMPARE(recordsOf(next.snapshot, QStringLiteral("personal"), true), todosBefore);
+                QCOMPARE(static_cast<int>(next.snapshot.records.size()), totalBefore);
+                current = next.snapshot;
+            }
+        }
+    }
+
     void aFailingPrincipalFailsTheWholeReadAndKeepsThePrevious()
     {
         FakeTransport transport;

@@ -101,6 +101,9 @@ public:
     // Back-off of a source, in minutes, after `failures` failed reads: 5, 10, 20, then 30.
     static int backoffMinutes(int failures);
 
+    /// 401 or 403: the server (or one of its apps) refuses the sign-in.
+    static bool isRefusal(int httpStatus);
+
 Q_SIGNALS:
     void stateChanged();
     void refreshFinished();

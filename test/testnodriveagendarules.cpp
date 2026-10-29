@@ -9,7 +9,11 @@
 #include "nodrive/noagenda/agendatestsupport.h"
 
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
+
+#include <functional>
 
 using namespace AgendaTest;
 
@@ -33,6 +37,60 @@ class TestNoDriveAgendaRules : public QObject
             n += (i.workKind == WorkKind::Team && !i.problems.isEmpty()) ? 1 : 0;
         }
         return n;
+    }
+
+    /// The fixture registry with `edit` applied to every agent.
+    static AgentRegistry registryWith(const std::function<void(QJsonObject &)> &edit)
+    {
+        auto doc = QJsonDocument::fromJson(fixture(QStringLiteral("agent-registry.json"))).object();
+        auto agents = doc.value(QLatin1String("agents")).toArray();
+        for (int i = 0; i < agents.size(); ++i) {
+            auto agent = agents.at(i).toObject();
+            edit(agent);
+            agents[i] = agent;
+        }
+        doc.insert(QStringLiteral("agents"), agents);
+        return AgentRegistry::parse(QJsonDocument(doc).toJson());
+    }
+    /// The text of the first problem of this kind on the row with this key (empty if there is none).
+    static QString sentenceOf(const QList<AgendaItem> &items, const QString &key, ProblemFlag::Kind kind)
+    {
+        if (const auto *row = find(items, key)) {
+            for (const auto &p : row->problems) {
+                if (p.kind == kind) {
+                    return p.text;
+                }
+            }
+        }
+        return QString();
+    }
+    /// The input with one board label (a title) on a card, replacing its labels.
+    static BuildInput withCardLabel(BuildInput input, int cardId, const QString &label)
+    {
+        QJsonArray boards;
+        for (const auto &b : std::as_const(input.deck.boards)) {
+            auto board = b.toObject();
+            QJsonArray stacks;
+            for (const auto &st : board.value(QLatin1String("_stacks")).toArray()) {
+                auto stack = st.toObject();
+                QJsonArray cards;
+                for (const auto &c : stack.value(QLatin1String("cards")).toArray()) {
+                    auto card = c.toObject();
+                    if (card.value(QLatin1String("id")).toInt() == cardId) {
+                        QJsonArray labels;
+                        labels.append(QJsonObject{{QStringLiteral("id"), 9}, {QStringLiteral("title"), label}});
+                        card.insert(QStringLiteral("labels"), labels);
+                    }
+                    cards.append(card);
+                }
+                stack.insert(QStringLiteral("cards"), cards);
+                stacks.append(stack);
+            }
+            board.insert(QStringLiteral("_stacks"), stacks);
+            boards.append(board);
+        }
+        input.deck.boards = boards;
+        return input;
     }
 
 private Q_SLOTS:
@@ -236,7 +294,7 @@ private Q_SLOTS:
     void everyHomeGivesItsRows()
     {
         const auto out = AgendaBuilder::build(loadAliAnswered());
-        QCOMPARE(out.items.size(), 32); // 19 calendar and to-do rows, 9 NoGantt, 4 NoBoard
+        QCOMPARE(out.items.size(), 33); // 19 calendar and to-do rows, 10 NoGantt (one only reports a problem), 4 NoBoard
         int events = 0;
         int todos = 0;
         int tasks = 0;
@@ -251,7 +309,7 @@ private Q_SLOTS:
         }
         QCOMPARE(events, 14);
         QCOMPARE(todos, 5);
-        QCOMPARE(tasks, 8);
+        QCOMPARE(tasks, 9); // 8 tasks of mine and the row that only reports "Writer-Bot is on Orphan writing without you"
         QCOMPARE(milestones, 1);
         QCOMPARE(cards, 4);
     }
@@ -391,6 +449,226 @@ private Q_SLOTS:
         QVERIFY(!hasProblem(*find(maraOut.items, QStringLiteral("gantt:task:113:ali")), ProblemFlag::Kind::UnknownAgent));
     }
 
+    // ---- design 4.4, row 1: the person is told when his agent sits on an item without him ---------------------------
+    void thePersonIsToldWhenHisAgentIsOnATaskWithoutHim()
+    {
+        const auto out = AgendaBuilder::build(loadScenario(QStringLiteral("ali")));
+        // Task 106 "Orphan writing" has Writer-Bot (Ali's agent) and nobody else.
+        QVERIFY(!find(out.items, QStringLiteral("gantt:task:106"))); // it is not Ali's task
+        const auto *row = find(out.items, QStringLiteral("gantt:noperson:106:AG-0001"));
+        QVERIFY2(row, "Ali must be told about the task his agent is on without him");
+        QVERIFY(row->problemOnly);
+        QCOMPARE(row->title, QStringLiteral("Writer-Bot is on \"Orphan writing\" without you"));
+        QCOMPARE(row->workKind, WorkKind::MyAgent);
+        QCOMPARE(row->agent.displayText(), QStringLiteral("Writer-Bot"));
+        QVERIFY(hasProblem(*row, ProblemFlag::Kind::AgentNoPerson));
+        QCOMPARE(row->projectId, 1);
+        QCOMPARE(row->taskId, 106);
+        // It is not his work: no date (so no workload, no clash, no dot in the month grid), and not late.
+        QVERIFY(!row->hasDate());
+        QVERIFY(!row->late && !row->dueToday);
+        // The sentence is the title, shown once.
+        QCOMPARE(row->problems.size(), 1);
+        QCOMPARE(row->problems.first().text, row->title);
+        // The manager of the project gets the problem on the team row, not this one.
+        const auto maraOut = AgendaBuilder::build(loadScenario(QStringLiteral("mara")));
+        QVERIFY(!find(maraOut.items, QStringLiteral("gantt:noperson:106:AG-0001")));
+        QVERIFY(hasProblem(*find(maraOut.items, QStringLiteral("gantt:task:106")), ProblemFlag::Kind::AgentNoPerson));
+        // Only his own agents concern Ali.
+        for (const auto &i : out.items) {
+            QVERIFY(!i.key.startsWith(QLatin1String("gantt:noperson:")) || i.key == QLatin1String("gantt:noperson:106:AG-0001"));
+        }
+    }
+
+    void thePersonIsToldWhenHisAgentIsOnACardNobodyHas()
+    {
+        auto input = loadScenario(QStringLiteral("ali"));
+        input = withCardLabel(input, 508, robot() + QStringLiteral(" Writer-Bot")); // "Unassigned backlog"
+        const auto out = AgendaBuilder::build(input);
+        QVERIFY(!findTitle(out.items, QStringLiteral("Unassigned backlog"))); // the card is not his
+        const auto *row = find(out.items, QStringLiteral("deck:noperson:508:AG-0001"));
+        QVERIFY2(row, "Ali must be told about the card his agent is on without him");
+        QVERIFY(row->problemOnly);
+        QCOMPARE(row->title, QStringLiteral("Writer-Bot is on \"Unassigned backlog\" without you"));
+        QCOMPARE(row->home, Home::Board);
+        QCOMPARE(row->cardId, 508);
+        QVERIFY(!row->hasDate());
+        QVERIFY(hasProblem(*row, ProblemFlag::Kind::AgentNoPerson));
+    }
+
+    // ---- design 4.4 and 4.1: no user id and no other organisation's agent name in a sentence ------------------------------
+    void aPairingSentenceNeverShowsAUserIdOrAnotherOrganisationsAgent()
+    {
+        const QString uuid = QStringLiteral("00000000-0000-4000-8000-00000000000a");
+
+        // (1) NoGantt: Design-Bot (AG-0002, Sara's) is paired with Ali. Its owner is a UUID that no visible planning person has.
+        {
+            auto input = loadScenario(QStringLiteral("mara"));
+            input.registry = registryWith([&uuid](QJsonObject &agent) {
+                if (agent.value(QLatin1String("id")).toString() == QLatin1String("AG-0002")) {
+                    agent.insert(QStringLiteral("person"), uuid);
+                    auto links = agent.value(QLatin1String("links")).toObject();
+                    links.insert(QStringLiteral("nogantt_resource_ids"), QJsonArray{12});
+                    agent.insert(QStringLiteral("links"), links);
+                }
+            });
+            const auto out = AgendaBuilder::build(input);
+            QCOMPARE(sentenceOf(out.items, QStringLiteral("gantt:task:107:ali"), ProblemFlag::Kind::AgentWrongPerson), QStringLiteral("Design-Bot belongs to someone else, not Ali"));
+            for (const auto &i : out.items) {
+                for (const auto &p : i.problems) {
+                    QVERIFY2(!p.text.contains(uuid), qPrintable(p.text));
+                }
+            }
+        }
+        // (2) NoGantt: the agent is of another organisation: its name is not written (design 4.1).
+        {
+            auto input = loadScenario(QStringLiteral("mara"));
+            input.registry = registryWith([](QJsonObject &agent) {
+                if (agent.value(QLatin1String("id")).toString() == QLatin1String("AG-0002")) {
+                    agent.insert(QStringLiteral("organisation"), QStringLiteral("other-org"));
+                }
+            });
+            const auto out = AgendaBuilder::build(input);
+            const auto text = sentenceOf(out.items, QStringLiteral("gantt:task:107:ali"), ProblemFlag::Kind::AgentWrongPerson);
+            QCOMPARE(text, QStringLiteral("Another organisation's agent belongs to Sara, not Ali"));
+            QVERIFY(!text.contains(QStringLiteral("Design-Bot")));
+        }
+        // (3) NoBoard: card 504 is Sara's and carries Ali's label (Writer-Bot belongs to Ali, not Sara).
+        {
+            auto input = withCardLabel(loadScenario(QStringLiteral("mara")), 504, robot() + QStringLiteral(" Writer-Bot"));
+            const auto out = AgendaBuilder::build(input);
+            // Ali is on the board's member list, so his display name is known.
+            QCOMPARE(sentenceOf(out.items, QStringLiteral("deck:card:504"), ProblemFlag::Kind::AgentWrongPerson), QStringLiteral("Writer-Bot belongs to Ali, not Sara"));
+            // Ali's id is a UUID and he is not on the board: the sentence leaves the name out, never the id.
+            input.registry = registryWith([&uuid](QJsonObject &agent) {
+                if (agent.value(QLatin1String("person")).toString() == QLatin1String("ali")) {
+                    agent.insert(QStringLiteral("person"), uuid);
+                }
+            });
+            const auto out2 = AgendaBuilder::build(input);
+            QCOMPARE(sentenceOf(out2.items, QStringLiteral("deck:card:504"), ProblemFlag::Kind::AgentWrongPerson), QStringLiteral("Writer-Bot belongs to someone else, not Sara"));
+            // And the agent of another organisation is not named.
+            input.registry = registryWith([](QJsonObject &agent) {
+                if (agent.value(QLatin1String("id")).toString() == QLatin1String("AG-0001")) {
+                    agent.insert(QStringLiteral("organisation"), QStringLiteral("other-org"));
+                }
+            });
+            const auto out3 = AgendaBuilder::build(input);
+            QCOMPARE(sentenceOf(out3.items, QStringLiteral("deck:card:504"), ProblemFlag::Kind::AgentWrongPerson), QStringLiteral("Another organisation's agent belongs to Ali, not Sara"));
+        }
+        // (4) The agent column shows no user id either.
+        {
+            BuildContext ctx;
+            ctx.registry = registryWith([&uuid](QJsonObject &agent) { agent.insert(QStringLiteral("person"), uuid); });
+            ctx.me = QStringLiteral("olaf");
+            const auto ref = ctx.refFor(*ctx.registry.byId(QStringLiteral("AG-0001")), QString());
+            QVERIFY(ref.otherOrganisation);
+            QCOMPARE(ref.displayText(), QStringLiteral("Agent of someone else"));
+            QVERIFY(!ref.displayText().contains(uuid));
+        }
+    }
+
+    void aBoardLabelIsMatchedAmongTheAgentsOfTheAssignedPeople()
+    {
+        // The same label "Writer-Bot" belongs to an agent of another organisation too (names are unique per organisation).
+        // It comes first in the registry; Ali's own agent must still be found for Ali's card (design 4.2).
+        auto doc = QJsonDocument::fromJson(fixture(QStringLiteral("agent-registry.json"))).object();
+        auto agents = doc.value(QLatin1String("agents")).toArray();
+        QJsonObject twin;
+        for (const auto &a : std::as_const(agents)) {
+            if (a.toObject().value(QLatin1String("id")).toString() == QLatin1String("AG-0001")) {
+                twin = a.toObject();
+            }
+        }
+        twin.insert(QStringLiteral("id"), QStringLiteral("AG-0099"));
+        twin.insert(QStringLiteral("person"), QStringLiteral("olaf"));
+        twin.insert(QStringLiteral("organisation"), QStringLiteral("other-org"));
+        auto twinLinks = twin.value(QLatin1String("links")).toObject();
+        twinLinks.insert(QStringLiteral("nogantt_resource_ids"), QJsonArray());
+        twinLinks.insert(QStringLiteral("calendar_tag"), QStringLiteral("agent:AG-0099"));
+        twin.insert(QStringLiteral("links"), twinLinks);
+        QJsonArray withTwin{twin};
+        for (const auto &a : std::as_const(agents)) {
+            withTwin.append(a);
+        }
+        doc.insert(QStringLiteral("agents"), withTwin);
+
+        auto input = loadScenario(QStringLiteral("ali"));
+        input.registry = AgentRegistry::parse(QJsonDocument(doc).toJson());
+        QCOMPARE(input.registry.allByLabel(robot() + QStringLiteral(" Writer-Bot")).size(), 2);
+        const auto out = AgendaBuilder::build(input);
+        const auto *call = findTitle(out.items, QStringLiteral("Call supplier")); // Ali's card with the Writer-Bot label
+        QVERIFY(call);
+        QCOMPARE(call->workKind, WorkKind::MyAgent);
+        QCOMPARE(call->agent.displayText(), QStringLiteral("Writer-Bot"));
+        QCOMPARE(call->agent.id, QStringLiteral("AG-0001"));
+        QVERIFY(call->problems.isEmpty());
+    }
+
+    // ---- design 5: an app that refuses the sign-in of a connected account becomes "Open in ..." ------------------------------
+    void aRefusingAppTurnsIntoAnOpenInButtonNotIntoASignInRequest()
+    {
+        for (const int status : {401, 403}) {
+            QTemporaryDir dir;
+            auto fake = std::make_unique<FakeTransport>();
+            auto *transport = fake.get();
+            routeScenario(transport, QStringLiteral("ali"));
+            AccountAgenda agenda(std::move(fake), dir.path() + QStringLiteral("/noagenda/test"));
+            QDateTime now = fixedNow();
+            agenda.setClock([&now] { return now; });
+            agenda.setZone(QTimeZone(QTimeZone::UTC));
+            agenda.refresh(true);
+            QCOMPARE(agenda.state().status(QStringLiteral("gantt"))->state, SourceStatus::State::Fresh);
+            const auto rowsBefore = agenda.state().items.size();
+
+            // NoGantt and NoBoard now refuse the app password; the account itself is connected and its calendars answer.
+            for (auto &a : transport->answers) {
+                if (a.path.contains(QStringLiteral("/nc_gantt/")) || a.path.contains(QStringLiteral("/apps/deck/"))) {
+                    a.status = status;
+                }
+            }
+            now = now.addSecs(120);
+            agenda.refresh(true);
+            const auto &state = agenda.state();
+            QVERIFY2(!state.needsLogin, "the sign-in state belongs to the account, not to a refusing app");
+            QCOMPARE(state.status(QStringLiteral("gantt"))->state, SourceStatus::State::Refused);
+            QCOMPARE(state.status(QStringLiteral("board"))->state, SourceStatus::State::Refused);
+            QCOMPARE(state.status(QStringLiteral("calendar"))->state, SourceStatus::State::Fresh);
+            QCOMPARE(state.items.size(), rowsBefore); // what was read stays
+            // The status code is not a credential and nothing was sent anywhere else.
+            for (const auto &request : transport->requests) {
+                QCOMPARE(request.url.host(), QStringLiteral("drive.example.test"));
+            }
+            // It recovers when the app answers again.
+            for (auto &a : transport->answers) {
+                if (a.status == status) {
+                    a.status = 200;
+                }
+            }
+            now = now.addSecs(60 * 60);
+            agenda.refresh(true);
+            QCOMPARE(agenda.state().status(QStringLiteral("gantt"))->state, SourceStatus::State::Fresh);
+        }
+    }
+
+    void aRefusalFromTheServerItselfStillAsksToSignIn()
+    {
+        QTemporaryDir dir;
+        auto fake = std::make_unique<FakeTransport>();
+        auto *transport = fake.get();
+        routeScenario(transport, QStringLiteral("ali"));
+        for (auto &a : transport->answers) {
+            if (a.path == QLatin1String("/ocs/v2.php/cloud/user")) {
+                a.status = 401;
+            }
+        }
+        AccountAgenda agenda(std::move(fake), dir.path() + QStringLiteral("/noagenda/test"));
+        agenda.setClock([] { return fixedNow(); });
+        agenda.setZone(QTimeZone(QTimeZone::UTC));
+        agenda.refresh(true);
+        QVERIFY(agenda.state().needsLogin);
+    }
+
     // ---- what a manager runs (design 6.3) ---------------------------------------------------------------------------------
     void problemsOfAManagersTeam()
     {
@@ -512,7 +790,7 @@ private Q_SLOTS:
         agenda.refresh(true);
         QVERIFY(!agenda.isRefreshing());
         const auto &state = agenda.state();
-        QCOMPARE(state.items.size(), 32);
+        QCOMPARE(state.items.size(), 33);
         QCOMPARE(state.personName, QStringLiteral("Ali"));
         QVERIFY(state.build.needsPersonalQuestion);
         for (const auto &s : state.statuses) {
@@ -527,7 +805,7 @@ private Q_SLOTS:
         second.setClock([] { return fixedNow().addSecs(600); });
         second.setZone(QTimeZone(QTimeZone::UTC));
         second.loadFromCache();
-        QCOMPARE(second.state().items.size(), 32);
+        QCOMPARE(second.state().items.size(), 33);
         QVERIFY(!second.state().neverLoaded);
         for (const auto &s : second.state().statuses) {
             QCOMPARE(s.state, SourceStatus::State::Saved); // read from the cache, no attempt yet: no banner
@@ -537,7 +815,7 @@ private Q_SLOTS:
         // The server is gone: the last data stays, marked with its time.
         transport->offline = true;
         agenda.refresh(true);
-        QCOMPARE(agenda.state().items.size(), 32);
+        QCOMPARE(agenda.state().items.size(), 33);
         QCOMPARE(agenda.state().status(QStringLiteral("gantt"))->state, SourceStatus::State::Cached);
         QCOMPARE(agenda.state().status(QStringLiteral("gantt"))->savedAt, fixedNow());
     }
@@ -593,7 +871,7 @@ private Q_SLOTS:
         now = now.addSecs(120);
         agenda.refresh(false);
         QCOMPARE(agenda.state().status(QStringLiteral("gantt"))->state, SourceStatus::State::Cached);
-        QCOMPARE(agenda.state().items.size(), 32); // the old rows stay
+        QCOMPARE(agenda.state().items.size(), 33); // the old rows stay
         const auto after = transport->count("GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/my-tasks"));
         // Two minutes later: in back-off, no new request to NoGantt.
         now = now.addSecs(120);

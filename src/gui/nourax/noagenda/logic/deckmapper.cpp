@@ -10,6 +10,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMap>
 
 namespace OCC::Nourax::Agenda::DeckMapper {
 
@@ -17,6 +18,65 @@ BoardRelation relationOf(const BuildContext &ctx, const QJsonObject &board)
 {
     return BoardRelation::of(board, ctx.me);
 }
+
+namespace {
+
+/// The registry agent a board label stands for (design 4.2: matched by title among the agents of the people
+/// the card is assigned to). Names are unique only within an organisation, so the same label can belong to
+/// agents of different people. When none of the assigned people has such an agent, the label may still name
+/// an agent of someone else (the "belongs to" problem); one I may see is preferred then.
+const Agent *agentOfLabel(const BuildContext &ctx, const QString &title, const QStringList &assignedUids)
+{
+    const auto candidates = ctx.registry.allByLabel(title);
+    for (const auto *agent : candidates) {
+        for (const auto &uid : assignedUids) {
+            if (uid.compare(agent->person, Qt::CaseInsensitive) == 0) {
+                return agent;
+            }
+        }
+    }
+    for (const auto *agent : candidates) {
+        if (ctx.mayNameAgent(*agent)) {
+            return agent;
+        }
+    }
+    return candidates.isEmpty() ? nullptr : candidates.first();
+}
+
+/// Display names of the people the board shows (owner, members, assigned users), by lower case uid. A user id is
+/// never written on screen: a person without a name here is left out of the sentence.
+QMap<QString, QString> displayNamesOf(const BuildContext &ctx, const QJsonObject &board)
+{
+    QMap<QString, QString> names;
+    auto add = [&names](const QJsonObject &person) {
+        const auto uid = person.value(QLatin1String("uid")).toString().toLower();
+        const auto display = person.value(QLatin1String("displayname")).toString();
+        if (!uid.isEmpty() && !display.isEmpty() && !names.contains(uid)) {
+            names.insert(uid, display);
+        }
+    };
+    if (!ctx.me.isEmpty() && !ctx.myName.isEmpty()) {
+        names.insert(ctx.me.toLower(), ctx.myName);
+    }
+    add(board.value(QLatin1String("owner")).toObject());
+    const auto acl = board.value(QLatin1String("acl")).toArray();
+    for (const auto &entry : acl) {
+        add(entry.toObject().value(QLatin1String("participant")).toObject());
+    }
+    const auto stacks = board.value(QLatin1String("_stacks")).toArray();
+    for (const auto &stack : stacks) {
+        const auto cards = stack.toObject().value(QLatin1String("cards")).toArray();
+        for (const auto &card : cards) {
+            const auto assigned = card.toObject().value(QLatin1String("assignedUsers")).toArray();
+            for (const auto &a : assigned) {
+                add(a.toObject().value(QLatin1String("participant")).toObject());
+            }
+        }
+    }
+    return names;
+}
+
+} // namespace
 
 void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> &linkedCardIds, QList<AgendaItem> *out)
 {
@@ -40,6 +100,7 @@ void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> 
         const int boardId = relation.id;
 
         const auto stacks = board.value(QLatin1String("_stacks")).toArray();
+        const auto personNames = displayNamesOf(ctx, board);
         for (const auto &stackValue : stacks) {
             const auto stack = stackValue.toObject();
             const auto cards = stack.value(QLatin1String("cards")).toArray();
@@ -81,7 +142,7 @@ void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> 
                 const auto labels = card.value(QLatin1String("labels")).toArray();
                 for (const auto &l : labels) {
                     const auto title = l.toObject().value(QLatin1String("title")).toString();
-                    if (const auto *agent = ctx.registry.byLabel(title)) {
+                    if (const auto *agent = agentOfLabel(ctx, title, assignedUids)) {
                         labelAgents.append(agent);
                     } else if (title.startsWith(robot)) {
                         unknownLabels.append(title);
@@ -135,7 +196,7 @@ void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> 
                             }
                             if (!onCard && oversee) {
                                 problems.append(makeFlag(ProblemFlag::Kind::AgentWrongPerson, ProblemFlag::Audience::Manager,
-                                    FlagText::agentWrongPerson(agent->name, agent->person, ctx.myName)));
+                                    FlagText::agentWrongPerson(ctx.agentNameInText(*agent), personNames.value(agent->person.toLower()), ctx.myName)));
                             }
                         }
                     }
@@ -159,6 +220,38 @@ void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> 
                 }
 
                 if (!oversee) {
+                    // One of my agents is on a card that has nobody assigned (design 4.4, row 1: the person is told).
+                    // The card is not mine, so this row only reports the problem; it is not my work. When I run the
+                    // board, the team row below reports it.
+                    if (assignedUids.isEmpty()) {
+                        QSet<QString> told;
+                        for (const auto *agent : std::as_const(labelAgents)) {
+                            if (!ctx.isMe(agent->person) || told.contains(agent->id)) {
+                                continue;
+                            }
+                            told.insert(agent->id);
+                            AgendaItem problem;
+                            problem.home = Home::Board;
+                            problem.kind = ItemKind::Card;
+                            problem.key = QStringLiteral("deck:noperson:") + QString::number(cardId) + QLatin1Char(':') + agent->id;
+                            problem.title = FlagText::agentWithoutYou(agent->name, item.title);
+                            problem.sourceKey = item.sourceKey;
+                            problem.sourceName = boardTitle;
+                            problem.sourceColor = boardColor;
+                            problem.category = Category::Work;
+                            problem.problemOnly = true; // not my work: no date, so no workload, no clash, no "No date" entry
+                            problem.workKind = WorkKind::MyAgent;
+                            problem.agent = AgentRegistry::refFor(*agent);
+                            problem.boardId = boardId;
+                            problem.cardId = cardId;
+                            problem.projectName = boardTitle;
+                            problem.versionReadOnly = readOnlyByGuard;
+                            problem.readOnly = true;
+                            problem.readOnlyReason = AgendaText::tr("This row only reports a problem. Change the card in NoBoard.");
+                            problem.problems.append(makeFlag(ProblemFlag::Kind::AgentNoPerson, ProblemFlag::Audience::Person, problem.title));
+                            out->append(problem);
+                        }
+                    }
                     continue;
                 }
                 // A card of someone else on a board I run.
@@ -176,7 +269,7 @@ void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> 
                         problems.append(makeFlag(ProblemFlag::Kind::AgentNoPerson, ProblemFlag::Audience::Manager, FlagText::agentNoPerson()));
                     } else if (!onCard) {
                         problems.append(makeFlag(ProblemFlag::Kind::AgentWrongPerson, ProblemFlag::Audience::Manager,
-                            FlagText::agentWrongPerson(agent->name, agent->person, assignedNames.first())));
+                            FlagText::agentWrongPerson(ctx.agentNameInText(*agent), personNames.value(agent->person.toLower()), assignedNames.first())));
                     } else if (!shown) {
                         shown = agent;
                     } else if (shown->person.compare(agent->person, Qt::CaseInsensitive) == 0) {

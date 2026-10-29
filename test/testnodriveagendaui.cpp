@@ -654,6 +654,48 @@ private Q_SLOTS:
         QVERIFY(findItem(env->window->contentItem(), QStringLiteral("row-gantt:task:101"))); // the old rows stay
     }
 
+    void aRefusingAppOffersToBeOpenedInsteadOfAskingToSignIn()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        for (auto &a : env->transport->answers) {
+            if (a.path.contains(QStringLiteral("/nc_gantt/"))) {
+                a.status = 403;
+            }
+        }
+        env->agenda->refresh(true);
+        show(env.get());
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("NoGantt didn't accept NoDrive's sign-in on your server. Showing what was saved at")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Open in NoGantt")));
+        QVERIFY(!hasText(env->window, QStringLiteral("Sign in to NoDrive to see new changes.")));
+        QVERIFY(!hasText(env->window, QStringLiteral("NoBoard didn't accept")));
+        QVERIFY(findItem(env->window->contentItem(), QStringLiteral("row-gantt:task:101"))); // the old rows stay
+        QUrl opened;
+        connect(env->controller.get(), &AgendaController::openUrlRequested, this, [&opened](const QUrl &url) { opened = url; });
+        env->controller->bannerAction(QStringLiteral("openGantt"));
+        QCOMPARE(opened.toString(), QStringLiteral("https://drive.example.test/index.php/apps/nc_gantt/"));
+    }
+
+    void aProblemWithMyAgentsHasItsOwnGroupAndIsNotMyWork()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        bool group = false;
+        bool problem = false;
+        for (const auto &r : env->controller->rows()) {
+            const auto m = r.toMap();
+            group = group || (m.value(QStringLiteral("type")).toString() == QLatin1String("group") && m.value(QStringLiteral("text")).toString() == QLatin1String("Problems with your agents"));
+            problem = problem || m.value(QStringLiteral("key")).toString() == QLatin1String("gantt:noperson:106:AG-0001");
+        }
+        QVERIFY(group);
+        QVERIFY(problem);
+        // The row is not at home in "No date" (it is not Ali's work): it stays out of the list even when that is open.
+        env->controller->toggleNoDate();
+        int occurrences = 0;
+        for (const auto &r : env->controller->rows()) {
+            occurrences += r.toMap().value(QStringLiteral("key")).toString() == QLatin1String("gantt:noperson:106:AG-0001") ? 1 : 0;
+        }
+        QCOMPARE(occurrences, 1);
+    }
+
     void offlineWithoutACacheSaysSo()
     {
         const auto env = open(QStringLiteral("ali"), false, [](FakeTransport *t) { t->offline = true; });

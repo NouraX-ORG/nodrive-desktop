@@ -47,6 +47,11 @@ AccountAgenda::AccountAgenda(std::unique_ptr<HttpTransport> transport, const QSt
 
 AccountAgenda::~AccountAgenda() = default;
 
+bool AccountAgenda::isRefusal(int httpStatus)
+{
+    return httpStatus == 401 || httpStatus == 403;
+}
+
 QDateTime AccountAgenda::now() const
 {
     return _clock().toUTC();
@@ -190,7 +195,10 @@ void AccountAgenda::failed(const QString &key, int httpStatus, bool networkError
     run.nextAllowed = now().addSecs(backoffMinutes(run.failures) * 60);
     _runs.insert(key, run);
     qCInfo(lcAgendaAccount) << key << "failed: status" << httpStatus << "network error" << networkError << "failures" << run.failures;
-    if (httpStatus == 401 || httpStatus == 403) {
+    // 401/403 from NoGantt or NoBoard while the account is connected means that app refuses this sign-in: that part
+    // turns into "Open in NoGantt" / "Open in NoBoard" (design 5). It is not a sign-in problem of the account: the
+    // sign-in state belongs to AccountState. From the server itself (CalDAV, user info) it still means a bad sign-in.
+    if (isRefusal(httpStatus) && key != QLatin1String("gantt") && key != QLatin1String("board")) {
         _state.needsLogin = true;
     }
 }
@@ -367,7 +375,7 @@ void AccountAgenda::startSources()
                 self->succeeded(key);
             } else {
                 self->failed(key, r.status, r.networkError);
-                self->markStatus(key, self->_gantt.loaded ? SourceStatus::State::Cached : SourceStatus::State::Failed, self->_gantt.fetchedAt);
+                self->markStatus(key, isRefusal(r.status) ? SourceStatus::State::Refused : (self->_gantt.loaded ? SourceStatus::State::Cached : SourceStatus::State::Failed), self->_gantt.fetchedAt);
             }
             self->finishPart();
         });
@@ -396,7 +404,7 @@ void AccountAgenda::startSources()
                 self->succeeded(key);
             } else {
                 self->failed(key, r.status, r.networkError);
-                self->markStatus(key, self->_deck.loaded ? SourceStatus::State::Cached : SourceStatus::State::Failed, self->_deck.fetchedAt);
+                self->markStatus(key, isRefusal(r.status) ? SourceStatus::State::Refused : (self->_deck.loaded ? SourceStatus::State::Cached : SourceStatus::State::Failed), self->_deck.fetchedAt);
             }
             self->finishPart();
         });

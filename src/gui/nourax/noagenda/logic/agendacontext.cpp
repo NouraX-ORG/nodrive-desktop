@@ -66,7 +66,15 @@ QString agentNoPerson()
 
 QString agentWrongPerson(const QString &agent, const QString &owner, const QString &other)
 {
+    if (owner.isEmpty()) {
+        return AgendaText::tr("%1 belongs to someone else, not %2").arg(agent, other);
+    }
     return AgendaText::tr("%1 belongs to %2, not %3").arg(agent, owner, other);
+}
+
+QString agentWithoutYou(const QString &agent, const QString &item)
+{
+    return AgendaText::tr("%1 is on \"%2\" without you").arg(agent, item);
 }
 
 QString twoAgents(const QString &person)

@@ -456,6 +456,10 @@ private:
         for (const char *foreign : {"Banner design", "Orphan writing", "Review sitemap", "Temp work", "Sara's internal task"}) {
             check(QStringLiteral("not mine: %1").arg(QLatin1String(foreign)), byTitle(*agenda, QString::fromUtf8(foreign)) == nullptr, QString());
         }
+        // Design 4.4, row 1: Writer-Bot (Ali's agent) is on "Orphan writing" without a person. The task is not Ali's, but he is told.
+        const auto *orphan = findTitle(state.items, QStringLiteral("Writer-Bot is on \"Orphan writing\" without you"));
+        check(QStringLiteral("agent without its person: the person is told"), orphan && orphan->problemOnly && !orphan->hasDate() && hasProblem(*orphan, ProblemFlag::Kind::AgentNoPerson),
+            orphan ? QStringLiteral("(row found)") : QStringLiteral("(no row)"));
         // NoBoard
         const auto *supplier = byTitle(*agenda, QStringLiteral("Call supplier"));
         check(QStringLiteral("card agent from the label"), supplier && supplier->workKind == WorkKind::MyAgent && supplier->agent.displayText() == QLatin1String("Writer-Bot"), QString());

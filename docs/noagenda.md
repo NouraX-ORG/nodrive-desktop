@@ -17,7 +17,13 @@ the Timeline and the computer's own Calendar and Contacts apps come in the next 
 - **Sources** screen with the defaults of design 6.1, the working hours, and the agents of the registry. The one-time
   question "Which of your calendars are personal?" comes once after the first read.
 - The last data stays readable offline ("showing what was saved at 10:42"). It refreshes every 5 minutes while
-  NoDrive runs, but only for accounts where NoAgenda was opened at least once.
+  NoDrive runs, but only for accounts where NoAgenda was opened at least once. This also holds after a restart:
+  at start NoDrive loads the saved data of those accounts (no request, no window), and the timer takes it from there.
+  The settings (Sources, the personal-calendars answer, working hours) and the offline cache survive a normal quit.
+- **Problems with your agents**: when one of your agents sits on a NoGantt task or a NoBoard card that nobody has (the
+  task or card is not yours), you get a row of its own, "Writer-Bot is on "X" without you", with "Open in NoGantt" /
+  "Open in NoBoard". It only reports the problem: it has no date and is not your work (no workload, no clash, not in
+  "No date"). When you run the project or board, the problem is on the team row instead.
 - Nothing can be changed in this step. The detail panel has one action: **Open in NoCalendar / NoTasks / NoGantt /
   NoBoard** (the default browser, the account's own server).
 
@@ -35,7 +41,7 @@ the Timeline and the computer's own Calendar and Contacts apps come in the next 
 | `ocs/`, `gantt/`, `deck/` | OCS envelope, server info, the NoGantt 2.4.1 client and its contract check (version guard), the Deck client |
 | `logic/` | source settings and defaults, and the mappers that turn raw data into rows (agents, integrity flags, dedupe, problems) |
 | `store/` | the offline cache (JSON per account, written atomically) |
-| `accountagenda.*`, `agendaservice.*` | one account's readers, merge, status and back-off; the 5 minute timer |
+| `accountagenda.*`, `agendaservice.*` | one account's readers, merge, status and back-off; the 5 minute timer. `AgendaService` deletes an account's cache only on `AccountManager::accountSyncConnectionRemoved` (the user removed the account), never on `accountRemoved`, which `AccountManager::shutdown()` also emits for every account when NoDrive quits |
 | `ui/`, `qml/` | the controller, the launcher (tray entries) and the QML window (light and dark) |
 
 Upstream hooks (marked `// NoDrive: NoAgenda`, applied by `tools/rebrand.d/noagenda.py`, which `rebrand.py --check`
@@ -56,28 +62,41 @@ Every request goes through the account's own connection. Nothing else is contact
 - **CalDAV**: PROPFIND of the principal and the calendar home; per calendar whose sync token (or ctag) changed one
   `calendar-query` for the events of the sync window (expanded by the server, answers in UTC) and one for the
   not-completed to-dos (never expanded: the server drops every VTODO on expand). Unchanged calendars are not read
-  again. A calendar that fails keeps its old objects.
+  again. A calendar that fails keeps its old objects: per calendar and per component (events, to-dos), once, so a
+  calendar that keeps failing never grows in memory or in `calendars.json`.
 - **Registry**: GET of `remote.php/dav/files/<user>/NoAgenda/agent-registry.json` with `If-None-Match`.
 
-If an endpoint refuses on a real server, that home turns into an "Open in ..." row and the status code is logged; no
-credential ever goes to another host.
+If NoGantt or NoBoard answers 401 or 403 while the account is connected, that source is marked **refused**: a banner
+says "NoGantt didn't accept NoDrive's sign-in on your server" (with what was saved, if any) and offers "Open in
+NoGantt" / "Open in NoBoard"; the status code is logged and no credential ever goes to another host. The account's
+sign-in state stays with `AccountState` ("Sign in to NoDrive to see new changes" only comes from the server itself,
+CalDAV or the user info, or from the account being signed out).
 
 ## Rules that are tested
 
 - Defaults of design 6.1 (own calendars Personal until the question, shared Team, subscriptions and birthdays Info,
   board calendars and NoGantt's task copy hidden automatically, projects and boards by relation, server admins).
-- Event rules: free events do not block time, declined invitations are hidden, tentative ones are soft, a shared team
-  calendar shows only what I organise or am invited to, an invitation is always Self, the same invitation in two
-  calendars is one row.
+- Event rules: free events do not block time, declined invitations are hidden, tentative ones are soft, an event of a
+  shared team calendar shows only if I organise it or am invited, an invitation is always Self, the same invitation
+  in two calendars is one row. (To-dos of a shared list with no organiser or attendee show as mine: see the open
+  questions below.)
 - Agents (4.2, 4.5): `X-NOURAX-AGENT-ID`, the registry `calendar_tag`, board labels, and NoGantt planning people
   (recognised by the registry's `nogantt_resource_ids`, or by the exact name `<robot> <agent> (<person>)`). Anything
   else is "unknown agent" and flagged, never guessed. An agent's hours never count for its person.
 - Integrity flags (4.4): agent with no person, agent paired with someone else, two agents, unknown or retired agent,
   not linked to an account, not assigned to a person, a person in a project not shared with them. Each flag goes to its
-  audience (the person, the manager, or both).
-- Privacy between organisations: another person's agent is named only if its organisation is one of mine.
-- Offline cache: no password, token or cookie is ever written; the cache folder is removed with the account (only
-  `<config>/noagenda/<account>`, never anything else).
+  audience (the person, the manager, or both): "agent with no person" reaches the person as the row "Writer-Bot is on
+  "X" without you" and the manager on the team row.
+- A board label is matched to the registry among the agents of the people the card is assigned to (the same label can
+  exist in two organisations); only when none of them has it, the label may name another person's agent ("belongs to").
+- Privacy between organisations: another person's agent is named only if its organisation is one of mine. This holds
+  for the agent column and for the problem sentences ("Another organisation's agent belongs to Sara, not Ali"). A
+  sentence never shows a user id: the owner's name comes from the planning people, the board members or the assigned
+  users, and is left out when it is not there ("Writer-Bot belongs to someone else, not Sara").
+- Offline cache: no password, token or cookie is ever written; the cache folder is removed when the user removes the
+  account (only `<config>/noagenda/<account>`, never anything else) and kept when NoDrive quits.
+- The Sources screen keeps every board, calendar and project, also the ones switched to Hidden, so they can be shown
+  again. A hidden project keeps its shares (read once a day), so a server admin does not fetch them on every refresh.
 
 ## Choices where the design is silent (builder's calls)
 
@@ -96,7 +115,7 @@ credential ever goes to another host.
 
 | Test | What |
 |---|---|
-| `NoDriveAgendaRegistry`, `...ICal`, `...CalDav`, `...Gantt`, `...Deck`, `...Rules`, `...Cache` | unit tests with the fixtures in `test/nodrive/noagenda/` and a fake transport (all three systems) |
+| `NoDriveAgendaRegistry`, `...ICal`, `...CalDav`, `...Gantt`, `...Deck`, `...Rules`, `...Cache`, `...Service` | unit tests with the fixtures in `test/nodrive/noagenda/` and a fake transport (all three systems) |
 | `NoDriveAgendaUi` | the window in a QML engine, light and dark, screenshots in `nodrive-screenshots/noagenda/` (Day, Week, Month, My team, Sources, the personal-calendars question, detail, not linked, offline, registry missing); pixel checks of the background and the selected chip; no text with the server software's name |
 | `NoDriveAgendaServer` | the real throwaway server (Linux CI job `agenda-server`): `auth-proof`, `contract`, `read-ali`, `read-mara`, `read-sara`, `read-olaf`, `guard` |
 
@@ -122,8 +141,10 @@ of credential the client gets from Login Flow v2, used through the client's own 
 | CalDAV PROPFIND of the principal, REPORT `calendar-query` | 207 |
 | `remote.php/dav/files/<user>/NoAgenda/agent-registry.json` | 200 |
 
-So no part of NoAgenda has to fall back to an "Open in NoGantt" / "Open in NoBoard" row on this server. The fallback
-(`Open in ...` row, status code logged, never a credential to another host) is still there if a real server refuses.
+So no part of NoAgenda has to fall back to an "Open in NoGantt" / "Open in NoBoard" banner on this server. The fallback
+is built and has a unit test with a fake 401 and 403 (`aRefusingAppTurnsIntoAnOpenInButtonNotIntoASignInRequest` and the
+window test `aRefusingAppOffersToBeOpenedInsteadOfAskingToSignIn`): banner with "Open in ...", status code logged, never a
+credential to another host.
 The key sets of every live answer are in the artifact (`contract-keys.txt`) and are compared with the committed
 fixtures (a missing key or another type fails the job).
 
@@ -144,6 +165,23 @@ fixtures (a missing key or another type fails the job).
 - Views outside the sync window (previous month to 12 months ahead) are not read live and not marked
   "Not saved for offline use" yet.
 - `calendar-multiget` and `sync-collection` are not used: a calendar whose token changed is read in full.
+- Repeating to-dos are not expanded (the server drops every VTODO on expand): a recurring to-do shows only its first
+  due date and may stay "late".
+- A symbol that the server puts in a title (for example the birthday cake) is drawn as an empty box where the system
+  has no emoji font. Text from the server is shown as it is.
+- Rule 4.5 (b) accepts either the person's display name or the name of the person's planning person
+  when it checks the exact name of an agent's planning person (a little wider than "the person's display name").
+
+## Open questions for the owner
+
+1. **"My organisations"** is the set of organisations of my own agents (the registry has no person-to-organisation
+   link yet). A manager who has no agent of their own therefore sees "Agent of Sara" instead of "Design-Bot" in My team,
+   and the problem sentences say "Another organisation's agent". It is correct privacy-wise (nothing leaks) but less
+   useful. Fix when the agents app can say which organisation a person belongs to.
+2. **To-dos in a shared (Team) list** without an organiser or attendee show as my own work (design 6.2 taken literally:
+   "to-dos with a due or start date in lists I keep visible"). Design 6.1 and anti-goal 1 say a team calendar should show
+   only what I organise or am invited to. Events follow 6.1 today; to-dos follow 6.2. Say which one you want and the
+   other will be changed.
 - Edit, conflicts, the workload bar and the clash badge (design steps 2 and 3) are not here.
 - The new texts are English; translations are a to-do.
 

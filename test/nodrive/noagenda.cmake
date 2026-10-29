@@ -11,6 +11,7 @@ set(NODRIVE_AGENDA_TESTS
     NoDriveAgendaDeck
     NoDriveAgendaRules
     NoDriveAgendaCache
+    NoDriveAgendaService
     NoDriveAgendaUi
     NoDriveAgendaServer
 )

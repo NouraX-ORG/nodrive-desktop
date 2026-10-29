@@ -148,6 +148,45 @@ private Q_SLOTS:
         QCOMPARE(transport.count("GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/projects/2/tasks")), 0);
     }
 
+    void theSharesOfAHiddenProjectAreKeptAndNotReadAgain()
+    {
+        FakeTransport transport;
+        routeScenario(&transport, QStringLiteral("mara"));
+        const auto sharesPath = QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/projects/1/shares");
+        GanttFetchOptions options;
+        options.davUser = QStringLiteral("mara");
+        options.now = fixedNow();
+        options.wantProject = [](const ProjectRelation &) { return true; };
+        GanttFetchResult first;
+        GanttClient::fetch(&transport, options, GanttSnapshot(), [&first](const GanttFetchResult &r) { first = r; });
+        QVERIFY(first.ok);
+        QCOMPARE(transport.count("GET", sharesPath), 1);
+
+        // The project is switched to Hidden: no tasks are read, but its shares stay in the snapshot.
+        options.now = fixedNow().addSecs(300);
+        options.wantProject = [](const ProjectRelation &r) { return r.id != 1; };
+        GanttFetchResult hidden;
+        GanttClient::fetch(&transport, options, first.snapshot, [&hidden](const GanttFetchResult &r) { hidden = r; });
+        QVERIFY(hidden.ok);
+        QVERIFY(hidden.snapshot.projectData.contains(1));
+        QVERIFY(hidden.snapshot.projectData.value(1).sharesKnown);
+        QVERIFY(!hidden.snapshot.projectData.value(1).loaded);
+        QVERIFY(hidden.snapshot.projectData.value(1).tasks.isEmpty());
+        QCOMPARE(transport.count("GET", sharesPath), 1); // not read again
+
+        // Every later refresh within the day does not read them either, hidden or shown.
+        options.now = fixedNow().addSecs(600);
+        GanttFetchResult again;
+        GanttClient::fetch(&transport, options, hidden.snapshot, [&again](const GanttFetchResult &r) { again = r; });
+        QCOMPARE(transport.count("GET", sharesPath), 1);
+        options.wantProject = [](const ProjectRelation &) { return true; };
+        GanttFetchResult shown;
+        GanttClient::fetch(&transport, options, again.snapshot, [&shown](const GanttFetchResult &r) { shown = r; });
+        QCOMPARE(transport.count("GET", sharesPath), 1);
+        QVERIFY(shown.snapshot.projectData.value(1).loaded);
+        QVERIFY(shown.snapshot.projectData.value(1).sharesKnown);
+    }
+
     void noGanttOnTheServerIsUnavailableNotAnError()
     {
         FakeTransport transport; // every route answers 404

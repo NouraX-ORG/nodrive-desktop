@@ -33,7 +33,15 @@ public:
     explicit AgendaService(QObject *parent = nullptr);
 
     /// Called once at startup (from our problem report manager). Connects to the accounts; no request.
+    /// An account where NoAgenda was opened before gets its agenda back from the cache at once, so the
+    /// 5 minute refresh runs for it without the window being opened.
     void start();
+
+    /// Starts to watch an account (at start and when it is added). Reads nothing from the server.
+    void watch(AccountState *state);
+
+    /// Whether this account has its NoAgenda data loaded in memory.
+    [[nodiscard]] bool hasAgenda(const QString &accountId) const { return _agendas.count(accountId) > 0; }
 
     /// The NoAgenda data of an account (created on first use). Never null for a valid state.
     AccountAgenda *agendaFor(AccountState *state);
@@ -41,12 +49,18 @@ public:
     static constexpr int refreshIntervalMs = 5 * 60 * 1000;
 
 Q_SIGNALS:
-    /// The account was removed from NoDrive: its NoAgenda data and cache are gone, windows must close.
+    /// The account is gone from memory (removed by the user, or NoDrive is quitting): windows must close.
     void agendaRemoved(const QString &accountId);
 
 private:
-    void watch(AccountState *state);
-    void remove(AccountState *state);
+    /// The user removed the account (AccountManager::accountSyncConnectionRemoved, which only
+    /// removeAccountState() emits): windows close and NoAgenda's own copy of its data is deleted.
+    void accountDeleted(AccountState *state);
+    /// AccountManager::accountRemoved. NoDrive also emits it for every account when it quits
+    /// (AccountManager::shutdown()), so this must not delete anything: the settings and the offline
+    /// cache have to be there at the next start.
+    void accountClosed(AccountState *state);
+    void forget(const QString &accountId, bool deleteData);
     void onTimer();
 
     bool _started = false;

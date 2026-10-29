@@ -15,7 +15,7 @@ QString AgentRef::displayText() const
         return AgendaText::tr("Self");
     }
     if (otherOrganisation) {
-        return AgendaText::tr("Agent of %1").arg(owner);
+        return owner.isEmpty() ? AgendaText::tr("Agent of someone else") : AgendaText::tr("Agent of %1").arg(owner);
     }
     if (unknown) {
         return AgendaText::tr("%1 (unknown agent)").arg(id);

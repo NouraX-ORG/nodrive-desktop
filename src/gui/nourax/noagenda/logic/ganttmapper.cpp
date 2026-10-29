@@ -30,6 +30,7 @@ struct TaskFlag
 {
     ProblemFlag flag;
     QString personUid; ///< empty = the whole task
+    const Agent *agent = nullptr; ///< the registry agent the flag is about (when there is one)
 };
 
 QString robotPrefix()
@@ -197,7 +198,7 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                 }
                 if (agent) {
                     if (persons.isEmpty()) {
-                        flags.append({makeFlag(ProblemFlag::Kind::AgentNoPerson, ProblemFlag::Audience::Both, FlagText::agentNoPerson()), agent->person});
+                        flags.append({makeFlag(ProblemFlag::Kind::AgentNoPerson, ProblemFlag::Audience::Both, FlagText::agentNoPerson()), agent->person, agent});
                         continue;
                     }
                     if (owner < 0) {
@@ -209,15 +210,19 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                         }
                     }
                     if (owner < 0) {
-                        QString ownerName = agent->person;
-                        for (auto it = resources.constBegin(); it != resources.constEnd(); ++it) {
+                        // The owner's display name comes from the planning people I can see; when it is not
+                        // there the sentence leaves it out (a user id is never written on screen).
+                        QString ownerName;
+                        if (ctx.isMe(agent->person)) {
+                            ownerName = ctx.myName;
+                        }
+                        for (auto it = resources.constBegin(); ownerName.isEmpty() && it != resources.constEnd(); ++it) {
                             if (it->value(QLatin1String("uid")).toString().compare(agent->person, Qt::CaseInsensitive) == 0) {
                                 ownerName = personName(it.value());
-                                break;
                             }
                         }
                         flags.append({makeFlag(ProblemFlag::Kind::AgentWrongPerson, ProblemFlag::Audience::Manager,
-                                          FlagText::agentWrongPerson(agent->name, ownerName, persons.first().name)),
+                                          FlagText::agentWrongPerson(ctx.agentNameInText(*agent), ownerName, persons.first().name)),
                             QString()});
                         continue;
                     }
@@ -343,6 +348,43 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                 out->items.append(item);
             } else if (mine) {
                 haveMyTask = haveMyTask || false;
+            }
+
+            // ---- my agent is on this task and its person (me) is not (design 4.4, row 1: the person is told) --------------
+            // A row for me exists only when my own planning person is on the task, so this one is a row that only
+            // reports the problem. It is not my work. When I run the project, the manager row below reports it.
+            if (!mine && !oversee && !done) {
+                QSet<QString> told;
+                for (const auto &f : std::as_const(flags)) {
+                    if (f.flag.kind != ProblemFlag::Kind::AgentNoPerson || !ctx.isMe(f.personUid)) {
+                        continue;
+                    }
+                    const Agent *agent = f.agent;
+                    if (!agent || told.contains(agent->id)) {
+                        continue;
+                    }
+                    told.insert(agent->id);
+                    AgendaItem item;
+                    item.home = Home::Gantt;
+                    item.kind = ItemKind::GanttTask;
+                    item.key = QStringLiteral("gantt:noperson:") + QString::number(taskId) + QLatin1Char(':') + agent->id;
+                    item.title = FlagText::agentWithoutYou(agent->name, task.value(QLatin1String("title")).toString());
+                    item.sourceKey = QStringLiteral("gantt:") + QString::number(projectId);
+                    item.sourceName = projectTitle;
+                    item.sourceColor = color;
+                    item.category = Category::Work;
+                    item.problemOnly = true; // not my work: no date, so no workload, no clash, no "No date" entry
+                    item.workKind = WorkKind::MyAgent;
+                    item.agent = AgentRegistry::refFor(*agent);
+                    item.projectId = projectId;
+                    item.projectName = projectTitle;
+                    item.taskId = taskId;
+                    item.versionReadOnly = readOnlyByGuard;
+                    item.readOnly = true;
+                    item.readOnlyReason = AgendaText::tr("This row only reports a problem. Change the task in NoGantt.");
+                    item.problems.append(makeFlag(ProblemFlag::Kind::AgentNoPerson, ProblemFlag::Audience::Person, item.title));
+                    out->items.append(item);
+                }
             }
 
             // ---- other people's rows (what I run) -------------------------------------------------------

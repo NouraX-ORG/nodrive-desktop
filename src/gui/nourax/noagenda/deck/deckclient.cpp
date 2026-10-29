@@ -107,6 +107,10 @@ void boardLoop(const StatePtr &s)
         const int id = intOf(board.value(QLatin1String("id")));
         const auto relation = BoardRelation::of(board, s->options.davUser);
         if (s->options.wantBoard && !s->options.wantBoard(relation)) {
+            // Not wanted (Hidden): its cards are not read, but the board itself stays in the snapshot, so that the
+            // Sources screen still lists it and it can be shown again.
+            board.remove(QStringLiteral("_stacks"));
+            s->result.boards.append(board);
             ++s->index;
             continue;
         }

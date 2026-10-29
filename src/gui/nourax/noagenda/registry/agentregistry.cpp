@@ -143,6 +143,18 @@ const Agent *AgentRegistry::byLabel(const QString &label) const
     return nullptr;
 }
 
+QList<const Agent *> AgentRegistry::allByLabel(const QString &label) const
+{
+    QList<const Agent *> out;
+    const auto wanted = normalize(label);
+    for (const auto &a : _agents) {
+        if (!a.boardLabel.isEmpty() && normalize(a.boardLabel) == wanted) {
+            out.append(&a);
+        }
+    }
+    return out;
+}
+
 const Agent *AgentRegistry::byTag(const QString &tag) const
 {
     for (const auto &a : _agents) {
