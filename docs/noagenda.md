@@ -128,7 +128,7 @@ and never written to the artifact (the job greps for them).
 
 ## Auth proof (design section 5)
 
-Measured in the job `agenda-server` (Linux run [40789876560](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40789876560), commit `857c37f451`,
+Measured in the job `agenda-server` (Linux run [40804574745](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40804574745), commit `654db7e45e`,
 artifact `nodrive-linux-agenda-server`) against a throwaway Nextcloud 35.0.2 with nc_gantt 2.4.1, Deck 1.19.1,
 Calendar 6.6.4 and Tasks 0.18.1. The credential is an app password made by `occ user:auth-tokens:add`, the same kind
 of credential the client gets from Login Flow v2, used through the client's own `Account` (Basic authentication).
