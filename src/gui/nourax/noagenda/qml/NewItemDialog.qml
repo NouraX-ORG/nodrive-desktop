@@ -83,7 +83,7 @@ Rectangle {
         id: card
         anchors.centerIn: parent
         width: Math.min(520, dlg.width - 32)
-        height: Math.min(dlg.height - 32, column.height + 40)
+        height: Math.min(dlg.height - 32, column.height + footer.height + 48)
         radius: 12
         color: dlg.st.surface
         border.width: 1
@@ -92,8 +92,12 @@ Rectangle {
 
         Flickable {
             id: flick
-            anchors.fill: parent
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: footer.top
             anchors.margins: 20
+            anchors.bottomMargin: 8
             contentWidth: width
             contentHeight: column.height
             clip: true
@@ -264,32 +268,42 @@ Rectangle {
                         onPicked: function (id) { dlg.agentId = id; }
                     }
                 }
+            }
+        }
 
-                Text {
-                    objectName: "newItemError"
-                    visible: dlg.errorText !== ""
-                    width: parent.width
-                    text: dlg.errorText
-                    wrapMode: Text.Wrap
-                    color: dlg.st.danger
-                    font.pixelSize: 13
+        // The error and the buttons stay in view, also where the form has to scroll.
+        Column {
+            id: footer
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 20
+            spacing: 8
+
+            Text {
+                objectName: "newItemError"
+                visible: dlg.errorText !== ""
+                width: parent.width
+                text: dlg.errorText
+                wrapMode: Text.Wrap
+                color: dlg.st.danger
+                font.pixelSize: 13
+            }
+
+            Row {
+                spacing: 8
+                FlatButton {
+                    objectName: "newCancelButton"
+                    st: dlg.st
+                    label: qsTr("Cancel")
+                    onClicked: dlg.open = false
                 }
-
-                Row {
-                    spacing: 8
-                    FlatButton {
-                        objectName: "newCancelButton"
-                        st: dlg.st
-                        label: qsTr("Cancel")
-                        onClicked: dlg.open = false
-                    }
-                    FlatButton {
-                        objectName: "newSaveButton"
-                        st: dlg.st
-                        primary: true
-                        label: qsTr("Save")
-                        onClicked: dlg.save()
-                    }
+                FlatButton {
+                    objectName: "newSaveButton"
+                    st: dlg.st
+                    primary: true
+                    label: qsTr("Save")
+                    onClicked: dlg.save()
                 }
             }
         }

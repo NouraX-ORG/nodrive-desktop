@@ -252,7 +252,75 @@ fixtures (a missing key or another type fails the job).
 
 ## Edit step: the agent id in the web pages, server phases and open points
 
-RESULTS_PLACEHOLDER
+### Does the agent id survive an edit in the web pages? (design 4.2)
+
+`tools/ci/agenda-webedit.py` (Playwright for Python 1.49.1 with Chromium: CI only, never shipped; Apache-2.0 and BSD-3-Clause) signs in
+to the throwaway server, opens a tagged event in the Calendar app and a tagged to-do in the Tasks app, changes the title in the page,
+saves, reads the raw item through CalDAV and reports `X-NOURAX-AGENT-ID` and the `CATEGORIES` tag separately as "survived" or "dropped".
+The job fails only when both are dropped for one app. The before and after items are in the artifact with every value replaced by a
+hash, except the two agent properties. Result of the CI run on the last commit of this branch (Calendar 6.6.4, Tasks 0.18.1):
+
+| App | Driven by the script | X-NOURAX-AGENT-ID | CATEGORIES tag |
+|---|---|---|---|
+| Calendar (event "Writer-Bot review") | yes | survived | survived |
+| Tasks (to-do "Draft report") | yes | **dropped** | survived |
+
+The iPhone and Android calendar apps and macOS Calendar cannot be driven in CI: they are owner test rows (below).
+**What this means:** the Tasks page removes the `X-NOURAX-AGENT-ID` line but keeps the `CATEGORIES` tag, and the Calendar page keeps both. NoAgenda reads
+either one (the id first, then the registry's calendar tag), so an agent set on an item survives an edit in both web pages; only the copy that the
+Tasks page drops is lost. That is exactly why the tag is written as well (design 4.2, "keep the CATEGORIES copy as the fallback"). A to-do that was edited in the
+Tasks page has the tag only; NoAgenda writes the id again the next time the person changes the agent of that item.
+
+### What the real throwaway server confirmed (job `agenda-server`)
+
+About 180 checks of the phases below passed on the last run; the job reads the state of the server directly (as the same user), not only
+what the client says. The read phases (`auth-proof` to `guard`) are unchanged and still prove that nothing is deleted, moved or copied.
+
+| Phase | Checked on the server |
+|---|---|
+| `edit-calendar` | an event with an alarm and an unknown property: title and time change, **alarm, unknown property and UID stay**, the ETag changes; my agent on and off (id and tag, then both removed); a to-do ticked done (`STATUS`, `COMPLETED`, `PERCENT-COMPLETE:100`) and not done again; a new event with an agent and a new to-do; the event deleted (404 afterwards, the only DELETE of the whole job); a repeating event is refused and its object is untouched; an invitation is always Self |
+| `conflict` | the web page changes a to-do between the person's read and write: conflict found, the server keeps only the other change; "Apply my change again": both are on the server |
+| `edit-gantt` | a move with a successor: the dependent task moved and is named, **Undo** puts the date back; % done and status; done; **my agent Self, Writer-Bot, Self** (rows and total work untouched); the refusals (agent row with work, paused agent, somebody else's agent, 4 rows); a viewer is refused with the plain sentence and the task is unchanged; the conflict by `updated_at` and "Apply my change again" |
+| `edit-deck` | due date and done with the description and start date kept (Deck clears what is not sent); the agent label Writer-Bot, Self, Writer-Bot; a missing label is refused on a board that the person may only edit, and created on a board that the person manages; the conflict by the card's version |
+| `offline` | three edits wait while the server can't be reached, survive a restart, and are sent in the order they were made |
+
+Found against the real server:
+
+- NoGantt moves a date that falls on a weekend to the next working day. The editor sends the date as typed; the row shows what the server kept after the refresh.
+- One PUT was answered with HTTP 500 by the busy throwaway server (it uses SQLite). The command stayed waiting and went out at the next try, as designed:
+  a server error is tried again (three times), then it moves to "Not sent". The CI phases do the same.
+- A refused change (for example a viewer, or the 4-row limit) stays in "Not sent" until a click, like a conflict.
+- Whether the deleted event can be listed in the server's calendar trash bin depends on the server version; the job tries the known places and
+  reports "verified" or "not verified" (the event is gone from the calendar either way).
+
+### Owner test rows (real devices, plain English)
+
+1. Change an event's time in NoAgenda, then look at it in the Calendar page of the Drive: the new time is there, alarms and attendees are unchanged.
+2. Change the same event in the Calendar page, then change its title in NoAgenda without refreshing: "changed somewhere else" with "Apply my change again".
+3. Tick a to-do in NoAgenda, then look at it in the Tasks page.
+4. Move a NoGantt task's end date: "Also moved: ..." appears and **Undo** puts it back (within 10 seconds).
+5. Choose "my agent" on a NoGantt task and on a card; set Self again.
+6. Switch Wi-Fi off, change something, switch it on: "Waiting to send 1 change" goes away and the change is on the Drive.
+7. Put a dentist visit and a client call at 10:00: both rows show the clash mark. Plan 6 hours of project work on a day with 4 free hours: the workload bar warns.
+8. Set an agent on an event in NoAgenda, then edit that event in the iPhone or Android calendar app and look at it again in NoAgenda: is the agent still there? (Decides whether the device apps keep `X-NOURAX-AGENT-ID`; the tag is the fallback.)
+
+### Open points of the edit step
+
+- A NoGantt project that the person only views can't be changed, not even the person's own task (NoGantt refuses with 403); NoAgenda locks it with a plain sentence.
+- NoGantt and Deck have no conditional write: the item is read fresh right before the write and its `updated_at` or `lastModified` is compared, so a change that lands in
+  the few milliseconds between the read and the write can still be overwritten (documented risk B2).
+- "My agent" on a NoGantt task is refused whenever the agent's own row holds work (its removal would change the task's estimate). That is by design (the estimate is never changed here).
+- The editor writes times of new events in UTC; a time zone definition is never created. Existing events keep theirs unless their time is changed.
+- Repeating events and to-dos are not changed here (design 9); a repeating to-do still shows only its first due date (the server does not expand to-dos).
+- Texts are English; translations are a to-do.
+
+### Server-side items found in this step (for the Workspace session; nothing here was changed on any server)
+
+1. NoGantt: let a viewer change the progress of their own task, or say so in the API (today `PUT tasks/{id}` and `progress/sync` need editor rights).
+2. NoGantt and Deck: a conditional write (`If-Match` or an `updated_at` parameter) would close the small read-write race (risk B2).
+3. NoGantt: an API that adds or removes one person of a task without replacing the whole list would make "my agent" safe for tasks whose agent rows hold work.
+4. NoGantt: a readable version for normal users (the version guard is a shape check today).
+5. The sync step of design section 11 (agents app, planning people, board labels) still decides how often "Ask your project manager to add ..." appears.
 
 ## Known limits of the core step
 
@@ -285,7 +353,7 @@ RESULTS_PLACEHOLDER
    "to-dos with a due or start date in lists I keep visible"). Design 6.1 and anti-goal 1 say a team calendar should show
    only what I organise or am invited to. Events follow 6.1 today; to-dos follow 6.2. Say which one you want and the
    other will be changed.
-- Edit, conflicts, the workload bar and the clash badge (design steps 2 and 3) are not here.
+- The Timeline (design step 3) and the computer's own Calendar and Contacts apps (step 4) are not here.
 - The new texts are English; translations are a to-do.
 
 ## Server-side items (not done here; for the Workspace session)
