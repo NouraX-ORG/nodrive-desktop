@@ -1327,6 +1327,7 @@ private Q_SLOTS:
         QVERIFY(!allText(env->window).contains(QStringLiteral("nextcloud"), Qt::CaseInsensitive));
     }
 
+private:
     // ---- the Timeline step ----------------------------------------------------------------------------------------------
 
     static constexpr auto kPutTask111 = "/ocs/v2.php/apps/nc_gantt/api/v1/tasks/111";
@@ -1405,6 +1406,7 @@ private Q_SLOTS:
         return start + QPoint(dx, 0);
     }
 
+private Q_SLOTS:
     void theTimelineShowsBarsGroupsAgentsArrowsShadingAndDiamonds_data() { darkRows(); }
 
     void theTimelineShowsBarsGroupsAgentsArrowsShadingAndDiamonds()
