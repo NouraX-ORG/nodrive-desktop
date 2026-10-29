@@ -1130,7 +1130,7 @@ private:
             const auto card = cardOf(&transport, board, stack, payId);
             QJsonObject full{{QStringLiteral("title"), card.value(QStringLiteral("title")).toString()}, {QStringLiteral("type"), QStringLiteral("plain")}, {QStringLiteral("owner"), QStringLiteral("mara")},
                 {QStringLiteral("description"), QStringLiteral("Keep this text")}, {QStringLiteral("order"), card.value(QStringLiteral("order")).toInt()},
-                {QStringLiteral("duedate"), card.value(QStringLiteral("duedate"))}, {QStringLiteral("startdate"), isoDay(-2) + QStringLiteral("T00:00:00+00:00")}};
+                {QStringLiteral("duedate"), card.value(QStringLiteral("duedate"))}, {QStringLiteral("startdate"), QString(isoDay(-2) + QStringLiteral("T00:00:00+00:00"))}};
             const auto r = sendJson(&transport, "PUT", QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks/%2/cards/%3").arg(board).arg(stack).arg(payId), full);
             check(QStringLiteral("card prepared with a description and a start date"), r.ok(), QStringLiteral("HTTP %1").arg(r.status));
         }
@@ -1255,7 +1255,7 @@ private:
             EditService offline(&closedTransport, dir, [&agenda] { return agenda->editContext(); });
             QSignalSpy finished(&offline, &EditService::finished);
             for (const auto *item : {a, b, c}) {
-                const auto command = EditCommands::calendarPatch(*item, QJsonObject{{QStringLiteral("title"), item->title + QStringLiteral(" (offline edit)")}});
+                const auto command = EditCommands::calendarPatch(*item, QJsonObject{{QStringLiteral("title"), QString(item->title + QStringLiteral(" (offline edit)"))}});
                 expectedOrder.append(command.id);
                 offline.submit(command);
                 if (finished.isEmpty()) {

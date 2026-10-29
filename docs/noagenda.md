@@ -1,8 +1,9 @@
-# NoAgenda (desktop): the core, read only
+# NoAgenda (desktop): the core and the edit step
 
 Binding spec: `plans/noagenda-decisions.md` (approved 2026-10-28). Platform plan: `plans/noagenda-desktop-plan.md`.
-This page describes what is built in the first step ("NoAgenda core") and how it is tested. Editing, conflicts,
-the Timeline and the computer's own Calendar and Contacts apps come in the next steps.
+This page describes what is built in the first step ("NoAgenda core", read only), in the second step ("Editing and
+conflicts", the section further down) and how both are tested. The Timeline and the computer's own Calendar and
+Contacts apps come in the next steps.
 
 ## What the user gets
 
@@ -24,8 +25,8 @@ the Timeline and the computer's own Calendar and Contacts apps come in the next 
   task or card is not yours), you get a row of its own, "Writer-Bot is on "X" without you", with "Open in NoGantt" /
   "Open in NoBoard". It only reports the problem: it has no date and is not your work (no workload, no clash, not in
   "No date"). When you run the project or board, the problem is on the team row instead.
-- Nothing can be changed in this step. The detail panel has one action: **Open in NoCalendar / NoTasks / NoGantt /
-  NoBoard** (the default browser, the account's own server).
+- The detail panel has **Open in NoCalendar / NoTasks / NoGantt / NoBoard** (the default browser, the account's own
+  server). Since the edit step it also changes things: see "Editing and conflicts" below.
 
 ## Where the code is
 
@@ -98,6 +99,89 @@ CalDAV or the user info, or from the account being signed out).
 - The Sources screen keeps every board, calendar and project, also the ones switched to Hidden, so they can be shown
   again. A hidden project keeps its shares (read once a day), so a server admin does not fetch them on every refresh.
 
+## Editing and conflicts (edit step)
+
+Design sections 7 and 9. Everything is new files (`edit/`, `ical/icalpatch.*`, `logic/conflicts|workload|agentload.*`,
+`ui/editcontroller.*`, QML); the only upstream-visible change is that the core mappers fill a few more fields of a row.
+
+### What the person can do
+
+| Change | Saved to | Notes |
+|---|---|---|
+| Event: title, start, end, all day, description, my agent; create ("+"); delete | its calendar, CalDAV | `If-Match` ETag; create `If-None-Match: *`; delete asks "Delete this event? It moves to the calendar's trash bin." |
+| To-do: title, start, due, description, tick done, my agent; create; delete | its list, CalDAV | done = `STATUS:COMPLETED` + `COMPLETED` + `PERCENT-COMPLETE:100` |
+| NoGantt task: start and end date, % done, status, done | `PUT ocs/v2.php/apps/nc_gantt/api/v1/tasks/{id}` | read fresh first; `updated_at` is the version; "Also moved: ..." and **Undo** for 10 s (`changes/{op}/revert`); `deck_confirmed` is always false |
+| NoGantt task: **my agent** (Self or one of my agents) | the same PUT with `resources` | the list is replaced as a whole, so see "My agent on a task" below |
+| Card: due date, done, my agent label | Deck REST | the PUT is built from the **fresh** card and always sends every field (Deck clears what is missing); label created only where the person manages the board |
+| Delete a NoGantt task or a card | not allowed | "Open in NoGantt" / "Open in NoBoard" |
+| Repeating event or to-do, invitations from someone else | not changed here | "This repeats. Change it in NoCalendar." (NoTasks) with the Open button; an invitation is always Self, the picker says "You were invited, so this is always Self." |
+
+- **"+"** (header, or Ctrl+N / Ctrl+Shift+N) makes a new event (choose the calendar) or a new to-do (choose the list).
+  The **agent is required** and **Self is preselected**; paused agents are shown greyed, retired ones are not listed.
+  Times are written in UTC (`Z`), so no time zone definition has to be made. `PRODID:-//Nourax//NoAgenda//EN`.
+- **Who does it**: person first (it is my calendar, list, task or card), then exactly one agent: Self or one of my agents.
+  An agent of a calendar item is `X-NOURAX-AGENT-ID` plus the registry's calendar tag in `CATEGORIES`; Self removes both.
+- **A row that can't be changed says why in plain words** (lock icon): a viewer of a NoGantt project, a card on a board
+  where the person can only look, a read-only calendar, a newer app version (the version guard), a repeating item.
+- **Delete** exists only for events and to-dos (CalDAV objects, not files), only after the confirmation, with `If-Match`.
+  The server keeps them in the calendar's trash bin. Nothing on the device or on the Drive is deleted by this step.
+
+### My agent on a NoGantt task
+
+`PUT tasks/{id}` with `resources` replaces the whole list of people. `edit/ganttagentchange.cpp` builds the new list from
+the fresh task: every other row keeps its resource and its work, in its order; my own row is never touched; my other
+agents' rows are removed; the chosen agent's row (work empty) is added at the end. **Nothing is sent** when:
+
+- the list would have more than 4 rows ("This task already has 4 people or agents. Ask your project manager."),
+- the project allows roles only (the server's `roles_only_assignment` answer),
+- I am not on the task, or a row on the task is not visible to me (the server would drop it silently),
+- the recomputed total work would differ from the task's work (the estimate would change or be erased),
+- the first (main) row would change,
+- the chosen agent's planning person is not visible to me in NoGantt (design 4.5): the picker says
+  "Ask your project manager to add [robot] Writer-Bot to this project" and offers "Open in NoGantt". NoAgenda never creates planning people.
+
+After the PUT the returned `task.resources` must be the list that was sent; if not, the toast says "Check this task in NoGantt".
+
+### The offline queue and edit conflicts
+
+- Every edit becomes a command in `queue.json` (account folder; no password or token, only the semantic change and the version
+  the person saw). It is drawn on top of the rows at once with a clock mark, a banner says "Waiting to send %n changes", and
+  the commands go out oldest first, **one at a time**. An edit of an item that is still waiting is folded into the waiting command.
+- No connection: the commands wait, survive a restart, and are sent when NoAgenda can reach the server again.
+- A failed precondition (ETag mismatch or 412, another `updated_at`, another `lastModified`) is an **edit conflict**: the
+  other change wins, nothing is written, and the command goes to the **Not sent** panel with "This changed somewhere else while you
+  were editing. NoAgenda kept the other change." Buttons: **Apply my change again** (re-reads the item and sends the same change
+  on top of its new version), **Keep the other change** (drops the command), and Open in ... . A command leaves the list only
+  with a click or when it was sent. A refusal of the server (403, 400) is kept the same way, in plain words.
+
+### The four conflict kinds, the workload bar and the agents' load
+
+All computed on the device from rows the person can already see (`logic/conflicts.cpp`, `workload.cpp`, `agentload.cpp`):
+
+- **Clash**: two timed items of mine overlap (a tentative one makes it a soft clash, drawn fainter). Free time, declined invitations,
+  information calendars and everything whose agent is not Self never clash with mine.
+- **Overbooked**: planned = my own share of `work` of the NoGantt tasks active that day, spread evenly over the task's working days
+  (my pattern; holidays of my planning person's calendar and my all-day busy events are days off); free = the working hours minus the
+  busy events inside them (tentative counts as busy). The Day view starts with a workload bar "6 h planned / 4 h free" with a warning
+  sign; Week shows it per day. A task without `work` adds nothing and is counted as "No estimate".
+- **Deadline on a day off**: a due or end date on a non-working day, a NoGantt holiday or an all-day busy event.
+- **Blocked**: a predecessor is late (decided by the NoGantt mapper of the core step).
+- The header has a **Conflicts** chip: only rows with a clash, a block, a late mark, a day off or an overbooked agent.
+- **Agents**: an agent's hours never count for its person. Each agent of mine (and of the people I run) has a capacity per day
+  (`capacity_hours_per_week` over the days of its weekly pattern, in its time zone, minus `days_off`); its load is the work of its
+  own planning person on the NoGantt tasks plus its timed events. Over capacity gives the problem row
+  "[robot] Writer-Bot is overbooked on Thursday" (in "Problems with your agents", or in My team for the agents of other people).
+
+### Choices where the design is silent (builder's calls)
+
+- The editor is a form in the detail panel (own fields, no Controls style); dates are written like 2026-11-04 and times like 09:30.
+- A change to an item that is waiting is folded into the waiting command; a change of another kind for the same item waits behind it.
+- "Apply my change again" sends the change without a base version: the writer reads the item fresh and the PUT carries the fresh ETag.
+- Marking done on NoGantt tasks and cards, and on to-dos, uses the same "Mark done" button; items that are done leave the day lists
+  (as in the core step), so "not done" exists in the writers but is not offered in the window.
+- The 5 minute refresh and every edit refresh the data; a sent change stays drawn until a refresh has read everything back.
+- The agent overbooking is looked for from today to 28 days ahead.
+
 ## Choices where the design is silent (builder's calls)
 
 - **Name rule (b) of 4.5** recognises a name-only agent planning person also when it sits next to someone who is not
@@ -117,7 +201,15 @@ CalDAV or the user info, or from the account being signed out).
 |---|---|
 | `NoDriveAgendaRegistry`, `...ICal`, `...CalDav`, `...Gantt`, `...Deck`, `...Rules`, `...Cache`, `...Service` | unit tests with the fixtures in `test/nodrive/noagenda/` and a fake transport (all three systems) |
 | `NoDriveAgendaUi` | the window in a QML engine, light and dark, screenshots in `nodrive-screenshots/noagenda/` (Day, Week, Month, My team, Sources, the personal-calendars question, detail, not linked, offline, registry missing); pixel checks of the background and the selected chip; no text with the server software's name |
-| `NoDriveAgendaServer` | the real throwaway server (Linux CI job `agenda-server`): `auth-proof`, `contract`, `read-ali`, `read-mara`, `read-sara`, `read-olaf`, `guard` |
+| `NoDriveAgendaServer` | the real throwaway server (Linux CI job `agenda-server`): `auth-proof`, `contract`, `read-ali`, `read-mara`, `read-sara`, `read-olaf`, `guard`, and the edit phases `edit-calendar`, `conflict`, `edit-gantt`, `edit-deck`, `offline` |
+| `NoDriveAgendaICalPatch` | only the named properties change; alarms, attendees, unknown `X-` lines and time zones stay byte for byte; categories add and remove with escaping; done and undone; repeating refused; the text of a new item passes the strict reader |
+| `NoDriveAgendaEdit` | every edit of design 9 sends exactly the expected verb, path, headers (`If-Match`, `If-None-Match`, `OCS-APIRequest`) and body; Deck PUT always has every field; conflicts, refusals, viewers, repeating and invitations |
+| `NoDriveAgendaGanttAgent` | "my agent" on a task: other rows unchanged, order and main row kept, the 4-row limit, work-total guard (hours and person days), invisible rows, the answer check |
+| `NoDriveAgendaQueue` | order, persistence across a restart, no parallel sends, folding, conflicts kept until a click, offline then online, "Apply my change again", the optimistic overlay |
+| `NoDriveAgendaConflicts` | clash and soft clash, spread of work, holidays and days off, busy time, no estimate, deadline on a day off (three sources), blocked, an agent's capacity, days off and time zone, agent overbooking |
+
+The window test also covers the edit step with screenshots in light and dark: `day-clash-overbooked`, `edit-agent-gantt`,
+`edit-agent-not-in-project`, `new-event`, `edit-conflict`, `pending-offline`, `delete-confirm`, `repeating-locked`, `viewer-locked`.
 
 The job `agenda-server` (`tools/ci/agenda-server.sh`, `tools/ci/agenda-seed.py`) starts the pinned
 `nextcloud:35.0.2-apache` and installs the pinned apps, with their SHA-256 checked: calendar 6.6.4, tasks 0.18.1,
@@ -158,7 +250,11 @@ fixtures (a missing key or another type fails the job).
   day list like any other card (the board's calendar is hidden automatically).
 - A daily repeating event is about 400 rows in the 14 month sync window (the server expands it).
 
-## Known limits of this step
+## Edit step: the agent id in the web pages, server phases and open points
+
+RESULTS_PLACEHOLDER
+
+## Known limits of the core step
 
 - No account picker in the header: the tray entry opens the window of the current account (one window per account).
 - No separate date picker for Day and Week (previous, next, Today); Month has a small calendar for jumping.
