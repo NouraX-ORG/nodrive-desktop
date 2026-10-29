@@ -290,8 +290,9 @@ Found against the real server:
 - One PUT was answered with HTTP 500 by the busy throwaway server (it uses SQLite). The command stayed waiting and went out at the next try, as designed:
   a server error is tried again (three times), then it moves to "Not sent". The CI phases do the same.
 - A refused change (for example a viewer, or the 4-row limit) stays in "Not sent" until a click, like a conflict.
-- A deleted event is listed in the person's calendar trash bin (`remote.php/dav/calendars/<user>/trashbin/objects/`, also `remote.php/dav/trashbin/<user>/trash/`).
-  The job looks there and reports "verified" or "not verified" in its report (the event is gone from the calendar either way).
+- After a delete the event is gone from the calendar (404). That the server keeps it in the calendar's trash bin is the server's default (design 9) and is **not
+  verified by the job**: the places that answer a plain PROPFIND (`remote.php/dav/calendars/<user>/trashbin/`, `remote.php/dav/trashbin/<user>/`) do not list the deleted
+  objects (the Calendar app lists them with its own request). The job reports this as "not verified". Owner test row 9 covers it.
 
 ### Owner test rows (real devices, plain English)
 
@@ -303,6 +304,7 @@ Found against the real server:
 6. Switch Wi-Fi off, change something, switch it on: "Waiting to send 1 change" goes away and the change is on the Drive.
 7. Put a dentist visit and a client call at 10:00: both rows show the clash mark. Plan 6 hours of project work on a day with 4 free hours: the workload bar warns.
 8. Set an agent on an event in NoAgenda, then edit that event in the iPhone or Android calendar app and look at it again in NoAgenda: is the agent still there? (Decides whether the device apps keep `X-NOURAX-AGENT-ID`; the tag is the fallback.)
+9. Delete an event in NoAgenda (after the confirmation), then open the Trash bin in the Calendar page: the event is there and can be restored.
 
 ### Open points of the edit step
 
