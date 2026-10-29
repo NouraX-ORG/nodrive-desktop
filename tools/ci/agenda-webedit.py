@@ -245,7 +245,7 @@ def drive(app, page, url, old, new, calendar, name, tag, opener):
             entry["detail"] = "the title field was not found in the page"
             return
         if app == "tasks":
-            page.keyboard.press("Tab")  # the Tasks app saves when the field loses the focus
+            page.keyboard.press("Enter")  # the Tasks app saves the title with Enter (the arrow next to the field)
         else:
             if not click_save(page):
                 page.screenshot(path=os.path.join(OUT, "%s-no-save-button.png" % app))
