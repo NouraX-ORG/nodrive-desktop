@@ -129,7 +129,8 @@ int resourceFor(const Agent &agent, const QJsonArray &visibleResources, const QS
             return id;
         }
     }
-    return 0;
+    // Without an owner of the project nothing can be said against the agent's planning people: the first one counts.
+    return project.ownerId.isEmpty() ? ids.first() : 0;
 }
 
 int myResourceId(const QString &me, const QJsonArray &visibleResources)

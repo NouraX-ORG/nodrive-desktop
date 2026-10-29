@@ -63,7 +63,7 @@ namespace GanttAgentChange {
 QList<int> resourcesFor(const Agent &agent, const QJsonArray &visibleResources, const QStringList &myNames);
 
 /// The one of those that belongs to this project, preferring one that is on a task of it, then one in the pool of the
-/// project owner. 0 if there is none. Without project information the first one.
+/// project owner. 0 if there is none. Without project information, or without a known owner, the first one.
 int resourceFor(const Agent &agent, const QJsonArray &visibleResources, const QStringList &myNames, const GanttProjectInfo &project = GanttProjectInfo());
 
 /// All of my agents with what can be done with them here.
