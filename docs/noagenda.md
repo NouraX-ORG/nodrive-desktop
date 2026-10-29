@@ -290,8 +290,8 @@ Found against the real server:
 - One PUT was answered with HTTP 500 by the busy throwaway server (it uses SQLite). The command stayed waiting and went out at the next try, as designed:
   a server error is tried again (three times), then it moves to "Not sent". The CI phases do the same.
 - A refused change (for example a viewer, or the 4-row limit) stays in "Not sent" until a click, like a conflict.
-- Whether the deleted event can be listed in the server's calendar trash bin depends on the server version; the job tries the known places and
-  reports "verified" or "not verified" (the event is gone from the calendar either way).
+- A deleted event is listed in the person's calendar trash bin (`remote.php/dav/calendars/<user>/trashbin/objects/`, also `remote.php/dav/trashbin/<user>/trash/`).
+  The job looks there and reports "verified" or "not verified" in its report (the event is gone from the calendar either way).
 
 ### Owner test rows (real devices, plain English)
 

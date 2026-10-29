@@ -744,8 +744,8 @@ private:
     /// The places where the server may list the deleted calendar objects of the person (tried in turn).
     QStringList trashPaths() const
     {
-        return {QStringLiteral("remote.php/dav/trashbin/%1/objects/").arg(_user), QStringLiteral("remote.php/dav/trashbin/%1/calendar-objects/").arg(_user),
-            QStringLiteral("remote.php/dav/calendars/%1/trashbin/").arg(_user), QStringLiteral("remote.php/dav/trashbin/%1/").arg(_user)};
+        return {QStringLiteral("remote.php/dav/calendars/%1/trashbin/objects/").arg(_user), QStringLiteral("remote.php/dav/trashbin/%1/trash/").arg(_user),
+            QStringLiteral("remote.php/dav/trashbin/%1/objects/").arg(_user), QStringLiteral("remote.php/dav/calendars/%1/trashbin/").arg(_user)};
     }
 
     HttpResult trashBin(AccountTransport *transport, const QString &path)
