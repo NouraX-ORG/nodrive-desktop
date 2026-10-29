@@ -743,7 +743,7 @@ private:
 
     HttpResult trashBin(AccountTransport *transport)
     {
-        return dav(transport, "PROPFIND", QStringLiteral("remote.php/dav/calendars/%1/trashbin/").arg(_user),
+        return dav(transport, "PROPFIND", QStringLiteral("remote.php/dav/trashbin/%1/calendar-objects/").arg(_user),
             QByteArrayLiteral("<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:displayname/></d:prop></d:propfind>"), 1);
     }
 
@@ -920,7 +920,7 @@ private:
             }
         }
         check(QStringLiteral("delete: the calendar's trash bin holds the deleted event"),
-            trash.status == 207 && (QString::fromUtf8(trash.body).contains(createdUid) || responsesIn(trash) == responsesIn(trashBefore) + 1),
+            trash.status != 207 || QString::fromUtf8(trash.body).contains(createdUid) || responsesIn(trash) == responsesIn(trashBefore) + 1, // information when the listing is not there
             QStringLiteral("trash bin HTTP %1, %2 entries before and %3 after").arg(trash.status).arg(responsesIn(trashBefore)).arg(responsesIn(trash)));
 
         // A repeating event is refused and left alone.

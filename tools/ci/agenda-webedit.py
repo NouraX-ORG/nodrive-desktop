@@ -179,7 +179,34 @@ def click_save(page):
     return False
 
 
-def drive(app, page, url, old, new, calendar, name, tag):
+def open_calendar_editor(page, url, old):
+    """The route opens the event in a read-only popover: its Edit button opens the editor."""
+    page.goto(url, wait_until="domcontentloaded")
+    page.wait_for_timeout(6000)
+    for _ in range(3):
+        try:
+            edit = page.get_by_role("button", name=re.compile(r"^\s*Edit\s*$")).first
+            if edit.is_visible():
+                edit.click()
+                page.wait_for_timeout(3000)
+                return
+        except Exception:
+            pass
+        page.wait_for_timeout(2000)
+
+
+def open_task_details(page, url, old):
+    """The list of the Tasks app: a click on the task opens its details with the title field."""
+    page.goto(url, wait_until="domcontentloaded")
+    page.wait_for_timeout(6000)
+    try:
+        page.get_by_text(old, exact=True).first.click()
+    except Exception:
+        page.get_by_text(old).first.click()
+    page.wait_for_timeout(3000)
+
+
+def drive(app, page, url, old, new, calendar, name, tag, opener):
     entry = {"driven": False, "agent_id": "not read", "tag": "not read", "detail": ""}
     RESULT["apps"][app] = entry
     path = "/remote.php/dav/calendars/%s/%s/%s" % (USER, calendar, name)
@@ -191,19 +218,14 @@ def drive(app, page, url, old, new, calendar, name, tag):
     entry["before"] = {"agent_id": "X-NOURAX-AGENT-ID" in props_before, "tag": has_tag(props_before, tag)}
     open(os.path.join(OUT, "%s-before.ics" % app), "w", encoding="utf-8").write(redacted(before))
     try:
-        page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_timeout(5000)
-        dismiss_first_run(page)
-        page.goto(url, wait_until="domcontentloaded")
-        page.wait_for_timeout(5000)
+        opener(page, url, old)
         if not type_title(page, old, new):
             page.screenshot(path=os.path.join(OUT, "%s-no-title-field.png" % app))
             dump_fields(page, app)
             entry["detail"] = "the title field was not found in the page"
             return
         if app == "tasks":
-            page.keyboard.press("Enter")
-            page.keyboard.press("Tab")
+            page.keyboard.press("Tab")  # the Tasks app saves when the field loses the focus
         else:
             if not click_save(page):
                 page.screenshot(path=os.path.join(OUT, "%s-no-save-button.png" % app))
@@ -249,9 +271,9 @@ def main():
         # Calendar: the editor of the tagged event "Writer-Bot review" (items made by tools/ci/agenda-seed.py)
         event_path = "/remote.php/dav/calendars/%s/work/agent.ics" % USER
         encoded = urllib.parse.quote(base64.b64encode(event_path.encode()).decode(), safe="")
-        drive("calendar", page, "%s/index.php/apps/calendar/edit/%s" % (SERVER, encoded), "Writer-Bot review", "Writer-Bot review (edited in the web page)", "work", "agent.ics", "agent:AG-0001")
+        drive("calendar", page, "%s/index.php/apps/calendar/edit/%s" % (SERVER, encoded), "Writer-Bot review", "Writer-Bot review (edited in the web page)", "work", "agent.ics", "agent:AG-0001", open_calendar_editor)
         # Tasks: the tagged to-do "Draft report" (CATEGORIES only)
-        drive("tasks", page, "%s/index.php/apps/tasks/#/calendars/personal/tasks/draft.ics" % SERVER, "Draft report", "Draft report (edited in the web page)", "personal", "draft.ics", "agent:AG-0001")
+        drive("tasks", page, "%s/index.php/apps/tasks/" % SERVER, "Draft report", "Draft report (edited in the web page)", "personal", "draft.ics", "agent:AG-0001", open_task_details)
         return browser
 
 
