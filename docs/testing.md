@@ -89,8 +89,8 @@ pinned apps calendar 6.6.4, tasks 0.18.1, Deck 1.19.1 and nc_gantt 2.4.1 and thr
 
 ### 1.1c NoAgenda editing and conflicts (CI, [noagenda.md](noagenda.md))
 
-Commit `d33c7090fe` (branch `feature/noagenda-edit`, approved by the independent review 2; later commits on the branch are documents only): Linux run [40929677778](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677778),
-macOS run [40929677752](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677752), Windows run [40929677748](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677748). All three are green. CI never contacts `drive.nourax.org`. The unit tests use canned answers; the Linux job
+Commit `d33c7090fe` (branch `feature/noagenda-edit`, approved by the independent review 2; the numbers below are from this commit): Linux run [40929677778](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677778),
+macOS run [40929677752](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677752), Windows run [40929677748](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40929677748). All three are green. The head `b35465c03c` (these documents and one build fix: `chmod -R a+rX` before `appimagetool`, because a new `continuous` appimagetool began to refuse folders of mode 0700) is green too: Linux [40943442964](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40943442964), macOS [40943443408](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40943443408), Windows [40943442984](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40943442984). CI never contacts `drive.nourax.org`. The unit tests use canned answers; the Linux job
 `agenda-server` uses the same throwaway Nextcloud 35.0.2 in Docker with the pinned apps (nc_gantt 2.4.1 SHA-256 `9003904a...cfb9` checked) and throwaway accounts.
 
 | Feature | Linux | Windows | macOS |
