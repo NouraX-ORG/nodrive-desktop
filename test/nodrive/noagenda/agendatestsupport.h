@@ -85,6 +85,17 @@ public:
         route("GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/") + path, 200, ocsEnvelope(fixture(fixtureFile)));
     }
     void clear() { answers.clear(); }
+    [[nodiscard]] QList<HttpRequest> of(const QByteArray &verb) const
+    {
+        QList<HttpRequest> out;
+        for (const auto &r : requests) {
+            if (r.verb == verb) {
+                out.append(r);
+            }
+        }
+        return out;
+    }
+    [[nodiscard]] int count(const QByteArray &verb) const { return static_cast<int>(of(verb).size()); }
     int count(const QByteArray &verb, const QString &path) const
     {
         int n = 0;

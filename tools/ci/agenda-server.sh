@@ -7,8 +7,10 @@
 # Runs only in GitHub Actions (Linux runner with Docker). It starts a real Nextcloud 35 in a Docker network,
 # installs the pinned calendar, tasks, Deck and nc_gantt 2.4.1 apps (SHA-256 checked), seeds it with
 # tools/ci/agenda-seed.py, builds NoDriveAgendaServerTest and NoDriveAgendaUiTest in the Qt image and runs the
-# phases auth-proof, contract, read-ali, read-mara, read-sara, read-olaf and guard. The live screenshots of
-# Ali's seeded day come from the same data.
+# phases auth-proof, contract, read-ali, read-mara, read-sara, read-olaf and guard (read only). The live screenshots of
+# Ali's seeded day come from the same data. Then comes the edit step: tools/ci/agenda-webedit.py (does the agent id
+# survive an edit in the Calendar and Tasks web pages?) and the phases edit-calendar, conflict, edit-gantt, edit-deck
+# and offline, which change the throwaway server and check its state directly.
 #
 # No secret is in this file. The throwaway passwords come from "openssl rand", are masked with ::add-mask::,
 # are never echoed, and travel only in 0600 env files in $RUNNER_TEMP. The server is reachable only on
@@ -223,8 +225,40 @@ fi
 # ---- what the server saw ---------------------------------------------------------------------------------------------------------------
 docker logs "$SERVER" 2>&1 | grep -E '"(GET|PROPFIND|REPORT|PUT|POST|MKCOL|DELETE|MOVE|COPY) [^"]*(nc_gantt|deck|calendars|NoAgenda)[^"]*"' \
   | sed -E 's/^[^"]*"([A-Z]+) ([^ ?]*)[^"]*" ([0-9]+).*/\1 \2 -> \3/' | sed -E 's#/remote.php/dav/calendars/[a-z]+/#/remote.php/dav/calendars/<user>/#' | sort | uniq -c | sort -rn | head -n 200 > "$OUT/server-requests.txt" || true
-# NoAgenda reads only: no request of the test phases deletes, moves or copies anything.
-check no-destructive-requests "$(grep -Eq ' (DELETE|MOVE|COPY) ' "$OUT/server-requests.txt" && echo 1 || echo 0)" "no DELETE, MOVE or COPY after the seed (read only step)"
+# The read phases only read: no request of theirs deletes, moves or copies anything.
+check no-destructive-requests-in-read-steps "$(grep -Eq ' (DELETE|MOVE|COPY) ' "$OUT/server-requests.txt" && echo 1 || echo 0)" "no DELETE, MOVE or COPY after the seed (read phases)"
+
+# ---- the agent id in the web pages (design 4.2) --------------------------------------------------------------------------------------
+# Playwright for Python and Chromium are CI-only tools (Apache-2.0 and BSD-3-Clause): they are not shipped.
+PLAYWRIGHT_VERSION=1.49.1
+if python3 -m venv "$TMP/pw" > /dev/null 2>&1 \
+    && "$TMP/pw/bin/pip" install --quiet --disable-pip-version-check "playwright==$PLAYWRIGHT_VERSION" > "$OUT/playwright-install.log" 2>&1 \
+    && "$TMP/pw/bin/python" -m playwright install --with-deps chromium >> "$OUT/playwright-install.log" 2>&1; then
+  pass playwright-install "playwright $PLAYWRIGHT_VERSION with Chromium"
+  mkdir -p "$OUT/webedit"
+  WEBEDIT_SERVER=http://127.0.0.1:8080 WEBEDIT_USER=ali WEBEDIT_PASSWORD="$PASS_ALI" WEBEDIT_OUT="$OUT/webedit" \
+    "$TMP/pw/bin/python" tools/ci/agenda-webedit.py > "$OUT/webedit-log.txt" 2>&1 && web_rc=0 || web_rc=$?
+  if [ -f "$OUT/webedit/webedit.md" ]; then
+    sed -n '/^| App/,/^$/p' "$OUT/webedit/webedit.md" | tee -a "$REPORT" > /dev/null
+  fi
+  check webedit-agent-id-survives "$web_rc" "exit $web_rc (1 only when both agent properties were dropped by a web page); see webedit/webedit.md"
+else
+  fail playwright-install "see playwright-install.log"
+fi
+
+# ---- the edit phases: the server is changed from here on, and its state is checked directly --------------------------------------------
+: > "$OUT/phase-report.md"
+run_phase edit-calendar ali "$TOK_ALI"
+run_phase conflict ali "$TOK_ALI"
+run_phase edit-gantt ali "$TOK_ALI"
+run_phase edit-deck ali "$TOK_ALI"
+run_phase offline ali "$TOK_ALI"
+cat "$OUT/phase-report.md" >> "$REPORT"
+if grep -q '| FAIL |' "$OUT/phase-report.md"; then FAILED=1; fi
+docker logs "$SERVER" 2>&1 | grep -E '"(DELETE|MOVE|COPY) [^"]*"' \
+  | sed -E 's/^[^"]*"([A-Z]+) ([^ ?]*)[^"]*" ([0-9]+).*/\1 \2 -> \3/' | sed -E 's#/remote.php/dav/calendars/[a-z]+/#/remote.php/dav/calendars/<user>/#' | sort | uniq -c > "$OUT/server-requests-edit-deletes.txt" || true
+# The edit phases delete exactly one thing: the event that they made themselves. Nothing is moved or copied.
+check edit-deletes-only-its-own-event "$( { grep -Ev 'ci-edit-created' "$OUT/server-requests-edit-deletes.txt" | grep -Eq ' (DELETE|MOVE|COPY) ' && echo 1; } || echo 0)" "the only DELETE is the event that the edit phase created; no MOVE or COPY"
 
 # ---- no throwaway password anywhere in what is uploaded -----------------------------------------------------------------------------
 LEAK=0

@@ -11,12 +11,15 @@
 //   NODRIVE_TEST_SERVER_URL        for example http://nodrive-ci-server
 //   NODRIVE_TEST_USER / _PASSWORD  the person and an app password made by occ (throwaway, never in the source)
 //   NODRIVE_TEST_MODE              auth-proof | contract | read-ali | read-mara | read-sara | read-olaf | guard
+//                                  | edit-calendar | conflict | edit-gantt | edit-deck | offline (the edit step)
 //   NODRIVE_TEST_REPORT            file to which "| check | PASS/FAIL | detail |" lines are appended (no values)
 //   NODRIVE_TEST_SEED              seed.json written by the seed script
 //   NODRIVE_TEST_OUTDIR            folder for the contract key sets and the cache for the live screenshots
 
-#include "nodrive/noagenda/agendatestsupport.h"
+#include "nodrive/noagenda/edittestsupport.h"
 
+#include "gui/nourax/noagenda/edit/editability.h"
+#include "gui/nourax/noagenda/edit/editservice.h"
 #include "gui/nourax/noagenda/net/accounttransport.h"
 #include "gui/nourax/noagenda/ocs/ocsjson.h"
 
@@ -267,6 +270,16 @@ private Q_SLOTS:
             readOlaf();
         } else if (mode == QLatin1String("guard")) {
             guard();
+        } else if (mode == QLatin1String("edit-calendar")) {
+            editCalendar();
+        } else if (mode == QLatin1String("conflict")) {
+            conflictPhase();
+        } else if (mode == QLatin1String("edit-gantt")) {
+            editGantt();
+        } else if (mode == QLatin1String("edit-deck")) {
+            editDeck();
+        } else if (mode == QLatin1String("offline")) {
+            offlinePhase();
         } else {
             QFAIL(qPrintable(QStringLiteral("unknown mode ") + mode));
         }
@@ -626,6 +639,655 @@ private:
     }
 
     // ---- the version guard against the real server --------------------------------------------------------------------------------------------------
+    // ---- the edit phases (design section 9; plans/noagenda-desktop-plan.md, 2.8) ----------------------------------------------------
+    // Each phase checks the state of the server directly (as the same user), not only what the client says.
+
+    HttpResult call(AccountTransport *transport, const HttpRequest &request)
+    {
+        HttpResult out;
+        bool done = false;
+        transport->send(request, [&](const HttpResult &r) {
+            out = r;
+            done = true;
+        });
+        for (int i = 0; i < 600 && !done; ++i) {
+            QTest::qWait(100);
+        }
+        return out;
+    }
+
+    HttpResult putText(AccountTransport *transport, const QString &path, const QByteArray &body, const QByteArray &contentType, const QByteArray &ifMatch = QByteArray())
+    {
+        auto request = withBody(makeRequest("PUT", transport->url(path)), body, contentType);
+        if (!ifMatch.isEmpty()) {
+            request = withHeader(request, "If-Match", ifMatch);
+        }
+        return call(transport, request);
+    }
+
+    HttpResult sendJson(AccountTransport *transport, const QByteArray &verb, const QString &path, const QJsonObject &body)
+    {
+        auto request = makeRequest(verb, transport->url(path));
+        request.headers.append({QByteArrayLiteral("OCS-APIRequest"), QByteArrayLiteral("true")});
+        request.headers.append({QByteArrayLiteral("Accept"), QByteArrayLiteral("application/json")});
+        request = withBody(request, QJsonDocument(body).toJson(QJsonDocument::Compact), QByteArrayLiteral("application/json"));
+        return call(transport, request);
+    }
+
+    /// Reads a calendar object as the same user (the raw text and the ETag).
+    HttpResult object(AccountTransport *transport, const QString &calendar, const QString &name)
+    {
+        return get(transport, QStringLiteral("remote.php/dav/calendars/%1/%2/%3").arg(_user, calendar, name), false);
+    }
+
+    /// Runs one command through the edit service of the agenda and waits for its answer.
+    EditResult run(AccountAgenda *agenda, const EditCommand &command)
+    {
+        QSignalSpy spy(agenda->edit(), &EditService::finished);
+        agenda->edit()->submit(command);
+        if (spy.isEmpty()) {
+            spy.wait(120000);
+        }
+        if (spy.isEmpty()) {
+            return EditResult();
+        }
+        return qvariant_cast<EditResult>(spy.last().at(1));
+    }
+
+    /// Lets the refresh that the edit started finish, then reads everything again.
+    void settle(AccountAgenda *agenda)
+    {
+        for (int i = 0; i < 300 && agenda->isRefreshing(); ++i) {
+            QTest::qWait(100);
+        }
+        QTest::qWait(300);
+        for (int i = 0; i < 300 && agenda->isRefreshing(); ++i) {
+            QTest::qWait(100);
+        }
+        refresh(agenda);
+    }
+
+    static QString isoDay(int offset)
+    {
+        return QDateTime::currentDateTimeUtc().date().addDays(offset).toString(Qt::ISODate);
+    }
+
+    static QString isoUtc(int dayOffset, int hour)
+    {
+        return QDateTime(QDateTime::currentDateTimeUtc().date().addDays(dayOffset), QTime(hour, 0), QTimeZone::UTC).toString(Qt::ISODate);
+    }
+
+    QJsonObject taskOf(AccountTransport *transport, int project, int task)
+    {
+        const auto r = get(transport, gantt(QStringLiteral("projects/%1/tasks").arg(project)));
+        for (const auto &t : parseOcs(r).data.toArray()) {
+            if (t.toObject().value(QStringLiteral("id")).toInt() == task) {
+                return t.toObject();
+            }
+        }
+        return QJsonObject();
+    }
+
+    static QList<int> resourceIds(const QJsonObject &task)
+    {
+        QList<int> ids;
+        for (const auto &r : task.value(QStringLiteral("resources")).toArray()) {
+            ids.append(r.toObject().value(QStringLiteral("resource_id")).toInt());
+        }
+        return ids;
+    }
+
+    QJsonObject cardOf(AccountTransport *transport, int board, int stack, int card)
+    {
+        const auto r = get(transport, QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks/%2/cards/%3").arg(board).arg(stack).arg(card));
+        return QJsonDocument::fromJson(r.body).object();
+    }
+
+    int firstStackOf(AccountTransport *transport, int board)
+    {
+        const auto r = get(transport, QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks").arg(board));
+        const auto stacks = QJsonDocument::fromJson(r.body).array();
+        return stacks.isEmpty() ? 0 : stacks.first().toObject().value(QStringLiteral("id")).toInt();
+    }
+
+    // ---- edit-calendar -------------------------------------------------------------------------------------------------------------------------
+    void editCalendar()
+    {
+        QTemporaryDir cache;
+        auto agenda = newAgenda(cache.path() + QStringLiteral("/noagenda/edit-calendar"));
+        AccountTransport transport(_account);
+        check(QStringLiteral("refresh finished"), refresh(agenda.get()), QString());
+
+        // The event is first given lines that a plain editor would drop: they must survive the edit byte for byte.
+        auto dentistObject = object(&transport, QStringLiteral("personal"), QStringLiteral("dentist.ics"));
+        QString text = QString::fromUtf8(dentistObject.body);
+        const QString eol = text.contains(QStringLiteral("\r\n")) ? QStringLiteral("\r\n") : QStringLiteral("\n");
+        text.replace(QStringLiteral("END:VEVENT"), QStringLiteral("X-CUSTOM-KEEP:keepme") + eol + QStringLiteral("BEGIN:VALARM") + eol + QStringLiteral("ACTION:DISPLAY") + eol + QStringLiteral("TRIGGER:-PT15M") + eol
+                + QStringLiteral("DESCRIPTION:Reminder") + eol + QStringLiteral("END:VALARM") + eol + QStringLiteral("END:VEVENT"));
+        const auto prepared = putText(&transport, QStringLiteral("remote.php/dav/calendars/%1/personal/dentist.ics").arg(_user), text.toUtf8(), QByteArrayLiteral("text/calendar; charset=utf-8"), dentistObject.headers.value("etag"));
+        check(QStringLiteral("prepared event with an alarm and an unknown property"), prepared.ok(), QStringLiteral("HTTP %1").arg(prepared.status));
+        settle(agenda.get());
+
+        const auto *dentist = byTitle(*agenda, QStringLiteral("Dentist"));
+        check(QStringLiteral("event row found"), dentist != nullptr, QString());
+        if (!dentist) {
+            return;
+        }
+        check(QStringLiteral("event may be edited"), EditRules::of(*dentist).canEdit, QString());
+        const auto before = object(&transport, QStringLiteral("personal"), QStringLiteral("dentist.ics"));
+        auto result = run(agenda.get(), EditCommands::calendarPatch(*dentist, QJsonObject{{QStringLiteral("title"), QStringLiteral("Dentist (moved)")},
+            {QStringLiteral("start"), isoUtc(0, 13)}, {QStringLiteral("end"), isoUtc(0, 14)}}));
+        check(QStringLiteral("event: title and time sent"), result.done(), result.message);
+        auto after = object(&transport, QStringLiteral("personal"), QStringLiteral("dentist.ics"));
+        const QString afterText = QString::fromUtf8(after.body);
+        check(QStringLiteral("event: server has the new title"), afterText.contains(QStringLiteral("SUMMARY:Dentist (moved)")), QString());
+        check(QStringLiteral("event: server has the new time"), afterText.contains(QStringLiteral("T130000Z")) && afterText.contains(QStringLiteral("T140000Z")), QString());
+        check(QStringLiteral("event: ETag changed"), after.headers.value("etag") != before.headers.value("etag"), QString());
+        check(QStringLiteral("event: unknown property and alarm survive"),
+            afterText.contains(QStringLiteral("X-CUSTOM-KEEP:keepme")) && afterText.contains(QStringLiteral("TRIGGER:-PT15M")) && afterText.contains(QStringLiteral("BEGIN:VALARM")), QString());
+        check(QStringLiteral("event: uid kept"), afterText.contains(QStringLiteral("UID:ci-dentist")), QString());
+
+        // My agent on an event: the id and the tag, then Self removes both.
+        settle(agenda.get());
+        dentist = byTitle(*agenda, QStringLiteral("Dentist (moved)"));
+        check(QStringLiteral("event row follows the edit"), dentist != nullptr, QString());
+        if (!dentist) {
+            return;
+        }
+        const QJsonObject agentOn{{QStringLiteral("agent"), QJsonObject{{QStringLiteral("id"), QStringLiteral("AG-0001")}, {QStringLiteral("tag"), QStringLiteral("agent:AG-0001")},
+            {QStringLiteral("removeTags"), QJsonArray{QStringLiteral("agent:AG-0001"), QStringLiteral("agent:AG-0003")}}}}};
+        result = run(agenda.get(), EditCommands::calendarPatch(*dentist, agentOn));
+        check(QStringLiteral("event: agent set"), result.done(), result.message);
+        const QString withAgent = QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("dentist.ics")).body);
+        check(QStringLiteral("event: server has the agent id"), withAgent.contains(QStringLiteral("X-NOURAX-AGENT-ID:AG-0001")), QString());
+        check(QStringLiteral("event: server has the agent tag"), withAgent.contains(QStringLiteral("agent:AG-0001")), QString());
+        settle(agenda.get());
+        dentist = byTitle(*agenda, QStringLiteral("Dentist (moved)"));
+        check(QStringLiteral("event: the row now names the agent"), dentist && dentist->workKind == WorkKind::MyAgent && dentist->agent.displayText() == QLatin1String("Writer-Bot"), QString());
+        if (!dentist) {
+            return;
+        }
+        result = run(agenda.get(), EditCommands::calendarPatch(*dentist, QJsonObject{{QStringLiteral("agent"), QJsonObject{{QStringLiteral("id"), QString()}, {QStringLiteral("tag"), QString()},
+            {QStringLiteral("removeTags"), QJsonArray{QStringLiteral("agent:AG-0001"), QStringLiteral("agent:AG-0003")}}}}}));
+        check(QStringLiteral("event: back to Self"), result.done(), result.message);
+        const QString withoutAgent = QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("dentist.ics")).body);
+        check(QStringLiteral("event: Self removes the id and the tag"), !withoutAgent.contains(QStringLiteral("X-NOURAX-AGENT-ID")) && !withoutAgent.contains(QStringLiteral("agent:AG-0001")), QString());
+        check(QStringLiteral("event: the alarm still survives"), withoutAgent.contains(QStringLiteral("X-CUSTOM-KEEP:keepme")) && withoutAgent.contains(QStringLiteral("TRIGGER:-PT15M")), QString());
+
+        // A to-do: done and not done again.
+        settle(agenda.get());
+        const auto *renew = byTitle(*agenda, QStringLiteral("Renew passport"));
+        check(QStringLiteral("to-do row found"), renew != nullptr, QString());
+        if (renew) {
+            AgendaItem todo = *renew;
+            result = run(agenda.get(), EditCommands::calendarPatch(todo, QJsonObject{{QStringLiteral("done"), true}}));
+            check(QStringLiteral("to-do: ticked done"), result.done(), result.message);
+            const auto doneObject = object(&transport, QStringLiteral("personal"), QStringLiteral("renew.ics"));
+            const QString doneText = QString::fromUtf8(doneObject.body);
+            check(QStringLiteral("to-do: server has COMPLETED, 100 percent and the status"),
+                doneText.contains(QStringLiteral("STATUS:COMPLETED")) && doneText.contains(QStringLiteral("COMPLETED:")) && doneText.contains(QStringLiteral("PERCENT-COMPLETE:100")), QString());
+            todo.version = QString::fromLatin1(doneObject.headers.value("etag"));
+            result = run(agenda.get(), EditCommands::calendarPatch(todo, QJsonObject{{QStringLiteral("done"), false}}));
+            check(QStringLiteral("to-do: ticked not done"), result.done(), result.message);
+            const QString undoneText = QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("renew.ics")).body);
+            check(QStringLiteral("to-do: server has NEEDS-ACTION and no COMPLETED"),
+                undoneText.contains(QStringLiteral("STATUS:NEEDS-ACTION")) && !undoneText.contains(QStringLiteral("\nCOMPLETED:")) && !undoneText.contains(QStringLiteral("PERCENT-COMPLETE")), QString());
+        }
+
+        // Create an event and a to-do, then delete the event (it goes to the calendar's trash bin).
+        const QString createdUid = QStringLiteral("ci-edit-created");
+        result = run(agenda.get(), EditCommands::calendarCreate(QStringLiteral("work"), false, createdUid,
+            QJsonObject{{QStringLiteral("title"), QStringLiteral("Created by NoAgenda")}, {QStringLiteral("start"), isoUtc(1, 9)}, {QStringLiteral("end"), isoUtc(1, 10)},
+                {QStringLiteral("agent"), QJsonObject{{QStringLiteral("id"), QStringLiteral("AG-0001")}, {QStringLiteral("tag"), QStringLiteral("agent:AG-0001")}, {QStringLiteral("removeTags"), QJsonArray()}}}},
+            QStringLiteral("Created by NoAgenda")));
+        check(QStringLiteral("create: event"), result.done(), result.message);
+        const auto created = object(&transport, QStringLiteral("work"), createdUid + QStringLiteral(".ics"));
+        const QString createdText = QString::fromUtf8(created.body);
+        check(QStringLiteral("create: server has the event with the agent"),
+            created.status == 200 && createdText.contains(QStringLiteral("SUMMARY:Created by NoAgenda")) && createdText.contains(QStringLiteral("X-NOURAX-AGENT-ID:AG-0001")), QStringLiteral("HTTP %1").arg(created.status));
+        result = run(agenda.get(), EditCommands::calendarCreate(QStringLiteral("personal"), true, QStringLiteral("ci-edit-todo"),
+            QJsonObject{{QStringLiteral("title"), QStringLiteral("To-do by NoAgenda")}, {QStringLiteral("due"), isoDay(2)}}, QStringLiteral("To-do by NoAgenda")));
+        check(QStringLiteral("create: to-do"), result.done(), result.message);
+        check(QStringLiteral("create: server has the to-do"), QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("ci-edit-todo.ics")).body).contains(QStringLiteral("BEGIN:VTODO")), QString());
+
+        AgendaItem gone;
+        gone.key = QStringLiteral("cal:work/") + createdUid + QStringLiteral(".ics");
+        gone.kind = ItemKind::Event;
+        gone.home = Home::Calendar;
+        gone.title = QStringLiteral("Created by NoAgenda");
+        gone.calendarUri = QStringLiteral("work");
+        gone.objectUri = createdUid + QStringLiteral(".ics");
+        gone.version = QString::fromLatin1(created.headers.value("etag"));
+        result = run(agenda.get(), EditCommands::calendarDelete(gone));
+        check(QStringLiteral("delete: event"), result.done(), result.message);
+        check(QStringLiteral("delete: the event is gone from the calendar"), object(&transport, QStringLiteral("work"), createdUid + QStringLiteral(".ics")).status == 404, QString());
+        const auto trash = dav(&transport, "PROPFIND", QStringLiteral("remote.php/dav/trashbin/%1/calendars").arg(_user), QByteArrayLiteral("<?xml version=\"1.0\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:displayname/></d:prop></d:propfind>"), 1);
+        const bool trashAnswers = trash.status == 207;
+        check(QStringLiteral("delete: the calendar trash bin holds the event (information when the server has no trash bin listing)"),
+            !trashAnswers || QString::fromUtf8(trash.body).contains(createdUid), QStringLiteral("trash bin listing HTTP %1").arg(trash.status));
+
+        // A repeating event is refused and left alone.
+        const auto standupBefore = object(&transport, QStringLiteral("work"), QStringLiteral("standup.ics"));
+        AgendaItem repeating;
+        repeating.key = QStringLiteral("cal:work/standup.ics");
+        repeating.kind = ItemKind::Event;
+        repeating.home = Home::Calendar;
+        repeating.title = QStringLiteral("Stand-up");
+        repeating.calendarUri = QStringLiteral("work");
+        repeating.objectUri = QStringLiteral("standup.ics");
+        repeating.version = QString::fromLatin1(standupBefore.headers.value("etag"));
+        result = run(agenda.get(), EditCommands::calendarPatch(repeating, QJsonObject{{QStringLiteral("title"), QStringLiteral("Changed stand-up")}}));
+        check(QStringLiteral("repeating: refused"), result.outcome == EditResult::Outcome::Refused, result.message);
+        check(QStringLiteral("repeating: the server object is untouched"), object(&transport, QStringLiteral("work"), QStringLiteral("standup.ics")).body == standupBefore.body, QString());
+        // ... and the editor says so for the row itself, and for an invitation.
+        settle(agenda.get());
+        const auto *invite = byTitle(*agenda, QStringLiteral("Planning meeting"));
+        check(QStringLiteral("invitation: always Self, the picker is locked"), invite && invite->invitation && !EditRules::of(*invite).canChangeAgent, QString());
+    }
+
+    // ---- conflict (calendar) ---------------------------------------------------------------------------------------------------------------
+    void conflictPhase()
+    {
+        QTemporaryDir cache;
+        auto agenda = newAgenda(cache.path() + QStringLiteral("/noagenda/conflict"));
+        AccountTransport transport(_account);
+        check(QStringLiteral("refresh finished"), refresh(agenda.get()), QString());
+        const auto *late = byTitle(*agenda, QStringLiteral("Late bill"));
+        check(QStringLiteral("to-do row found"), late != nullptr, QString());
+        if (!late) {
+            return;
+        }
+        const AgendaItem seen = *late; // what the person saw
+        // Somebody else changes the to-do (the web page): its description.
+        const auto current = object(&transport, QStringLiteral("personal"), QStringLiteral("late.ics"));
+        QString text = QString::fromUtf8(current.body);
+        text.replace(QStringLiteral("END:VTODO"), QStringLiteral("DESCRIPTION:Changed in the web page\r\nEND:VTODO"));
+        const auto other = putText(&transport, QStringLiteral("remote.php/dav/calendars/%1/personal/late.ics").arg(_user), text.toUtf8(), QByteArrayLiteral("text/calendar; charset=utf-8"), current.headers.value("etag"));
+        check(QStringLiteral("the other change was saved"), other.ok(), QStringLiteral("HTTP %1").arg(other.status));
+
+        // The person's edit of the same to-do (title) meets it: the other change wins, nothing is written.
+        auto result = run(agenda.get(), EditCommands::calendarPatch(seen, QJsonObject{{QStringLiteral("title"), QStringLiteral("Late bill (mine)")}}));
+        check(QStringLiteral("edit conflict is found"), result.outcome == EditResult::Outcome::Conflict, result.message);
+        const QString serverText = QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("late.ics")).body);
+        check(QStringLiteral("the server still has the other change and not mine"), serverText.contains(QStringLiteral("DESCRIPTION:Changed in the web page")) && !serverText.contains(QStringLiteral("Late bill (mine)")), QString());
+        check(QStringLiteral("the change waits in the Not sent list"), agenda->edit()->queue().conflicts().size() == 1 && agenda->edit()->queue().pendingCount() == 0, QString());
+
+        // "Apply my change again": both changes are there afterwards.
+        const QString id = agenda->edit()->queue().conflicts().isEmpty() ? QString() : agenda->edit()->queue().conflicts().first().id;
+        QSignalSpy spy(agenda->edit(), &EditService::finished);
+        agenda->edit()->applyAgain(id);
+        if (spy.isEmpty()) {
+            spy.wait(120000);
+        }
+        const auto applied = spy.isEmpty() ? EditResult() : qvariant_cast<EditResult>(spy.last().at(1));
+        check(QStringLiteral("apply again: sent"), applied.done(), applied.message);
+        const QString both = QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("late.ics")).body);
+        check(QStringLiteral("apply again: the other change and mine are both on the server"), both.contains(QStringLiteral("DESCRIPTION:Changed in the web page")) && both.contains(QStringLiteral("SUMMARY:Late bill (mine)")), QString());
+        check(QStringLiteral("apply again: nothing is left in the lists"), agenda->edit()->queue().conflicts().isEmpty() && agenda->edit()->queue().pendingCount() == 0, QString());
+    }
+
+    // ---- edit-gantt ----------------------------------------------------------------------------------------------------------------------------
+    void editGantt()
+    {
+        QTemporaryDir cache;
+        auto agenda = newAgenda(cache.path() + QStringLiteral("/noagenda/edit-gantt"));
+        AccountTransport transport(_account);
+        check(QStringLiteral("refresh finished"), refresh(agenda.get()), QString());
+        const int website = seedId("projects", QStringLiteral("Website"));
+        const int internal = seedId("projects", QStringLiteral("Internal"));
+
+        // Dates: a task with a successor. NoGantt moves the dependent task and tells which; Undo puts it back.
+        const int banner = seedId("tasks", QStringLiteral("Banner design"));
+        const int publish = seedId("tasks", QStringLiteral("Publish banners"));
+        const auto bannerBefore = taskOf(&transport, website, banner);
+        const auto publishBefore = taskOf(&transport, website, publish);
+        AgendaItem bannerItem;
+        bannerItem.key = QStringLiteral("gantt:task:%1").arg(banner);
+        bannerItem.kind = ItemKind::GanttTask;
+        bannerItem.home = Home::Gantt;
+        bannerItem.title = QStringLiteral("Banner design");
+        bannerItem.projectId = website;
+        bannerItem.taskId = banner;
+        bannerItem.version = bannerBefore.value(QStringLiteral("updated_at")).toString();
+        bannerItem.progressMode = bannerBefore.value(QStringLiteral("progress_mode")).toString();
+        auto result = run(agenda.get(), EditCommands::ganttUpdate(bannerItem, QJsonObject{{QStringLiteral("end_date"), isoDay(3)}}));
+        check(QStringLiteral("dates: sent"), result.done(), result.message);
+        const auto bannerAfter = taskOf(&transport, website, banner);
+        check(QStringLiteral("dates: the server has the new end date"), bannerAfter.value(QStringLiteral("end_date")).toString().startsWith(isoDay(3)), bannerAfter.value(QStringLiteral("end_date")).toString().left(10));
+        const auto publishAfter = taskOf(&transport, website, publish);
+        check(QStringLiteral("dates: the dependent task moved"), publishAfter.value(QStringLiteral("start_date")).toString() != publishBefore.value(QStringLiteral("start_date")).toString(),
+            publishAfter.value(QStringLiteral("start_date")).toString().left(10));
+        check(QStringLiteral("dates: NoAgenda names the task that moved"), result.alsoMoved.contains(QStringLiteral("Publish banners")), result.alsoMoved.join(QStringLiteral(", ")));
+        check(QStringLiteral("dates: an Undo is offered"), !result.undoOpId.isEmpty(), QString());
+        if (!result.undoOpId.isEmpty()) {
+            agenda->edit()->undo(result.undoOpId);
+            QTest::qWait(2000);
+            const auto bannerUndone = taskOf(&transport, website, banner);
+            check(QStringLiteral("undo: the end date is back"), bannerUndone.value(QStringLiteral("end_date")).toString().left(10) == bannerBefore.value(QStringLiteral("end_date")).toString().left(10),
+                bannerUndone.value(QStringLiteral("end_date")).toString().left(10));
+        }
+
+        // % done, status and done.
+        settle(agenda.get());
+        const auto *demo = byTitle(*agenda, QStringLiteral("Prepare client demo"));
+        check(QStringLiteral("task row found"), demo != nullptr, QString());
+        if (demo) {
+            result = run(agenda.get(), EditCommands::ganttUpdate(*demo, QJsonObject{{QStringLiteral("manual_progress"), 55}, {QStringLiteral("status"), QStringLiteral("in_progress")}}));
+            check(QStringLiteral("progress: sent"), result.done(), result.message);
+            const auto demoTask = taskOf(&transport, website, seedId("tasks", QStringLiteral("Prepare client demo")));
+            check(QStringLiteral("progress: the server has 55 percent and the status"), demoTask.value(QStringLiteral("manual_progress")).toInt() == 55 && demoTask.value(QStringLiteral("status")).toString() == QLatin1String("in_progress"),
+                QStringLiteral("%1 %2").arg(demoTask.value(QStringLiteral("manual_progress")).toInt()).arg(demoTask.value(QStringLiteral("status")).toString()));
+        }
+        settle(agenda.get());
+        const auto *invoice = byTitle(*agenda, QStringLiteral("Send invoice"));
+        if (invoice) {
+            result = run(agenda.get(), EditCommands::ganttUpdate(*invoice, QJsonObject{{QStringLiteral("done"), true}}));
+            check(QStringLiteral("done: sent"), result.done(), result.message);
+            const auto invoiceTask = taskOf(&transport, website, seedId("tasks", QStringLiteral("Send invoice")));
+            check(QStringLiteral("done: the server has the status done and 100 percent"), invoiceTask.value(QStringLiteral("status")).toString() == QLatin1String("done") && invoiceTask.value(QStringLiteral("manual_progress")).toInt() == 100, QString());
+        }
+
+        // My agent: Self -> Writer-Bot -> Self on a task of mine whose rows hold no work of an agent.
+        settle(agenda.get());
+        const int landing = seedId("tasks", QStringLiteral("Landing page build"));
+        const int writerResource = seedId("resources", QString::fromUtf8("\xF0\x9F\xA4\x96 Writer-Bot (Ali)"));
+        const auto *landingRow = byTitle(*agenda, QStringLiteral("Landing page build"));
+        check(QStringLiteral("agent: task row found"), landingRow != nullptr, QString());
+        if (landingRow) {
+            const auto landingBefore = taskOf(&transport, website, landing);
+            const auto idsBefore = resourceIds(landingBefore);
+            result = run(agenda.get(), EditCommands::ganttAgent(*landingRow, QStringLiteral("AG-0001"), _user));
+            check(QStringLiteral("agent: Self to Writer-Bot sent"), result.done() && !result.checkInNoGantt, result.message);
+            const auto landingWith = taskOf(&transport, website, landing);
+            check(QStringLiteral("agent: the server has my row and the agent's row, in that order"), resourceIds(landingWith) == (idsBefore + QList<int>{writerResource}), QString());
+            check(QStringLiteral("agent: my own row and the work total are untouched"),
+                landingWith.value(QStringLiteral("work")) == landingBefore.value(QStringLiteral("work")) && landingWith.value(QStringLiteral("resources")).toArray().first().toObject().value(QStringLiteral("work")) == landingBefore.value(QStringLiteral("resources")).toArray().first().toObject().value(QStringLiteral("work")),
+                QString());
+            settle(agenda.get());
+            landingRow = byTitle(*agenda, QStringLiteral("Landing page build"));
+            check(QStringLiteral("agent: the row now names Writer-Bot"), landingRow && landingRow->workKind == WorkKind::MyAgent && landingRow->agent.displayText() == QLatin1String("Writer-Bot"), QString());
+            if (landingRow) {
+                result = run(agenda.get(), EditCommands::ganttAgent(*landingRow, QString(), _user));
+                check(QStringLiteral("agent: Writer-Bot to Self sent"), result.done(), result.message);
+                const auto landingBack = taskOf(&transport, website, landing);
+                check(QStringLiteral("agent: the server is back to my row only"), resourceIds(landingBack) == idsBefore && landingBack.value(QStringLiteral("work")) == landingBefore.value(QStringLiteral("work")), QString());
+            }
+        }
+
+        // The refusals: nothing is sent and the server task is unchanged.
+        settle(agenda.get());
+        const auto *homepage = byTitle(*agenda, QStringLiteral("Write homepage copy"));
+        if (homepage) {
+            const auto homepageBefore = taskOf(&transport, website, seedId("tasks", QStringLiteral("Write homepage copy")));
+            result = run(agenda.get(), EditCommands::ganttAgent(*homepage, QString(), _user));
+            check(QStringLiteral("refused: the agent's row holds work, so Self would change the estimate"), result.outcome == EditResult::Outcome::Refused && result.message.contains(QStringLiteral("work estimate")), result.message);
+            check(QStringLiteral("refused: the task on the server is unchanged"), taskOf(&transport, website, seedId("tasks", QStringLiteral("Write homepage copy"))) == homepageBefore, QString());
+            const auto paused = run(agenda.get(), EditCommands::ganttAgent(*homepage, QStringLiteral("AG-0003"), _user));
+            check(QStringLiteral("refused: a paused agent can't be chosen"), paused.outcome == EditResult::Outcome::Refused, paused.message);
+            const auto foreign = run(agenda.get(), EditCommands::ganttAgent(*homepage, QStringLiteral("AG-0002"), _user));
+            check(QStringLiteral("refused: an agent of somebody else"), foreign.outcome == EditResult::Outcome::Refused, foreign.message);
+        }
+        // Four rows: made here with the API, then the fifth is refused.
+        const int ali = seedId("resources", QStringLiteral("Ali"));
+        const int sara = seedId("resources", QStringLiteral("Sara"));
+        const int temp = seedId("resources", QStringLiteral("Temp worker"));
+        const int designer = seedId("resources", QStringLiteral("Designer"));
+        QJsonArray fourRows;
+        for (const int rid : {ali, sara, temp, designer}) {
+            fourRows.append(QJsonObject{{QStringLiteral("resource_id"), rid}, {QStringLiteral("work"), QJsonValue(QJsonValue::Null)}});
+        }
+        const auto createdFour = sendJson(&transport, "POST", gantt(QStringLiteral("projects/%1/tasks").arg(website)),
+            QJsonObject{{QStringLiteral("title"), QStringLiteral("Edit test four rows")}, {QStringLiteral("start_date"), isoDay(1)}, {QStringLiteral("end_date"), isoDay(2)}, {QStringLiteral("resources"), fourRows}});
+        const auto fourTask = parseOcs(createdFour).data.toObject();
+        check(QStringLiteral("four rows: task made"), createdFour.ok(), QStringLiteral("HTTP %1").arg(createdFour.status));
+        if (createdFour.ok()) {
+            const int fourId = fourTask.contains(QStringLiteral("task")) ? fourTask.value(QStringLiteral("task")).toObject().value(QStringLiteral("id")).toInt() : fourTask.value(QStringLiteral("id")).toInt();
+            AgendaItem four;
+            four.key = QStringLiteral("gantt:task:%1").arg(fourId);
+            four.kind = ItemKind::GanttTask;
+            four.home = Home::Gantt;
+            four.projectId = website;
+            four.taskId = fourId;
+            four.version = taskOf(&transport, website, fourId).value(QStringLiteral("updated_at")).toString();
+            const auto fourAnswer = run(agenda.get(), EditCommands::ganttAgent(four, QStringLiteral("AG-0001"), _user));
+            check(QStringLiteral("refused: a task that already has 4 people or agents"), fourAnswer.outcome == EditResult::Outcome::Refused && fourAnswer.message.contains(QStringLiteral("4 people or agents")), fourAnswer.message);
+            check(QStringLiteral("refused: the four rows are unchanged"), resourceIds(taskOf(&transport, website, fourId)).size() == 4, QString());
+        }
+
+        // A project I only view: the server refuses even my own task (risk B1), and NoAgenda says why.
+        const int internalTask = seedId("tasks", QStringLiteral("Sara's internal task"));
+        AgendaItem viewerItem;
+        viewerItem.key = QStringLiteral("gantt:task:%1").arg(internalTask);
+        viewerItem.kind = ItemKind::GanttTask;
+        viewerItem.home = Home::Gantt;
+        viewerItem.projectId = internal;
+        viewerItem.taskId = internalTask;
+        viewerItem.version = taskOf(&transport, internal, internalTask).value(QStringLiteral("updated_at")).toString();
+        const auto viewerBefore = taskOf(&transport, internal, internalTask);
+        const auto viewer = run(agenda.get(), EditCommands::ganttUpdate(viewerItem, QJsonObject{{QStringLiteral("end_date"), isoDay(9)}}));
+        check(QStringLiteral("viewer: refused with the plain sentence"), viewer.outcome == EditResult::Outcome::Refused && viewer.message.contains(QStringLiteral("view this project only")), viewer.message);
+        check(QStringLiteral("viewer: the server task is unchanged"), taskOf(&transport, internal, internalTask) == viewerBefore, QString());
+
+        // Conflict: the task changes between the person's read and the write.
+        settle(agenda.get());
+        const auto *sitemapOrDemo = byTitle(*agenda, QStringLiteral("Cross pairing"));
+        if (sitemapOrDemo) {
+            const AgendaItem seen = *sitemapOrDemo;
+            const int crossId = seedId("tasks", QStringLiteral("Cross pairing"));
+            const auto other = sendJson(&transport, "PUT", gantt(QStringLiteral("tasks/%1").arg(crossId)), QJsonObject{{QStringLiteral("title"), QStringLiteral("Cross pairing (renamed elsewhere)")}});
+            check(QStringLiteral("conflict: the other change was saved"), other.ok(), QStringLiteral("HTTP %1").arg(other.status));
+            const auto clash = run(agenda.get(), EditCommands::ganttUpdate(seen, QJsonObject{{QStringLiteral("end_date"), isoDay(4)}}));
+            check(QStringLiteral("conflict: found by updated_at"), clash.outcome == EditResult::Outcome::Conflict, clash.message);
+            const auto serverTask = taskOf(&transport, website, crossId);
+            check(QStringLiteral("conflict: the server has the other change only"), serverTask.value(QStringLiteral("title")).toString() == QLatin1String("Cross pairing (renamed elsewhere)") && !serverTask.value(QStringLiteral("end_date")).toString().startsWith(isoDay(4)), QString());
+            const QString id = agenda->edit()->queue().conflicts().isEmpty() ? QString() : agenda->edit()->queue().conflicts().first().id;
+            QSignalSpy spy(agenda->edit(), &EditService::finished);
+            agenda->edit()->applyAgain(id);
+            if (spy.isEmpty()) {
+                spy.wait(120000);
+            }
+            const auto applied = spy.isEmpty() ? EditResult() : qvariant_cast<EditResult>(spy.last().at(1));
+            check(QStringLiteral("conflict: apply my change again"), applied.done(), applied.message);
+            const auto both = taskOf(&transport, website, crossId);
+            check(QStringLiteral("conflict: both changes are there"), both.value(QStringLiteral("title")).toString() == QLatin1String("Cross pairing (renamed elsewhere)") && both.value(QStringLiteral("end_date")).toString().startsWith(isoDay(4)), QString());
+        }
+    }
+
+    // ---- edit-deck -------------------------------------------------------------------------------------------------------------------------------
+    void editDeck()
+    {
+        QTemporaryDir cache;
+        AccountTransport transport(_account);
+        const int board = _seed.value(QLatin1String("board")).toInt();
+        const int stack = firstStackOf(&transport, board);
+        check(QStringLiteral("board and stack found"), board > 0 && stack > 0, QString());
+        const int payId = seedId("cards", QStringLiteral("Pay invoice"));
+        const int supplierId = seedId("cards", QStringLiteral("Call supplier"));
+        const int ideaId = seedId("cards", QStringLiteral("Someday idea"));
+
+        // One more active agent for the person, without a label on the seeded board (registry file of the person).
+        {
+            auto registryReply = get(&transport, QStringLiteral("remote.php/dav/files/%1/NoAgenda/agent-registry.json").arg(_user), false);
+            auto root = QJsonDocument::fromJson(registryReply.body).object();
+            auto agents = root.value(QStringLiteral("agents")).toArray();
+            auto edit = agents.first().toObject();
+            edit.insert(QStringLiteral("id"), QStringLiteral("AG-0007"));
+            edit.insert(QStringLiteral("name"), QStringLiteral("Edit-Bot"));
+            edit.insert(QStringLiteral("person"), _user);
+            edit.insert(QStringLiteral("status"), QStringLiteral("active"));
+            auto links = edit.value(QStringLiteral("links")).toObject();
+            links.insert(QStringLiteral("nogantt_resource_ids"), QJsonArray());
+            links.insert(QStringLiteral("noboard_label"), QString::fromUtf8("\xF0\x9F\xA4\x96 Edit-Bot"));
+            links.insert(QStringLiteral("calendar_tag"), QStringLiteral("agent:AG-0007"));
+            edit.insert(QStringLiteral("links"), links);
+            agents.append(edit);
+            root.insert(QStringLiteral("agents"), agents);
+            const auto put = putText(&transport, QStringLiteral("remote.php/dav/files/%1/NoAgenda/agent-registry.json").arg(_user), QJsonDocument(root).toJson(), QByteArrayLiteral("application/json"));
+            check(QStringLiteral("registry with one more agent"), put.ok(), QStringLiteral("HTTP %1").arg(put.status));
+        }
+        // A description and a start date that must stay when only the due date changes (Deck clears what is not sent).
+        {
+            const auto card = cardOf(&transport, board, stack, payId);
+            QJsonObject full{{QStringLiteral("title"), card.value(QStringLiteral("title")).toString()}, {QStringLiteral("type"), QStringLiteral("plain")}, {QStringLiteral("owner"), QStringLiteral("mara")},
+                {QStringLiteral("description"), QStringLiteral("Keep this text")}, {QStringLiteral("order"), card.value(QStringLiteral("order")).toInt()},
+                {QStringLiteral("duedate"), card.value(QStringLiteral("duedate"))}, {QStringLiteral("startdate"), isoDay(-2) + QStringLiteral("T00:00:00+00:00")}};
+            const auto r = sendJson(&transport, "PUT", QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks/%2/cards/%3").arg(board).arg(stack).arg(payId), full);
+            check(QStringLiteral("card prepared with a description and a start date"), r.ok(), QStringLiteral("HTTP %1").arg(r.status));
+        }
+
+        auto agenda = newAgenda(cache.path() + QStringLiteral("/noagenda/edit-deck"));
+        check(QStringLiteral("refresh finished"), refresh(agenda.get()), QString());
+        const auto *pay = byTitle(*agenda, QStringLiteral("Pay invoice"));
+        check(QStringLiteral("card row found"), pay != nullptr, QString());
+        if (pay) {
+            check(QStringLiteral("card may be edited"), EditRules::of(*pay).canEdit && !EditRules::of(*pay).canDelete, QString());
+            auto result = run(agenda.get(), EditCommands::deckCard(*pay, QJsonObject{{QStringLiteral("due"), isoDay(4)}}));
+            check(QStringLiteral("due date: sent"), result.done(), result.message);
+            auto card = cardOf(&transport, board, stack, payId);
+            check(QStringLiteral("due date: the server has it"), card.value(QStringLiteral("duedate")).toString().startsWith(isoDay(4)), card.value(QStringLiteral("duedate")).toString());
+            check(QStringLiteral("due date: description and start date are kept"), card.value(QStringLiteral("description")).toString() == QLatin1String("Keep this text") && card.value(QStringLiteral("startdate")).toString().startsWith(isoDay(-2)),
+                card.value(QStringLiteral("startdate")).toString());
+            settle(agenda.get());
+            pay = byTitle(*agenda, QStringLiteral("Pay invoice"));
+            if (pay) {
+                result = run(agenda.get(), EditCommands::deckCard(*pay, QJsonObject{{QStringLiteral("done"), true}}));
+                check(QStringLiteral("done: sent"), result.done(), result.message);
+                card = cardOf(&transport, board, stack, payId);
+                check(QStringLiteral("done: the server has it and the due date is kept"), card.value(QStringLiteral("done")).isString() && card.value(QStringLiteral("duedate")).toString().startsWith(isoDay(4))
+                        && card.value(QStringLiteral("description")).toString() == QLatin1String("Keep this text"), QString());
+            }
+        }
+
+        // My agent label: Writer-Bot -> Self -> Writer-Bot.
+        settle(agenda.get());
+        const auto *supplier = byTitle(*agenda, QStringLiteral("Call supplier"));
+        check(QStringLiteral("labelled card found"), supplier && supplier->workKind == WorkKind::MyAgent, QString());
+        if (supplier) {
+            auto result = run(agenda.get(), EditCommands::deckAgent(*supplier, QString(), _user));
+            check(QStringLiteral("label: to Self"), result.done(), result.message);
+            check(QStringLiteral("label: the card has no agent label"), cardOf(&transport, board, stack, supplierId).value(QStringLiteral("labels")).toArray().isEmpty(), QString());
+            settle(agenda.get());
+            supplier = byTitle(*agenda, QStringLiteral("Call supplier"));
+            if (supplier) {
+                result = run(agenda.get(), EditCommands::deckAgent(*supplier, QStringLiteral("AG-0001"), _user));
+                check(QStringLiteral("label: to Writer-Bot"), result.done(), result.message);
+                const auto labels = cardOf(&transport, board, stack, supplierId).value(QStringLiteral("labels")).toArray();
+                check(QStringLiteral("label: the card has the Writer-Bot label again"), labels.size() == 1 && labels.first().toObject().value(QStringLiteral("title")).toString().contains(QStringLiteral("Writer-Bot")), QString());
+            }
+        }
+
+        // A label that the board does not have: refused where the person may only edit the board.
+        settle(agenda.get());
+        const auto *idea = byTitle(*agenda, QStringLiteral("Someday idea"));
+        if (idea) {
+            const auto refused = run(agenda.get(), EditCommands::deckAgent(*idea, QStringLiteral("AG-0007"), _user));
+            check(QStringLiteral("label: refused on a board I may only edit"), refused.outcome == EditResult::Outcome::Refused, refused.message);
+            check(QStringLiteral("label: the card is unchanged"), cardOf(&transport, board, stack, ideaId).value(QStringLiteral("labels")).toArray().isEmpty(), QString());
+            const auto boards = get(&transport, QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1").arg(board));
+            check(QStringLiteral("label: none was created"), !QString::fromUtf8(boards.body).contains(QStringLiteral("Edit-Bot")), QString());
+        }
+
+        // ... and created on a board that the person manages.
+        const auto ownBoard = sendJson(&transport, "POST", QStringLiteral("index.php/apps/deck/api/v1.0/boards"), QJsonObject{{QStringLiteral("title"), QStringLiteral("My own board")}, {QStringLiteral("color"), QStringLiteral("2563EB")}});
+        const int ownBoardId = QJsonDocument::fromJson(ownBoard.body).object().value(QStringLiteral("id")).toInt();
+        check(QStringLiteral("own board made"), ownBoard.ok() && ownBoardId > 0, QStringLiteral("HTTP %1").arg(ownBoard.status));
+        if (ownBoardId > 0) {
+            const auto ownStack = sendJson(&transport, "POST", QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks").arg(ownBoardId), QJsonObject{{QStringLiteral("title"), QStringLiteral("To do")}, {QStringLiteral("order"), 1}});
+            const int ownStackId = QJsonDocument::fromJson(ownStack.body).object().value(QStringLiteral("id")).toInt();
+            const auto ownCard = sendJson(&transport, "POST", QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks/%2/cards").arg(ownBoardId).arg(ownStackId),
+                QJsonObject{{QStringLiteral("title"), QStringLiteral("My own card")}, {QStringLiteral("type"), QStringLiteral("plain")}, {QStringLiteral("order"), 1}});
+            const int ownCardId = QJsonDocument::fromJson(ownCard.body).object().value(QStringLiteral("id")).toInt();
+            sendJson(&transport, "PUT", QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks/%2/cards/%3/assignUser").arg(ownBoardId).arg(ownStackId).arg(ownCardId), QJsonObject{{QStringLiteral("userId"), _user}, {QStringLiteral("type"), 0}});
+            settle(agenda.get());
+            const auto *own = byTitle(*agenda, QStringLiteral("My own card"));
+            check(QStringLiteral("own card row found"), own != nullptr, QString());
+            if (own) {
+                const auto created = run(agenda.get(), EditCommands::deckAgent(*own, QStringLiteral("AG-0007"), _user));
+                check(QStringLiteral("label: created on a board I manage and assigned"), created.done(), created.message);
+                const auto boardJson = get(&transport, QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1").arg(ownBoardId));
+                check(QStringLiteral("label: the board has the new label"), QString::fromUtf8(boardJson.body).contains(QStringLiteral("Edit-Bot")), QString());
+                check(QStringLiteral("label: the card has it"), cardOf(&transport, ownBoardId, ownStackId, ownCardId).value(QStringLiteral("labels")).toArray().size() == 1, QString());
+            }
+        }
+
+        // Conflict: the card changes between the person's read and the write.
+        settle(agenda.get());
+        idea = byTitle(*agenda, QStringLiteral("Someday idea"));
+        if (idea) {
+            const AgendaItem seen = *idea;
+            const auto fresh = cardOf(&transport, board, stack, ideaId);
+            QJsonObject full{{QStringLiteral("title"), QStringLiteral("Someday idea (renamed elsewhere)")}, {QStringLiteral("type"), QStringLiteral("plain")}, {QStringLiteral("owner"), QStringLiteral("mara")},
+                {QStringLiteral("description"), QString()}, {QStringLiteral("order"), fresh.value(QStringLiteral("order")).toInt()}};
+            QTest::qWait(1500); // lastModified has the resolution of a second
+            const auto other = sendJson(&transport, "PUT", QStringLiteral("index.php/apps/deck/api/v1.0/boards/%1/stacks/%2/cards/%3").arg(board).arg(stack).arg(ideaId), full);
+            check(QStringLiteral("conflict: the other change was saved"), other.ok(), QStringLiteral("HTTP %1").arg(other.status));
+            const auto clash = run(agenda.get(), EditCommands::deckCard(seen, QJsonObject{{QStringLiteral("due"), isoDay(5)}}));
+            check(QStringLiteral("conflict: found by the version of the card"), clash.outcome == EditResult::Outcome::Conflict, clash.message);
+            const auto card = cardOf(&transport, board, stack, ideaId);
+            check(QStringLiteral("conflict: the server has the other change only"), card.value(QStringLiteral("title")).toString() == QLatin1String("Someday idea (renamed elsewhere)") && card.value(QStringLiteral("duedate")).isNull(), QString());
+        }
+    }
+
+    // ---- offline: three edits wait while the server is not reachable, then go out in order ---------------------------------------------------------
+    void offlinePhase()
+    {
+        QTemporaryDir cache;
+        auto agenda = newAgenda(cache.path() + QStringLiteral("/noagenda/offline-source"));
+        AccountTransport transport(_account);
+        check(QStringLiteral("refresh finished"), refresh(agenda.get()), QString());
+        const auto *a = byTitle(*agenda, QStringLiteral("Renew passport"));
+        const auto *b = byTitle(*agenda, QStringLiteral("Draft report"));
+        const auto *c = byTitle(*agenda, QStringLiteral("Someday"));
+        check(QStringLiteral("three to-do rows found"), a && b && c, QString());
+        if (!a || !b || !c) {
+            return;
+        }
+        const QString dir = cache.path() + QStringLiteral("/noagenda/offline-queue");
+
+        // The same account, pointed at a closed port (nothing listens there).
+        auto closed = Account::create();
+        closed->setCredentials(new BasicCredentials(_user, _password));
+        closed->setUrl(QUrl(QStringLiteral("http://127.0.0.1:9")));
+        closed->setDavUser(_user);
+        AccountTransport closedTransport(closed);
+        QList<QString> expectedOrder;
+        {
+            EditService offline(&closedTransport, dir, [&agenda] { return agenda->editContext(); });
+            QSignalSpy finished(&offline, &EditService::finished);
+            for (const auto *item : {a, b, c}) {
+                const auto command = EditCommands::calendarPatch(*item, QJsonObject{{QStringLiteral("title"), item->title + QStringLiteral(" (offline edit)")}});
+                expectedOrder.append(command.id);
+                offline.submit(command);
+                if (finished.isEmpty()) {
+                    finished.wait(30000);
+                }
+            }
+            check(QStringLiteral("offline: three changes are waiting"), offline.queue().pendingCount() == 3, QString::number(offline.queue().pendingCount()));
+            check(QStringLiteral("offline: none is lost and none is a conflict"), offline.queue().conflicts().isEmpty(), QString());
+        }
+        // NoDrive restarts and the connection is back: the queue is read from its file and sent oldest first.
+        EditService online(&transport, dir, [&agenda] { return agenda->editContext(); });
+        online.load();
+        check(QStringLiteral("offline: the queue survived the restart"), online.queue().pendingCount() == 3, QString::number(online.queue().pendingCount()));
+        QStringList sentOrder;
+        connect(&online, &EditService::finished, this, [&sentOrder](const EditCommand &command, const EditResult &result) {
+            if (result.done()) {
+                sentOrder.append(command.id);
+            }
+        });
+        online.retry();
+        for (int i = 0; i < 600 && online.queue().pendingCount() > 0; ++i) {
+            QTest::qWait(100);
+        }
+        check(QStringLiteral("offline: all three were sent"), online.queue().pendingCount() == 0 && online.queue().conflicts().isEmpty(), QString());
+        check(QStringLiteral("offline: in the order they were made"), sentOrder == expectedOrder, QString());
+        check(QStringLiteral("offline: the server has all three"),
+            QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("renew.ics")).body).contains(QStringLiteral("(offline edit)"))
+                && QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("draft.ics")).body).contains(QStringLiteral("(offline edit)"))
+                && QString::fromUtf8(object(&transport, QStringLiteral("personal"), QStringLiteral("someday.ics")).body).contains(QStringLiteral("(offline edit)")),
+            QString());
+    }
+
     void guard()
     {
         // A newer Deck (the capability says 1.20.0) and a changed NoGantt answer (a key is renamed).
