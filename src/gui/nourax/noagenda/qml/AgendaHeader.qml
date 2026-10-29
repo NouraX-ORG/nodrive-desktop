@@ -82,7 +82,7 @@ Rectangle {
                 st: h.st
                 namePrefix: "view-"
                 current: h.ctrl.viewMode
-                options: [{ "value": "day", "label": qsTr("Day") }, { "value": "week", "label": qsTr("Week") }, { "value": "month", "label": qsTr("Month") }]
+                options: [{ "value": "day", "label": qsTr("Day") }, { "value": "week", "label": qsTr("Week") }, { "value": "month", "label": qsTr("Month") }, { "value": "timeline", "label": qsTr("Timeline") }]
                 onPicked: function (value) { h.ctrl.viewMode = value; }
             }
             Row {

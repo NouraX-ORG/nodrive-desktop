@@ -17,6 +17,7 @@ set(NODRIVE_AGENDA_TESTS
     NoDriveAgendaGanttAgent
     NoDriveAgendaQueue
     NoDriveAgendaConflicts
+    NoDriveAgendaTimelineLayout
     NoDriveAgendaUi
     NoDriveAgendaServer
 )

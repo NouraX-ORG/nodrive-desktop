@@ -1327,6 +1327,412 @@ private Q_SLOTS:
         QVERIFY(!allText(env->window).contains(QStringLiteral("nextcloud"), Qt::CaseInsensitive));
     }
 
+    // ---- the Timeline step ----------------------------------------------------------------------------------------------
+
+    static constexpr auto kPutTask111 = "/ocs/v2.php/apps/nc_gantt/api/v1/tasks/111";
+
+    /// The NoGantt tasks of the fixtures, with "Publish banners" (104) also waiting for "Prepare client demo" (102), which is Ali's own.
+    static QByteArray ganttTasksWithOwnDependency()
+    {
+        auto tasks = fixtureJson(QStringLiteral("gantt/tasks-1.json")).toArray();
+        for (int i = 0; i < tasks.size(); ++i) {
+            auto t = tasks.at(i).toObject();
+            if (t.value(QStringLiteral("id")).toInt() == 104) {
+                auto deps = t.value(QStringLiteral("dependencies")).toArray();
+                deps.append(QJsonObject{{QStringLiteral("id"), 9001}, {QStringLiteral("task_id"), 104}, {QStringLiteral("predecessor_id"), QStringLiteral("t-102")},
+                    {QStringLiteral("dependency_type"), QStringLiteral("EA")}, {QStringLiteral("lag_days"), 0}});
+                t.insert(QStringLiteral("dependencies"), deps);
+                tasks.replace(i, t);
+            }
+        }
+        return ocsBody(tasks);
+    }
+
+    /// NoGantt's answer to a move of task 111 to 31 Oct - 2 Nov: "Publish banners" moved with it, and there is an Undo.
+    static QByteArray movedTask111Answer()
+    {
+        QJsonObject saved;
+        for (const auto &v : fixtureJson(QStringLiteral("gantt/tasks-1.json")).toArray()) {
+            if (v.toObject().value(QStringLiteral("id")).toInt() == 111) {
+                saved = v.toObject();
+            }
+        }
+        saved.insert(QStringLiteral("start_date"), QStringLiteral("2026-10-31 00:00:00"));
+        saved.insert(QStringLiteral("end_date"), QStringLiteral("2026-11-02 00:00:00"));
+        saved.insert(QStringLiteral("updated_at"), QStringLiteral("2026-10-28 12:00:00"));
+        const QJsonObject moved{{QStringLiteral("id"), 104}, {QStringLiteral("title"), QStringLiteral("Publish banners")}};
+        return ocsBody(QJsonObject{{QStringLiteral("task"), saved}, {QStringLiteral("propagated"), QJsonArray{moved}}, {QStringLiteral("op_id"), QStringLiteral("op-9")}, {QStringLiteral("deck"), QJsonObject()}});
+    }
+
+    std::unique_ptr<Env> openTimeline(const QString &user, bool dark, const std::function<void(FakeTransport *)> &tweak = {})
+    {
+        auto env = open(user, dark, tweak);
+        env->controller->setViewMode(QStringLiteral("timeline"));
+        show(env.get());
+        return env;
+    }
+
+    /// The bar of an item, once it is on screen and the layout has settled (null when it never shows).
+    static QQuickItem *barOf(Env *env, const QString &key)
+    {
+        const QString name = QStringLiteral("bar-") + key;
+        for (int i = 0; i < 160; ++i) {
+            auto *bar = findItem(env->window->contentItem(), name);
+            if (bar && bar->isVisible() && bar->width() > 0) {
+                break;
+            }
+            QTest::qWait(50);
+        }
+        QTest::qWait(300);
+        return findItem(env->window->contentItem(), name);
+    }
+
+    static QPoint centerOf(QQuickItem *item)
+    {
+        return item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+    }
+
+    /// A drag with the mouse: press in the middle of the bar and move by `dx` pixels in small steps. The release is left to the test.
+    static QPoint pressAndMove(QQuickWindow *window, QQuickItem *bar, int dx)
+    {
+        const QPoint start = centerOf(bar);
+        QTest::mousePress(window, Qt::LeftButton, {}, start);
+        const int steps = qMax(1, qAbs(dx) / 6);
+        for (int i = 1; i <= steps; ++i) {
+            QTest::mouseMove(window, start + QPoint(dx * i / steps, 0));
+            QTest::qWait(15);
+        }
+        return start + QPoint(dx, 0);
+    }
+
+    void theTimelineShowsBarsGroupsAgentsArrowsShadingAndDiamonds_data() { darkRows(); }
+
+    void theTimelineShowsBarsGroupsAgentsArrowsShadingAndDiamonds()
+    {
+        QFETCH(bool, dark);
+        const auto env = open(QStringLiteral("ali"), dark, [](FakeTransport *t) {
+            prepend(t, "GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/projects/1/tasks"), 200, ganttTasksWithOwnDependency());
+        });
+        show(env.get());
+        auto *content = env->window->contentItem();
+        clickNamed(env->window, content, QStringLiteral("view-timeline")); // the new entry of the view switch
+        QCOMPARE(env->controller->viewMode(), QStringLiteral("timeline"));
+        QTRY_VERIFY(shown(content, QStringLiteral("timelineView")));
+        QVERIFY(!shown(content, QStringLiteral("dayList")));
+        auto *tl = env->controller->timelineController();
+        const auto keys = tl->itemKeys();
+        for (const auto &key : {QStringLiteral("gantt:task:101"), QStringLiteral("gantt:task:102"), QStringLiteral("gantt:task:104"), QStringLiteral("gantt:task:111"),
+                 QStringLiteral("gantt:ms:301"), QStringLiteral("cal:personal/td4.ics"), QStringLiteral("deck:card:503"), QStringLiteral("deck:card:502")}) {
+            QVERIFY2(keys.contains(key), qPrintable(key));
+        }
+        // Only my own work: another person's task and a to-do without a start date are not here.
+        QVERIFY(!keys.contains(QStringLiteral("gantt:task:103")));
+        QVERIFY(!keys.contains(QStringLiteral("cal:personal/td1.ics")));
+
+        // Bars with % done filling them, diamonds, the groups with their phase, the agent after the bar.
+        auto *bar101 = barOf(env.get(), QStringLiteral("gantt:task:101"));
+        QVERIFY(bar101);
+        auto *fill = findItem(bar101, QStringLiteral("fill"));
+        QVERIFY(fill && fill->isVisible());
+        QVERIFY2(qAbs(fill->width() - bar101->width() * 0.4) < 1.5, qPrintable(QString::number(fill->width())));
+        QVERIFY(findItem(content, QStringLiteral("diamond-gantt:ms:301")));
+        QVERIFY(findItem(content, QStringLiteral("diamond-deck:card:503")));
+        QVERIFY(findItem(content, QStringLiteral("bar-cal:personal/td4.ics")));
+        QVERIFY(findItem(content, QStringLiteral("group-gantt:p1")));
+        QVERIFY(findItem(content, QStringLiteral("group-gantt:p1:s401"))); // Phase 1
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Website")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Phase 1")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Writer-Bot"))); // task 101 is done by my agent
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Self")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Weeks")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Days")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Drag a bar to move it.")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Depends on (change it in NoGantt)")));
+        QVERIFY(findItem(content, QStringLiteral("badgeBlocked"))); // 104 waits for a late task
+
+        // Read only arrows: one whole arrow between two of my tasks, one stub for Sara's task.
+        int whole = 0;
+        int stubs = 0;
+        QStringList tips;
+        for (const auto &a : tl->layout().arrows) {
+            if (a.stub) {
+                ++stubs;
+                tips.append(a.tooltip);
+            } else if (a.fromKey == QLatin1String("gantt:task:102") && a.toKey == QLatin1String("gantt:task:104")) {
+                ++whole;
+            }
+        }
+        QCOMPARE(whole, 1);
+        QVERIFY2(tips.contains(QStringLiteral("After: Banner design (Sara)")), qPrintable(tips.join(QStringLiteral("; "))));
+        QVERIFY(stubs >= 1);
+        QVERIFY(findItem(content, QStringLiteral("arrowCanvas")));
+        QCOMPARE(findItem(content, QStringLiteral("dependencyArrows"))->width(), tl->contentWidth());
+
+        // My busy time is shaded and the days off are marked; today has its line.
+        QCOMPARE(countShown(content, QStringLiteral("busyDay")) + countShown(content, QStringLiteral("dayOff")), 63);
+        QVERIFY(countShown(content, QStringLiteral("dayOff")) >= 12);
+        QVERIFY(shown(content, QStringLiteral("todayLine")));
+        bool anyTint = false;
+        for (const auto &v : tl->shading()) {
+            anyTint = anyTint || v.toMap().value(QStringLiteral("alpha")).toDouble() > 0.0;
+        }
+        QVERIFY(anyTint); // the dentist and the client call are busy time
+
+        // No word of the server software on this screen.
+        for (const auto &t : textsOf(env->window)) {
+            QVERIFY2(!t.contains(QStringLiteral("nextcloud"), Qt::CaseInsensitive), qPrintable(t));
+        }
+        shoot(env.get(), QStringLiteral("timeline"), dark);
+        checkBackground(env.get(), dark);
+    }
+
+    void theZoomSwitchesBetweenWeeksAndDays()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false);
+        auto *content = env->window->contentItem();
+        auto *tl = env->controller->timelineController();
+        QCOMPARE(tl->pxPerDay(), 12.0);
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111")); // 28 - 30 Oct, three days
+        QVERIFY(bar);
+        QCOMPARE(bar->width(), 36.0);
+        clickNamed(env->window, content, QStringLiteral("zoom-days"));
+        QTRY_COMPARE(tl->pxPerDay(), 40.0);
+        QTRY_VERIFY(findItem(content, QStringLiteral("bar-gantt:task:111")) && findItem(content, QStringLiteral("bar-gantt:task:111"))->width() == 120.0);
+        QCOMPARE(tl->contentWidth(), 63 * 40.0);
+        QCOMPARE(tl->zoom(), QStringLiteral("days"));
+        shoot(env.get(), QStringLiteral("timeline-days"), false);
+        clickNamed(env->window, content, QStringLiteral("zoom-weeks"));
+        QTRY_COMPARE(tl->pxPerDay(), 12.0);
+    }
+
+    void aBarFollowsTheMouseShowsTheGhostAndSavesThroughTheEditor_data() { darkRows(); }
+
+    void aBarFollowsTheMouseShowsTheGhostAndSavesThroughTheEditor()
+    {
+        QFETCH(bool, dark);
+        const auto env = openTimeline(QStringLiteral("ali"), dark, [](FakeTransport *t) { prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer()); });
+        auto *content = env->window->contentItem();
+        auto *tl = env->controller->timelineController();
+        auto *edit = env->controller->editController();
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        const QPoint end = pressAndMove(env->window, bar, 36); // three days at 12 px a day
+
+        QTRY_VERIFY(tl->ghost().value(QStringLiteral("show")).toBool());
+        QCOMPARE(tl->ghost().value(QStringLiteral("days")).toInt(), 3);
+        QCOMPARE(tl->ghost().value(QStringLiteral("text")).toString(), QStringLiteral("31 Oct - 2 Nov"));
+        QTRY_VERIFY(shown(content, QStringLiteral("ghostBar")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("31 Oct - 2 Nov")));
+        QCOMPARE(env->transport->count("PUT"), 0); // nothing is saved while the bar is still held
+        shoot(env.get(), QStringLiteral("timeline-drag"), dark);
+
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
+        QTRY_COMPARE(env->transport->count("PUT"), 1);
+        QVERIFY(!shown(content, QStringLiteral("ghostBar")));
+        const auto put = env->transport->of("PUT").first();
+        QCOMPARE(put.url.path(), QString::fromLatin1(kPutTask111));
+        const auto body = parseObject(put.body);
+        QVERIFY(body.value(QStringLiteral("start_date")).toString().startsWith(QStringLiteral("2026-10-31")));
+        QVERIFY(body.value(QStringLiteral("end_date")).toString().startsWith(QStringLiteral("2026-11-02")));
+        QCOMPARE(body.value(QStringLiteral("adjust_lag")).toBool(), true); // NoGantt's own drag behaviour
+        QCOMPARE(body.value(QStringLiteral("deck_confirmed")).toBool(), false);
+        QTRY_VERIFY2(edit->toastText().startsWith(QStringLiteral("Moved to 31 Oct - 2 Nov.")), qPrintable(edit->toastText()));
+        QVERIFY2(edit->toastText().contains(QStringLiteral("Also moved: Publish banners")), qPrintable(edit->toastText()));
+        QVERIFY(edit->toastCanUndo());
+        QTRY_VERIFY(shown(content, QStringLiteral("undoToast")));
+        shoot(env.get(), QStringLiteral("timeline-undo"), dark);
+
+        // Undo: NoGantt reverts the move, and only then does the window say so.
+        prepend(env->transport, "POST", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/changes/op-9/revert"), 200, ocsBody(QJsonObject()));
+        edit->undo();
+        QTRY_COMPARE(edit->toastText(), QStringLiteral("Undone."));
+    }
+
+    void aDragOfLessThanHalfADayChangesNothing()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false, [](FakeTransport *t) { prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer()); });
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        const QPoint start = centerOf(bar);
+        QTest::mousePress(env->window, Qt::LeftButton, {}, start);
+        QTest::mouseMove(env->window, start + QPoint(12, 0)); // a whole day ...
+        QTest::qWait(30);
+        QTest::mouseMove(env->window, start + QPoint(5, 0)); // ... and back to 0.42 of a day
+        QTest::qWait(30);
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, start + QPoint(5, 0));
+        QTest::qWait(300);
+        QCOMPARE(env->transport->count("PUT"), 0);
+        QVERIFY(!env->controller->timelineController()->ghost().value(QStringLiteral("show")).toBool());
+    }
+
+    void escapeCancelsADragAndNothingIsSent()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false, [](FakeTransport *t) { prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer()); });
+        auto *content = env->window->contentItem();
+        auto *tl = env->controller->timelineController();
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        const QPoint end = pressAndMove(env->window, bar, 36);
+        QTRY_VERIFY(tl->ghost().value(QStringLiteral("show")).toBool());
+        QTest::keyClick(env->window, Qt::Key_Escape);
+        QTRY_VERIFY(!tl->ghost().value(QStringLiteral("show")).toBool());
+        QVERIFY(!shown(content, QStringLiteral("ghostBar")));
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
+        QTest::qWait(300);
+        QCOMPARE(env->transport->count("PUT"), 0);
+        QVERIFY(env->controller->editController()->toastText().isEmpty());
+    }
+
+    void theKeysMoveABarLikeTheMouse()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false, [](FakeTransport *t) { prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer()); });
+        auto *tl = env->controller->timelineController();
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        bar->forceActiveFocus();
+        QTest::keyClick(env->window, Qt::Key_Right, Qt::ShiftModifier); // seven days
+        QTRY_COMPARE(tl->ghost().value(QStringLiteral("days")).toInt(), 7);
+        QCOMPARE(tl->ghost().value(QStringLiteral("text")).toString(), QStringLiteral("4 Nov - 6 Nov"));
+        QTest::keyClick(env->window, Qt::Key_Escape); // cancels
+        QTRY_VERIFY(!tl->ghost().value(QStringLiteral("show")).toBool());
+        QCOMPARE(env->transport->count("PUT"), 0);
+        QTest::keyClick(env->window, Qt::Key_Right); // one day, Enter saves
+        QTRY_COMPARE(tl->ghost().value(QStringLiteral("days")).toInt(), 1);
+        QTest::keyClick(env->window, Qt::Key_Return);
+        QTRY_COMPARE(env->transport->count("PUT"), 1);
+        const auto body = parseObject(env->transport->of("PUT").first().body);
+        QVERIFY(body.value(QStringLiteral("start_date")).toString().startsWith(QStringLiteral("2026-10-29")));
+        QVERIFY(body.value(QStringLiteral("end_date")).toString().startsWith(QStringLiteral("2026-10-31")));
+        QTRY_VERIFY(env->controller->editController()->toastText().startsWith(QStringLiteral("Moved to 29 Oct - 31 Oct.")));
+    }
+
+    void aLockedBarShowsTheLockAndDoesNotMove_data() { darkRows(); }
+
+    void aLockedBarShowsTheLockAndDoesNotMove()
+    {
+        QFETCH(bool, dark);
+        const auto env = openTimeline(QStringLiteral("ali"), dark, [](FakeTransport *t) {
+            auto projects = fixtureJson(QStringLiteral("gantt/projects-ali.json")).toArray();
+            auto first = projects.at(0).toObject();
+            first.insert(QStringLiteral("permission"), QStringLiteral("viewer"));
+            projects.replace(0, first);
+            prepend(t, "GET", QStringLiteral("/ocs/v2.php/apps/nc_gantt/api/v1/projects"), 200, ocsBody(projects));
+            prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer());
+        });
+        auto *content = env->window->contentItem();
+        auto *tl = env->controller->timelineController();
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        auto *lock = findItem(bar, QStringLiteral("lockGlyph"));
+        QVERIFY(lock && lock->isVisible());
+        const QPoint end = pressAndMove(env->window, bar, 36);
+        QTest::qWait(100);
+        QVERIFY(!tl->ghost().value(QStringLiteral("show")).toBool()); // no ghost: it does not move
+        QVERIFY(!shown(content, QStringLiteral("ghostBar")));
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
+        QTRY_VERIFY(env->controller->editController()->toastText().contains(QStringLiteral("You can view this project only")));
+        QCOMPARE(env->transport->count("PUT"), 0); // no command at all
+        QCOMPARE(env->agenda->edit()->queue().pendingCount(), 0);
+        shoot(env.get(), QStringLiteral("timeline-readonly"), dark);
+    }
+
+    void aToDoBarMovesWithItsDatesThroughTheCalendarRules()
+    {
+        const QString path = QStringLiteral("/remote.php/dav/calendars/ali/personal/td4.ics");
+        const auto env = openTimeline(QStringLiteral("ali"), false, [&](FakeTransport *t) {
+            const QByteArray text = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:ci-td4\r\nSUMMARY:Draft report\r\nDTSTART;VALUE=DATE:20261027\r\nDUE;VALUE=DATE:20261031\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+            prepend(t, "GET", path, 200, text, {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"d4\"")}});
+            prepend(t, "PUT", path, 204, QByteArray(), {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"d5\"")}});
+        });
+        auto *bar = barOf(env.get(), QStringLiteral("cal:personal/td4.ics"));
+        QVERIFY(bar);
+        const QPoint end = pressAndMove(env->window, bar, 24); // two days
+        QTRY_COMPARE(env->controller->timelineController()->ghost().value(QStringLiteral("days")).toInt(), 2);
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
+        QTRY_COMPARE(env->transport->count("PUT"), 1);
+        const auto put = env->transport->of("PUT").first();
+        QCOMPARE(ScriptedTransport::header(put, "If-Match"), QByteArrayLiteral("\"d4\""));
+        const QString text = QString::fromUtf8(put.body);
+        QVERIFY2(text.contains(QStringLiteral("20261029")) && text.contains(QStringLiteral("20261102")), qPrintable(text));
+        QVERIFY(text.contains(QStringLiteral("SUMMARY:Draft report")));
+        QTRY_VERIFY2(env->controller->editController()->toastText().startsWith(QStringLiteral("Moved to 29 Oct - 2 Nov.")), qPrintable(env->controller->editController()->toastText()));
+    }
+
+    void aMoveMadeOfflineWaitsAndTheBarSaysSo()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false);
+        auto *content = env->window->contentItem();
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        const qreal before = bar->x();
+        env->transport->offline = true;
+        const QPoint end = pressAndMove(env->window, bar, 12); // one day
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
+        QTRY_VERIFY(shown(content, QStringLiteral("badgeWaiting")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("Waiting to send")));
+        QCOMPARE(env->agenda->edit()->queue().pendingCount(), 1);
+        // The bar is already drawn on its new days.
+        auto *moved = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(moved);
+        QVERIFY2(qAbs(moved->x() - before - 12.0) < 0.5, qPrintable(QString::number(moved->x() - before)));
+    }
+
+    void theTimelineSaysPlainlyWhenThereIsNothingToShow()
+    {
+        const auto env = openTimeline(QStringLiteral("mara"), false); // Mara runs projects, but has no dated work of her own
+        auto *content = env->window->contentItem();
+        QTRY_VERIFY(shown(content, QStringLiteral("timelineEmpty")));
+        QTRY_VERIFY(hasText(env->window, QStringLiteral("No dated work in this range.")));
+        QVERIFY(env->controller->timelineController()->itemKeys().isEmpty());
+        shoot(env.get(), QStringLiteral("timeline-empty"), false);
+    }
+
+    void theChipsAndTheSwitchFilterTheTimelineToo()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false);
+        auto *tl = env->controller->timelineController();
+        QVERIFY(tl->itemKeys().contains(QStringLiteral("gantt:task:101"))); // done by my agent
+        env->controller->chooseChip(QStringLiteral("agents"), false);
+        QTRY_VERIFY(!tl->itemKeys().contains(QStringLiteral("gantt:task:101")));
+        QVERIFY(tl->itemKeys().contains(QStringLiteral("gantt:task:111")));
+        env->controller->chooseChip(QStringLiteral("agents"), true);
+        env->controller->setCategory(QStringLiteral("personal"));
+        QTRY_VERIFY(!tl->itemKeys().contains(QStringLiteral("gantt:task:111")));
+        QVERIFY(tl->itemKeys().contains(QStringLiteral("cal:personal/td4.ics")));
+        env->controller->setCategory(QStringLiteral("all"));
+    }
+
+    void clickingABarOpensTheDetailPanelWithItsDateEditor()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false);
+        auto *content = env->window->contentItem();
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        click(env->window, bar);
+        QTRY_COMPARE(env->controller->selectedKey(), QStringLiteral("gantt:task:111"));
+        QTRY_VERIFY(shown(content, QStringLiteral("detailPanel")));
+        clickNamed(env->window, content, QStringLiteral("editButton"));
+        QTRY_VERIFY(shown(content, QStringLiteral("editor")));
+        QVERIFY(findItem(content, QStringLiteral("fieldStartDate")));
+        QVERIFY(findItem(content, QStringLiteral("fieldEndDate")));
+    }
+
+    void theArrowButtonsMoveTheRangeAndTodayComesBack()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false);
+        auto *content = env->window->contentItem();
+        auto *tl = env->controller->timelineController();
+        const QDate first = tl->range().first;
+        QCOMPARE(first, QDate(2026, 10, 21));
+        QCOMPARE(tl->range().second, QDate(2026, 12, 22));
+        clickNamed(env->window, content, QStringLiteral("nextButton"));
+        QTRY_COMPARE(tl->range().first, QDate(2026, 11, 18)); // four weeks on
+        QVERIFY(tl->todayX() < 0); // today is outside this range now
+        clickNamed(env->window, content, QStringLiteral("todayButton"));
+        QTRY_COMPARE(tl->range().first, first);
+        QVERIFY(tl->todayX() >= 0);
+    }
+
     void liveDataFromTheServerTest()
     {
         const auto liveDir = qEnvironmentVariable("NODRIVE_AGENDA_LIVE_DIR");

@@ -46,9 +46,15 @@ ApplicationWindow {
         onActivated: win.ctrl.viewMode = "month"
     }
     Shortcut {
+        sequence: "L"
+        onActivated: win.ctrl.viewMode = "timeline"
+    }
+    Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (newItem.open) {
+            if (win.ctrl.viewMode === "timeline" && timelineView.dragActive) {
+                timelineView.cancelDrag();
+            } else if (newItem.open) {
                 newItem.open = false;
             } else if (confirmDelete.open) {
                 confirmDelete.open = false;
@@ -132,8 +138,20 @@ ApplicationWindow {
                 onDayPicked: function (iso) { win.ctrl.setDate(iso); }
             }
 
+            TimelineView {
+                id: timelineView
+                objectName: "timelineView"
+                visible: win.ctrl.viewMode === "timeline"
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: detail.visible ? detail.left : parent.right
+                ctrl: win.ctrl
+            }
+
             Item {
                 id: listArea
+                visible: win.ctrl.viewMode !== "timeline"
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: grid.visible ? grid.right : parent.left

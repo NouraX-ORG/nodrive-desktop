@@ -12,6 +12,7 @@
 //   NODRIVE_TEST_USER / _PASSWORD  the person and an app password made by occ (throwaway, never in the source)
 //   NODRIVE_TEST_MODE              auth-proof | contract | read-ali | read-mara | read-sara | read-olaf | guard
 //                                  | edit-calendar | conflict | edit-gantt | edit-deck | offline (the edit step)
+//                                  | timeline (the Timeline step)
 //   NODRIVE_TEST_REPORT            file to which "| check | PASS/FAIL | detail |" lines are appended (no values)
 //   NODRIVE_TEST_SEED              seed.json written by the seed script
 //   NODRIVE_TEST_OUTDIR            folder for the contract key sets and the cache for the live screenshots
@@ -21,6 +22,8 @@
 #include "gui/nourax/noagenda/edit/editability.h"
 #include "gui/nourax/noagenda/edit/editservice.h"
 #include "gui/nourax/noagenda/net/accounttransport.h"
+#include "gui/nourax/noagenda/ui/editcontroller.h"
+#include "gui/nourax/noagenda/ui/timelinecontroller.h"
 #include "gui/nourax/noagenda/ocs/ocsjson.h"
 
 #include "accessmanager.h"
@@ -281,6 +284,8 @@ private Q_SLOTS:
             editDeck();
         } else if (mode == QLatin1String("offline")) {
             offlinePhase();
+        } else if (mode == QLatin1String("timeline")) {
+            timelinePhase();
         } else {
             QFAIL(qPrintable(QStringLiteral("unknown mode ") + mode));
         }
@@ -1308,6 +1313,135 @@ private:
             check(QStringLiteral("conflict: found by the version of the card"), clash.outcome == EditResult::Outcome::Conflict, why(clash));
             const auto card = cardOf(&transport, board, stack, ideaId);
             check(QStringLiteral("conflict: the server has the other change only"), card.value(QStringLiteral("title")).toString() == QLatin1String("Someday idea (renamed elsewhere)") && card.value(QStringLiteral("duedate")).isNull(), QString());
+        }
+    }
+
+    // ---- timeline: the layout of the seeded data, and a drag of a bar (the same call as the drop handler) ------------------------------------------
+    static QDate mondayFrom(int offsetDays)
+    {
+        auto d = QDateTime::currentDateTimeUtc().date().addDays(offsetDays);
+        while (d.dayOfWeek() != 1) {
+            d = d.addDays(1);
+        }
+        return d;
+    }
+
+    int createTask(AccountTransport *transport, int project, const QString &title, const QDate &start, const QDate &end, int resource, int predecessor = 0)
+    {
+        QJsonObject body{{QStringLiteral("title"), title}, {QStringLiteral("start_date"), start.toString(Qt::ISODate)}, {QStringLiteral("end_date"), end.toString(Qt::ISODate)},
+            {QStringLiteral("resources"), QJsonArray{QJsonObject{{QStringLiteral("resource_id"), resource}, {QStringLiteral("work"), QJsonValue(QJsonValue::Null)}}}}};
+        if (predecessor > 0) {
+            body.insert(QStringLiteral("dependencies"),
+                QJsonArray{QJsonObject{{QStringLiteral("predecessor_id"), QStringLiteral("t-%1").arg(predecessor)}, {QStringLiteral("dependency_type"), QStringLiteral("EA")}, {QStringLiteral("lag_days"), 0}}});
+        }
+        const auto created = sendJson(transport, "POST", gantt(QStringLiteral("projects/%1/tasks").arg(project)), body);
+        const auto data = parseOcs(created).data.toObject();
+        return data.contains(QStringLiteral("task")) ? data.value(QStringLiteral("task")).toObject().value(QStringLiteral("id")).toInt() : data.value(QStringLiteral("id")).toInt();
+    }
+
+    void timelinePhase()
+    {
+        QTemporaryDir cache;
+        auto agenda = newAgenda(cache.path() + QStringLiteral("/noagenda/timeline"));
+        AccountTransport transport(_account);
+        check(QStringLiteral("refresh finished"), refresh(agenda.get()), QString());
+        const int website = seedId("projects", QStringLiteral("Website"));
+        const int ali = seedId("resources", QStringLiteral("Ali"));
+
+        // Two tasks of mine on a Monday, the second waiting for the first (finish to start).
+        const QDate monday = mondayFrom(14);
+        const int first = createTask(&transport, website, QStringLiteral("Timeline first"), monday, monday.addDays(1), ali);
+        const int second = first > 0 ? createTask(&transport, website, QStringLiteral("Timeline second"), monday.addDays(2), monday.addDays(3), ali, first) : 0;
+        check(QStringLiteral("two tasks with a dependency made"), first > 0 && second > 0, QStringLiteral("ids %1 %2").arg(first).arg(second));
+        if (first <= 0 || second <= 0) {
+            return;
+        }
+        settle(agenda.get());
+
+        EditController edit(agenda.get());
+        TimelineController tl(agenda.get(), &edit);
+        tl.rebuild(agenda->state().today, {});
+        const QString firstKey = QStringLiteral("gantt:task:%1").arg(first);
+        const QString secondKey = QStringLiteral("gantt:task:%1").arg(second);
+        const auto keys = tl.itemKeys();
+        check(QStringLiteral("timeline: both new tasks are bars"), keys.contains(firstKey) && keys.contains(secondKey), QString::number(keys.size()) + QStringLiteral(" items"));
+        check(QStringLiteral("timeline: Sara's task is not mine, so it has no bar"), !keys.contains(QStringLiteral("gantt:task:%1").arg(seedId("tasks", QStringLiteral("Banner design")))), QString());
+
+        bool arrow = false;
+        bool stub = false;
+        for (const auto &a : tl.layout().arrows) {
+            arrow = arrow || (a.fromKey == firstKey && a.toKey == secondKey && a.type == QLatin1String("EA") && !a.stub);
+            stub = stub || (a.stub && a.tooltip.startsWith(QStringLiteral("After: Banner design")));
+        }
+        check(QStringLiteral("timeline: the dependency between my two tasks is an arrow"), arrow, QString());
+        check(QStringLiteral("timeline: a predecessor of somebody else is a stub with its title"), stub, QString());
+
+        bool project = false;
+        bool phase = false;
+        bool milestone = false;
+        bool card = false;
+        for (const auto &e : tl.layout().entries) {
+            project = project || (e.type == TimelineEntry::Type::Group && e.level == 0 && e.title == QLatin1String("Website"));
+            phase = phase || (e.type == TimelineEntry::Type::Group && e.level == 1 && e.title == QLatin1String("Phase 1"));
+            milestone = milestone || (e.type == TimelineEntry::Type::Diamond && e.title == QLatin1String("Launch"));
+            card = card || (e.type == TimelineEntry::Type::Diamond && e.glyph == QLatin1String("card"));
+        }
+        check(QStringLiteral("timeline: project group, phase group, milestone and card diamonds"), project && phase && milestone && card,
+            QStringLiteral("%1 %2 %3 %4").arg(project).arg(phase).arg(milestone).arg(card));
+        check(QStringLiteral("timeline: a shade for each of the 63 days"), tl.layout().shading.size() == 63, QString::number(tl.layout().shading.size()));
+
+        // The drag: +2 days (and a bit less than half a day more, which snaps away), the call the drop handler makes.
+        const auto firstBefore = taskOf(&transport, website, first);
+        const auto secondBefore = taskOf(&transport, website, second);
+        QSignalSpy spy(agenda->edit(), &EditService::finished);
+        const double px = tl.pxPerDay();
+        const QString error = tl.dragCommit(firstKey, 2 * px + 0.2 * px);
+        check(QStringLiteral("drag: handed to the editor"), error.isEmpty(), error);
+        EditResult result;
+        int tries = 0;
+        for (int i = 0; i < 1500; ++i) {
+            if (!spy.isEmpty()) {
+                result = qvariant_cast<EditResult>(spy.last().at(1));
+                if (result.outcome != EditResult::Outcome::Failed || ++tries > 3) {
+                    break;
+                }
+                spy.clear();
+                QTest::qWait(1500);
+                agenda->edit()->retry();
+            }
+            spy.wait(100);
+            if (i > 0 && i % 60 == 0 && spy.isEmpty() && !agenda->isRefreshing() && !agenda->edit()->isBusy()) {
+                agenda->refresh(true);
+            }
+        }
+        check(QStringLiteral("drag: sent"), result.done(), why(result));
+        const auto firstAfter = taskOf(&transport, website, first);
+        const QString wantStart = monday.addDays(2).toString(Qt::ISODate);
+        const QString wantEnd = monday.addDays(3).toString(Qt::ISODate);
+        check(QStringLiteral("drag: the server has the dates two days later"),
+            firstAfter.value(QStringLiteral("start_date")).toString().startsWith(wantStart) && firstAfter.value(QStringLiteral("end_date")).toString().startsWith(wantEnd),
+            firstAfter.value(QStringLiteral("start_date")).toString().left(10) + QStringLiteral(" ") + firstAfter.value(QStringLiteral("end_date")).toString().left(10));
+        const auto secondAfter = taskOf(&transport, website, second);
+        check(QStringLiteral("drag: the dependent task moved (propagated)"), secondAfter.value(QStringLiteral("start_date")).toString() != secondBefore.value(QStringLiteral("start_date")).toString(),
+            secondAfter.value(QStringLiteral("start_date")).toString().left(10));
+        check(QStringLiteral("drag: the window names the task that moved"), result.alsoMoved.contains(QStringLiteral("Timeline second")), result.alsoMoved.join(QStringLiteral(", ")));
+        check(QStringLiteral("drag: the toast says where it moved to"), edit.toastText().startsWith(QStringLiteral("Moved to ")) && edit.toastText().contains(QStringLiteral("Also moved: Timeline second")), edit.toastText());
+        check(QStringLiteral("drag: an Undo is offered"), edit.toastCanUndo(), QString());
+
+        if (edit.toastCanUndo()) {
+            edit.undo();
+            for (int i = 0; i < 300 && edit.toastText() != QLatin1String("Undone."); ++i) {
+                QTest::qWait(100);
+            }
+            check(QStringLiteral("undo: the window says it is undone"), edit.toastText() == QLatin1String("Undone."), edit.toastText());
+            const auto firstBack = taskOf(&transport, website, first);
+            const auto secondBack = taskOf(&transport, website, second);
+            check(QStringLiteral("undo: the dragged task has its dates back"),
+                firstBack.value(QStringLiteral("start_date")).toString().left(10) == firstBefore.value(QStringLiteral("start_date")).toString().left(10)
+                    && firstBack.value(QStringLiteral("end_date")).toString().left(10) == firstBefore.value(QStringLiteral("end_date")).toString().left(10),
+                firstBack.value(QStringLiteral("start_date")).toString().left(10));
+            check(QStringLiteral("undo: the dependent task has its dates back"), secondBack.value(QStringLiteral("start_date")).toString().left(10) == secondBefore.value(QStringLiteral("start_date")).toString().left(10),
+                secondBack.value(QStringLiteral("start_date")).toString().left(10));
         }
     }
 

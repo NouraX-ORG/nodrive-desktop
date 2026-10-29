@@ -125,6 +125,9 @@ AgendaController::AgendaController(AccountAgenda *agenda, QObject *parent)
     connect(_edit, &EditController::changed, this, [this] { Q_EMIT changed(); });
     connect(_edit, &EditController::openUrlRequested, this, &AgendaController::openUrlRequested);
 
+    _timeline = new TimelineController(agenda, _edit, this);
+    connect(_timeline, &TimelineController::changed, this, [this] { Q_EMIT changed(); });
+
     _style.setDark(Theme::instance()->darkMode());
     connect(Theme::instance(), &Theme::darkModeChanged, this, [this] { _style.setDark(Theme::instance()->darkMode()); });
     connect(agenda, &AccountAgenda::stateChanged, this, [this] { rebuild(); });
@@ -139,12 +142,15 @@ void AgendaController::setAccountName(const QString &name)
 
 void AgendaController::setViewMode(const QString &mode)
 {
-    if (mode != QLatin1String("day") && mode != QLatin1String("week") && mode != QLatin1String("month")) {
+    if (mode != QLatin1String("day") && mode != QLatin1String("week") && mode != QLatin1String("month") && mode != QLatin1String("timeline")) {
         return;
     }
     _view = mode;
     _agenda->setView(mode);
     rebuild();
+    if (mode == QLatin1String("timeline")) {
+        _timeline->requestScroll(true);
+    }
 }
 
 void AgendaController::setConflictsOnly(bool on)
@@ -225,11 +231,16 @@ void AgendaController::goToday()
 {
     _date = _agenda->state().today.isValid() ? _agenda->state().today : QDate::currentDate();
     rebuild();
+    if (_view == QLatin1String("timeline")) {
+        _timeline->requestScroll(true);
+    }
 }
 
 void AgendaController::goPrevious()
 {
-    if (_view == QLatin1String("day")) {
+    if (_view == QLatin1String("timeline")) {
+        _date = _date.addDays(-28);
+    } else if (_view == QLatin1String("day")) {
         _date = _date.addDays(-1);
     } else if (_view == QLatin1String("week")) {
         _date = _date.addDays(-7);
@@ -237,11 +248,16 @@ void AgendaController::goPrevious()
         _date = _date.addMonths(-1);
     }
     rebuild();
+    if (_view == QLatin1String("timeline")) {
+        _timeline->requestScroll(false);
+    }
 }
 
 void AgendaController::goNext()
 {
-    if (_view == QLatin1String("day")) {
+    if (_view == QLatin1String("timeline")) {
+        _date = _date.addDays(28);
+    } else if (_view == QLatin1String("day")) {
         _date = _date.addDays(1);
     } else if (_view == QLatin1String("week")) {
         _date = _date.addDays(7);
@@ -249,6 +265,9 @@ void AgendaController::goNext()
         _date = _date.addMonths(1);
     }
     rebuild();
+    if (_view == QLatin1String("timeline")) {
+        _timeline->requestScroll(false);
+    }
 }
 
 void AgendaController::setDate(const QString &iso)
@@ -392,6 +411,9 @@ QString AgendaController::rangeText() const
 {
     const auto r = range();
     QLocale locale;
+    if (_view == QLatin1String("timeline")) {
+        return locale.toString(r.first, QStringLiteral("d MMM")) + QStringLiteral(" - ") + locale.toString(r.second, QStringLiteral("d MMM yyyy"));
+    }
     if (_view == QLatin1String("day")) {
         return locale.toString(_date, QStringLiteral("dddd d MMMM yyyy"));
     }
@@ -403,6 +425,9 @@ QString AgendaController::rangeText() const
 
 QPair<QDate, QDate> AgendaController::range() const
 {
+    if (_view == QLatin1String("timeline")) {
+        return {_date.addDays(-7), _date.addDays(8 * 7 - 1)};
+    }
     if (_view == QLatin1String("day")) {
         return {_date, _date};
     }
@@ -770,7 +795,10 @@ void AgendaController::rebuild()
 
     _rows.clear();
     const auto r = range();
-    if (_view == QLatin1String("day")) {
+    if (_view == QLatin1String("timeline")) {
+        // The Timeline has no list: its own controller lays the bars out (plans/noagenda-desktop-plan.md, 3).
+        _timeline->rebuild(_date, [this](const AgendaItem &item) { return visible(item); });
+    } else if (_view == QLatin1String("day")) {
         addDay(_date, true, &_rows, false);
     } else if (_view == QLatin1String("week")) {
         for (QDate d = r.first; d <= r.second; d = d.addDays(1)) {
@@ -795,6 +823,10 @@ void AgendaController::rebuild()
 
     _selectableKeys.clear();
     bool nothing = true;
+    if (_view == QLatin1String("timeline")) {
+        _selectableKeys = _timeline->itemKeys();
+        nothing = _selectableKeys.isEmpty();
+    }
     for (const auto &v : std::as_const(_rows)) {
         const auto m = v.toMap();
         if (m.value(QStringLiteral("type")).toString() == QLatin1String("item")) {
@@ -802,7 +834,9 @@ void AgendaController::rebuild()
             nothing = false;
         }
     }
-    if (_view == QLatin1String("day")) {
+    if (_view == QLatin1String("timeline")) {
+        _emptyText = AgendaText::tr("No dated work in this range.");
+    } else if (_view == QLatin1String("day")) {
         _emptyText = AgendaText::tr("Nothing planned for this day.");
     } else if (_view == QLatin1String("week")) {
         _emptyText = AgendaText::tr("Nothing planned this week.");

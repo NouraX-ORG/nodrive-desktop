@@ -11,6 +11,7 @@
 #include "../accountagenda.h"
 #include "agendastyle.h"
 #include "editcontroller.h"
+#include "timelinecontroller.h"
 
 #include <QDate>
 #include <QObject>
@@ -26,6 +27,7 @@ class AgendaController : public QObject
 
     Q_PROPERTY(QObject *style READ style CONSTANT)
     Q_PROPERTY(QObject *edit READ edit CONSTANT)
+    Q_PROPERTY(QObject *timeline READ timeline CONSTANT)
     Q_PROPERTY(bool conflictsOnly READ conflictsOnly WRITE setConflictsOnly NOTIFY changed)
     Q_PROPERTY(QString selectedDateIso READ selectedDateIso NOTIFY changed)
     Q_PROPERTY(QString accountName READ accountName NOTIFY changed)
@@ -61,6 +63,8 @@ public:
     [[nodiscard]] QObject *style() { return &_style; }
     [[nodiscard]] QObject *edit() { return _edit; }
     [[nodiscard]] EditController *editController() { return _edit; }
+    [[nodiscard]] QObject *timeline() { return _timeline; }
+    [[nodiscard]] TimelineController *timelineController() { return _timeline; }
     [[nodiscard]] bool conflictsOnly() const { return _conflictsOnly; }
     [[nodiscard]] QString selectedDateIso() const { return _date.toString(Qt::ISODate); }
     void setConflictsOnly(bool on);
@@ -143,6 +147,7 @@ private:
     QPointer<AccountAgenda> _agenda;
     AgendaStyle _style;
     EditController *_edit = nullptr;
+    TimelineController *_timeline = nullptr;
     bool _conflictsOnly = false;
     QString _accountName;
     QString _view = QStringLiteral("day");

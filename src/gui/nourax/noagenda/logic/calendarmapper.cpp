@@ -153,6 +153,7 @@ void map(const BuildContext &ctx, const CalendarSnapshot &snapshot, QList<Agenda
                 item.end = rec.dueTime;
             }
             if (rec.start.isValid()) {
+                item.startStamp = rec.start;
                 item.startDate = rec.start.toTimeZone(ctx.zone).date();
             } else if (rec.startDate.isValid()) {
                 item.startDate = rec.startDate;

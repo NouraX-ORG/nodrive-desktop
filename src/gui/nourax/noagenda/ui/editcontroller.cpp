@@ -733,6 +733,70 @@ QString EditController::create(const QVariantMap &v)
     return submit(EditCommands::calendarCreate(calendarUri, todo, uid, fields, title));
 }
 
+QString EditController::moveByDays(const QString &itemKey, int days)
+{
+    if (!_agenda || !_agenda->edit()) {
+        return AgendaText::tr("Nothing can be changed right now.");
+    }
+    const AgendaItem *found = nullptr;
+    for (const auto &candidate : _agenda->state().items) {
+        if (candidate.key == itemKey) {
+            found = &candidate;
+            break;
+        }
+    }
+    if (!found) {
+        return AgendaText::tr("Nothing is selected.");
+    }
+    const AgendaItem item = *found;
+    const auto e = EditRules::of(item);
+    if (!e.canEdit) {
+        return e.reason.isEmpty() ? AgendaText::tr("This can't be moved here.") : e.reason;
+    }
+    if (days == 0) {
+        return QString();
+    }
+    const auto zone = _agenda->zone();
+    QJsonObject fields;
+    QDate newStart;
+    QDate newEnd;
+    if (item.home == Home::Gantt && item.kind == ItemKind::GanttTask) {
+        if (!item.startDate.isValid()) {
+            return AgendaText::tr("This task has no dates to move.");
+        }
+        const QDate end = item.endDate.isValid() ? item.endDate : item.startDate;
+        newStart = item.startDate.addDays(days);
+        newEnd = end.addDays(days);
+        fields.insert(QStringLiteral("start_date"), isoDate(newStart));
+        fields.insert(QStringLiteral("end_date"), isoDate(newEnd));
+        const QString id = _agenda->edit()->submit(EditCommands::ganttUpdate(item, fields));
+        _moveTexts.insert(id, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
+        return QString();
+    }
+    if (item.home == Home::Tasks && item.kind == ItemKind::Todo) {
+        if (item.repeating || !item.startDate.isValid() || !item.due.isValid()) {
+            return AgendaText::tr("This can't be moved here.");
+        }
+        newStart = item.startDate.addDays(days);
+        newEnd = item.due.addDays(days);
+        // The time of day of the start and of the due date stays as it is.
+        if (item.startStamp.isValid()) {
+            fields.insert(QStringLiteral("start"), utcText(QDateTime(newStart, item.startStamp.toTimeZone(zone).time(), zone)));
+        } else {
+            fields.insert(QStringLiteral("start"), isoDate(newStart));
+        }
+        if (item.end.isValid()) {
+            fields.insert(QStringLiteral("due"), utcText(QDateTime(newEnd, item.end.toTimeZone(zone).time(), zone)));
+        } else {
+            fields.insert(QStringLiteral("due"), isoDate(newEnd));
+        }
+        const QString id = _agenda->edit()->submit(EditCommands::calendarPatch(item, fields));
+        _moveTexts.insert(id, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
+        return QString();
+    }
+    return AgendaText::tr("This can't be moved here.");
+}
+
 // ---- conflicts, toast ---------------------------------------------------------------------------------------------------------
 
 void EditController::applyAgain(const QString &commandId)
@@ -804,10 +868,17 @@ void EditController::onUndoFinished(const EditResult &result)
 
 void EditController::onFinished(const EditCommand &command, const EditResult &result)
 {
-    Q_UNUSED(command)
+    if (result.outcome != EditResult::Outcome::Done && result.outcome != EditResult::Outcome::Offline) {
+        _moveTexts.remove(command.id);
+    }
     switch (result.outcome) {
     case EditResult::Outcome::Done: {
-        QString text = AgendaText::tr("Saved.");
+        QString text = _moveTexts.take(command.id);
+        if (text.isEmpty()) {
+            text = AgendaText::tr("Saved.");
+        } else {
+            text += QLatin1Char('.');
+        }
         if (!result.alsoMoved.isEmpty()) {
             text += QLatin1Char(' ') + AgendaText::tr("Also moved: %1").arg(result.alsoMoved.join(QStringLiteral(", ")));
         }

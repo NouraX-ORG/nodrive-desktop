@@ -80,6 +80,10 @@ target_sources(nextcloudCore PRIVATE
     ${NOAGENDA_DIR}/edit/editqueue.cpp
     ${NOAGENDA_DIR}/edit/editservice.h
     ${NOAGENDA_DIR}/edit/editservice.cpp
+    ${NOAGENDA_DIR}/logic/timelinelayout.h
+    ${NOAGENDA_DIR}/logic/timelinelayout.cpp
+    ${NOAGENDA_DIR}/ui/timelinecontroller.h
+    ${NOAGENDA_DIR}/ui/timelinecontroller.cpp
     ${NOAGENDA_DIR}/ui/editcontroller.h
     ${NOAGENDA_DIR}/ui/editcontroller.cpp
     ${NOAGENDA_DIR}/store/agendacache.h

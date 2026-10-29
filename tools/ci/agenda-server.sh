@@ -10,7 +10,8 @@
 # phases auth-proof, contract, read-ali, read-mara, read-sara, read-olaf and guard (read only). The live screenshots of
 # Ali's seeded day come from the same data. Then comes the edit step: tools/ci/agenda-webedit.py (does the agent id
 # survive an edit in the Calendar and Tasks web pages?) and the phases edit-calendar, conflict, edit-gantt, edit-deck
-# and offline, which change the throwaway server and check its state directly.
+# and offline, which change the throwaway server and check its state directly. Last comes the Timeline phase
+# (a drag of a bar, the dependent task that moves with it, Undo) and the live screenshots live-timeline-{light,dark}.png.
 #
 # No secret is in this file. The throwaway passwords come from "openssl rand", are masked with ::add-mask::,
 # are never echoed, and travel only in 0600 env files in $RUNNER_TEMP. The server is reachable only on
@@ -255,6 +256,8 @@ run_phase conflict ali "$TOK_ALI"
 run_phase edit-gantt ali "$TOK_ALI"
 run_phase edit-deck ali "$TOK_ALI"
 run_phase offline ali "$TOK_ALI"
+# The Timeline step: the layout of the seeded data, then a drag of a bar of Ali's (two new tasks with a dependency).
+run_phase timeline ali "$TOK_ALI"
 cat "$OUT/phase-report.md" >> "$REPORT"
 if grep -q '| FAIL |' "$OUT/phase-report.md"; then FAILED=1; fi
 docker logs "$SERVER" 2>&1 | grep -E '"(DELETE|MOVE|COPY) [^"]*"' \

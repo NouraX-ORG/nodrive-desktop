@@ -73,6 +73,17 @@ struct ProblemFlag
     QString text;
 };
 
+/// Timeline stage: one dependency of a NoGantt task (plans/noagenda-desktop-plan.md, 3.2). `type` is NoGantt's own code:
+/// EA finish to start, AA start to start, EE finish to finish, AE start to finish.
+struct ItemDependency
+{
+    QString predecessorKey; ///< gantt:task:<id> or gantt:ms:<id>
+    QString type = QStringLiteral("EA");
+    double lagDays = 0;
+    QString predecessorTitle;
+    QString predecessorOwner; ///< display names of the people on the predecessor (empty when unknown)
+};
+
 struct AgendaItem
 {
     QString key; ///< cal:<calendarUri>/<objectUri>[#<recurrence-id>], gantt:task:<id>, gantt:ms:<id>, deck:card:<id>
@@ -145,6 +156,12 @@ struct AgendaItem
     /// A synthetic row of the conflict rules: one of the agents is over its capacity on `agentLoadDay`.
     bool agentLoad = false;
     QDate agentLoadDay;
+
+    // Timeline stage: the phase (NoGantt subproject), the dependencies, and the time of a to-do's start.
+    int phaseId = 0;
+    QString phaseName;
+    QList<ItemDependency> dependencies;
+    QDateTime startStamp; ///< a to-do whose DTSTART has a time of day (UTC): a move keeps that time
 
     // References
     int projectId = 0;

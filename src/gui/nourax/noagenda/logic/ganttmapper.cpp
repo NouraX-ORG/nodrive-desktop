@@ -114,6 +114,10 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
         for (const auto &t : data.tasks) {
             tasksById.insert(intOf(t.toObject().value(QLatin1String("id"))), t.toObject());
         }
+        QMap<int, QJsonObject> milestonesById;
+        for (const auto &m : data.milestones) {
+            milestonesById.insert(intOf(m.toObject().value(QLatin1String("id"))), m.toObject());
+        }
         QMap<int, QString> phaseNames;
         for (const auto &sp : data.subprojects) {
             phaseNames.insert(intOf(sp.toObject().value(QLatin1String("id"))), sp.toObject().value(QLatin1String("title")).toString());
@@ -312,9 +316,41 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                     item.readOnly = true;
                     item.readOnlyReason = AgendaText::tr("You can see this project but not change it.");
                 }
-                const auto phase = phaseNames.value(intOf(task.value(QLatin1String("subproject_id"))));
+                const int phaseId = intOf(task.value(QLatin1String("subproject_id")));
+                const auto phase = phaseNames.value(phaseId);
                 if (!phase.isEmpty()) {
                     item.sourceName = projectTitle + QStringLiteral(" / ") + phase;
+                    item.phaseId = phaseId;
+                    item.phaseName = phase;
+                }
+                // The dependencies (Timeline): NoGantt writes the predecessor as "t-<task id>" or "m-<milestone id>".
+                for (const auto &depValue : deps) {
+                    const auto dep = depValue.toObject();
+                    const auto predecessorText = dep.value(QLatin1String("predecessor_id")).toString();
+                    ItemDependency d;
+                    const int number = predecessorText.mid(2).toInt();
+                    if (predecessorText.startsWith(QLatin1String("t-")) && number > 0) {
+                        d.predecessorKey = QStringLiteral("gantt:task:") + QString::number(number);
+                        const auto pred = tasksById.value(number);
+                        d.predecessorTitle = pred.value(QLatin1String("title")).toString();
+                        QStringList owners;
+                        for (const auto &rowValue : pred.value(QLatin1String("resources")).toArray()) {
+                            const auto resource = resources.value(intOf(rowValue.toObject().value(QLatin1String("resource_id"))));
+                            if (resource.value(QLatin1String("type")).toString() == QLatin1String("person") && !resource.value(QLatin1String("uid")).toString().isEmpty()) {
+                                owners.append(personName(resource));
+                            }
+                        }
+                        d.predecessorOwner = owners.join(QStringLiteral(", "));
+                    } else if (predecessorText.startsWith(QLatin1String("m-")) && number > 0) {
+                        d.predecessorKey = QStringLiteral("gantt:ms:") + QString::number(number);
+                        d.predecessorTitle = milestonesById.value(number).value(QLatin1String("title")).toString();
+                    } else {
+                        continue;
+                    }
+                    const auto type = dep.value(QLatin1String("dependency_type")).toString();
+                    d.type = (type == QLatin1String("AA") || type == QLatin1String("EE") || type == QLatin1String("AE")) ? type : QStringLiteral("EA");
+                    d.lagDays = numberOf(dep.value(QLatin1String("lag_days")), 0);
+                    item.dependencies.append(d);
                 }
             };
 

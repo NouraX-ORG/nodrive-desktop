@@ -12,6 +12,7 @@
 #include "../accountagenda.h"
 #include "../edit/editability.h"
 
+#include <QHash>
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
@@ -56,6 +57,9 @@ public:
     Q_INVOKABLE QString markDone();
     Q_INVOKABLE QString deleteSelected();
     Q_INVOKABLE QString create(const QVariantMap &values);
+    /// The Timeline: moves a NoGantt task (start and end) or a to-do (start and due date) by whole days, through the same
+    /// rules and the same queue as the editor. Plain words when it can't be done (nothing is sent), empty when it was handed over.
+    Q_INVOKABLE QString moveByDays(const QString &itemKey, int days);
 
     Q_INVOKABLE void applyAgain(const QString &commandId);
     Q_INVOKABLE void keepOther(const QString &commandId);
@@ -92,6 +96,7 @@ private:
     QString _toast;
     QString _toastTone;
     QString _undoOp;
+    QHash<QString, QString> _moveTexts; ///< command id -> "Moved to 4 Nov - 8 Nov" (the Timeline)
     QTimer _toastTimer;
 };
 

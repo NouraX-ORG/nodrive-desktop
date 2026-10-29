@@ -9,6 +9,13 @@
         <file alias="FieldBox.qml">qml/FieldBox.qml</file>
         <file alias="NewItemDialog.qml">qml/NewItemDialog.qml</file>
         <file alias="NotSentPanel.qml">qml/NotSentPanel.qml</file>
+        <file alias="TimelineView.qml">qml/TimelineView.qml</file>
+        <file alias="TimelineBar.qml">qml/TimelineBar.qml</file>
+        <file alias="TimelineDiamond.qml">qml/TimelineDiamond.qml</file>
+        <file alias="DependencyArrows.qml">qml/DependencyArrows.qml</file>
+        <file alias="BusyShading.qml">qml/BusyShading.qml</file>
+        <file alias="TimelineLegend.qml">qml/TimelineLegend.qml</file>
+        <file alias="TimelineScaleHeader.qml">qml/TimelineScaleHeader.qml</file>
         <file alias="UndoToast.qml">qml/UndoToast.qml</file>
         <file alias="WorkloadBar.qml">qml/WorkloadBar.qml</file>
         <file alias="Chip.qml">qml/Chip.qml</file>
