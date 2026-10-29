@@ -52,6 +52,7 @@ Runs: the MSI `NoDrive-35.0.0.5-nourax.1-x64.msi` and the unit tests come from r
 | Problem reports: unit tests | CI | PASS | The five `NoDriveProblemReport*Test` tests passed (run [40736612246](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612246)); `NoDriveProblemReportServerTest` skips itself without a server (real server: Linux job only) |
 | Problem reports: real app, killed run | CI | PASS | `results.tsv`: `prompt-`, `not-now-`, `ask-once-`, `marker-running-`, `quit-clean-`, `report-` PASS in `en-light` and `en-dark`; `texts-*-unclean-prompt`: 18 UI Automation texts, none names Nextcloud; zip `2026-10-28_18-15-38_windows_35.0.0-nourax.1.zip` (10499 bytes, 12 entries) clean |
 | Sync root and Explorer sidebar name ("NoDrive") | owner | pending owner test | Needs a signed-in account with a sync folder |
+| NoAgenda: unit tests and the window in light and dark (mouse clicks, pixel checks, screenshots) | CI | PASS | `NoDriveAgenda*Test`: `100% tests passed, 0 tests failed out of 110` (commit `857c37f451`, run [40789876477](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40789876477)) |
 | File list | owner | pending owner test | |
 | Upload, download, rename, move, delete | owner | pending owner test | |
 | Public link with expiry and password | owner | pending owner test | |
@@ -67,6 +68,7 @@ Runs: the MSI `NoDrive-35.0.0.5-nourax.1-x64.msi` and the unit tests come from r
 | Problem reports: no question after logging out or off; the question after a hard end; "Not now" is asked once | owner | pending owner test | |
 | Problem reports: switch on, hard end: no question, "Problem report sent" | owner | pending owner test | |
 | Problem reports: dark mode readable | owner | pending owner test | |
+| NoAgenda: the tray menu (left- and right-click) shows "NoAgenda" and it opens the window; the personal-calendars question; Today; tasks with their agent; My team; offline banner; dark mode | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 

@@ -35,6 +35,9 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Problem reports: unit tests | CI | PASS | `NoDriveProblemReportScrubberTest`, `NoDriveProblemReportTest`, `NoDriveProblemReportUploadTest`, `NoDriveProblemReportUiTest`, `NoDriveProblemReportServerTest` all passed (run [40736612257](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40736612257)); details in [problem-reports.md](problem-reports.md) section 7 |
 | Problem reports: real app, killed run | CI | PASS | `results.tsv`: `prompt-`, `not-now-`, `ask-once-`, `marker-running-`, `sigterm-clean-`, `report-` PASS in `en-light` and `en-dark`; zip `2026-10-28_17-42-18_linux_35.0.0-nourax.1.zip` (8763 bytes, 10 entries) passed `tools/ci/check-report-zip.py` (no planted secret left) |
 | Problem reports: against a real Nextcloud 35.0.2 (throwaway) | CI | PASS | Job `report-server`, artifact `nodrive-linux-report-server`: 4 phases; folder and zip created, nothing replaced, no share until `nourax-support` exists, then one share with `permissions=1`; Support lists but cannot write (HTTP 207 / 403); no DELETE, MOVE or COPY seen; an offline report is sent later |
+| NoAgenda: unit tests (registry, iCalendar, CalDAV, NoGantt, Deck, rules, cache) | CI | PASS | `NoDriveAgenda*Test`: `100% tests passed, 0 tests failed out of 113` (commit `857c37f451`, run [40789876560](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40789876560)) |
+| NoAgenda: the window in light and dark, mouse clicks, pixel checks, screenshots | CI | PASS | `NoDriveAgendaUiTest`; 20 screenshots in `nodrive-screenshots/noagenda/` of the artifact `nodrive-linux-test-results` |
+| NoAgenda: against a real Nextcloud 35.0.2 with nc_gantt 2.4.1, Deck 1.19.1, Calendar 6.6.4, Tasks 0.18.1 (throwaway) | CI | PASS | Job `agenda-server`, artifact `nodrive-linux-agenda-server`: auth proof, contract, Ali, Mara, Sara, Olaf, version guard; 145 checks, 0 failed; no secret in the artifact |
 | File list | owner | pending owner test | |
 | Upload, download, rename, move, delete | owner | pending owner test | |
 | Public link with expiry and password | owner | pending owner test | |
@@ -50,6 +53,7 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Problem reports: no question after logging out or off; the question after a hard end; "Not now" is asked once | owner | pending owner test | |
 | Problem reports: switch on, hard end: no question, "Problem report sent" | owner | pending owner test | |
 | Problem reports: dark mode readable | owner | pending owner test | |
+| NoAgenda: the tray menu shows "NoAgenda" and it opens the window; the personal-calendars question; Today; tasks with their agent; My team; offline banner; dark mode | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 

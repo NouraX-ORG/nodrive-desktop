@@ -73,6 +73,20 @@ All rows at commit `14ebedb5c4`: Linux run [40736612257](https://github.com/Nour
 | Real Nextcloud 35.0.2 (throwaway): the folder "Problem reports" is created, one zip each, an existing name is never replaced (`_2`), no share while `nourax-support` does not exist, then one read-only share (`permissions=1`), Support can list but not write, no DELETE / MOVE / COPY, a report made offline is sent later, no secret in the artifact | PASS: all 4 phases (job `report-server`, artifact `nodrive-linux-report-server`) | not run (no Docker on the runner) | not run (no Docker on the runner) |
 | Branding gate stays green and `rebrand.py --check` is clean (the marked lines of `tools/rebrand.d/problemreports.py`) | PASS: lane linux, 653 hits, 0 unclassified | PASS | PASS |
 
+### 1.1b NoAgenda core (CI, [noagenda.md](noagenda.md))
+
+Commit `857c37f451` (branch `feature/noagenda-core`): Linux run [40789876560](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40789876560),
+macOS run [40789876488](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40789876488), Windows run [40789876477](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40789876477). CI never contacts `drive.nourax.org`.
+The unit tests use canned answers; the Linux job `agenda-server` uses a throwaway Nextcloud 35.0.2 in Docker with the
+pinned apps calendar 6.6.4, tasks 0.18.1, Deck 1.19.1 and nc_gantt 2.4.1 and throwaway accounts.
+
+| Feature | Linux | Windows | macOS |
+|---|---|---|---|
+| Unit tests `NoDriveAgendaRegistry`, `...ICal`, `...CalDav`, `...Gantt`, `...Deck`, `...Rules`, `...Cache`: registry parsing, iCalendar and CalDAV reading, NoGantt contract and agent recognition, Deck, the defaults, event rules, agents, integrity flags, dedupe, team problems, privacy between organisations, offline cache, back-off | PASS (`100% tests passed, 0 tests failed out of 113`) | PASS (`100% tests passed, 0 tests failed out of 110`) | PASS (`100% tests passed out of 107`) |
+| `NoDriveAgendaUiTest`: the window in light and dark (Day, Week, Month, My team, Sources, the personal-calendars question, detail, not linked, offline, registry missing), chips and switches by mouse clicks, pixel checks (background, selected chip `#2563EB` / `#3B82F6`), no text with the server software's name | PASS, screenshots `nodrive-screenshots/noagenda/` in the artifact `nodrive-linux-test-results` (20 files) | PASS, screenshots in the ctest artifact (`nodrive-screenshots/noagenda/`) | PASS, screenshots in the ctest artifact (`nodrive-screenshots/noagenda/`) |
+| Real Nextcloud 35.0.2 (throwaway) with the four pinned apps (SHA-256 checked): auth proof (app password, Basic, `OCS-APIRequest`), contract (live key sets against the fixtures), Ali (staff), Mara (manager), Sara (invalid registry, viewer), Olaf (other organisation), version guard | PASS: 145 checks, 0 failed (job `agenda-server`, artifact `nodrive-linux-agenda-server` with the live screenshots of Ali's day) | not run (no Docker on the runner) | not run (no Docker on the runner) |
+| Branding gate stays green and `rebrand.py --check` is clean (the marked lines of `tools/rebrand.d/noagenda.py`) | PASS | PASS | PASS |
+
 ### 1.2 After sign-in (owner)
 
 | Feature | Linux | Windows | macOS |
@@ -96,6 +110,13 @@ All rows at commit `14ebedb5c4`: Linux run [40736612257](https://github.com/Nour
 | Problem reports: ending NoDrive hard (Task Manager, Activity Monitor or `kill -9`) gives the question at the next start; "Not now" is not asked again | pending owner test | pending owner test | pending owner test |
 | Problem reports: with the switch on, ending NoDrive hard sends the report without a question and shows "Problem report sent" | pending owner test | pending owner test | pending owner test |
 | Problem reports: dark mode (Settings > Advanced, the dialog, the question) is readable | pending owner test | pending owner test | pending owner test |
+| NoAgenda ([noagenda.md](noagenda.md)): the tray shows "NoAgenda" (Windows: left- and right-click menus; macOS: the menu-bar popup; Linux: the tray menu) and it opens the window | pending owner test | pending owner test | pending owner test |
+| NoAgenda: the question "Which of your calendars are personal?" appears once, after the first read | pending owner test | pending owner test | pending owner test |
+| NoAgenda: Today shows the dentist and the client call from the real calendars | pending owner test | pending owner test | pending owner test |
+| NoAgenda: NoGantt tasks show with the right agent or Self | pending owner test | pending owner test | pending owner test |
+| NoAgenda: My team shows a late task in a project the owner runs | pending owner test | pending owner test | pending owner test |
+| NoAgenda: switching off Wi-Fi shows "showing what was saved at ..." | pending owner test | pending owner test | pending owner test |
+| NoAgenda: dark mode is readable | pending owner test | pending owner test | pending owner test |
 
 Offline files and automatic photo upload are phone features; they do not apply to
 the desktop app.
@@ -174,6 +195,23 @@ keyring, so a real Linux machine is better for the sign-in and sync tests.
    helps). Look for the word "Nextcloud" or a Nextcloud logo on every screen.
 4. Once signed in, syncing also works away from home (WebDAV with the app password
    is not limited to the home network).
+
+### NoAgenda: what to try (after sign-in)
+
+NoAgenda reads your calendars, to-dos, NoGantt projects and NoBoard boards and changes nothing. If the file
+`NoAgenda/agent-registry.json` is not in your NoDrive yet, everything shows as "Self" (the Sources screen says so).
+
+1. Open the tray menu and click **NoAgenda**. A window opens with today's list. The first time, the question
+   "Which of your calendars are personal?" appears once: tick the personal ones, **Save** (or **Skip**).
+2. Today shows your events and to-dos from NoCalendar and NoTasks, your NoGantt tasks and NoBoard cards. Each row names its
+   agent or "Self". Try **Day / Week / Month**, **All / Work / Personal** and the chips **Me / My agents / My team**.
+3. Click a row: the panel on the right has one button, **Open in NoCalendar / NoTasks / NoGantt / NoBoard**; it opens the
+   page in your browser.
+4. If you run projects or boards, **My team** lists only the problems (late, due today, blocked, not assigned). **Show
+   all team tasks** lists everything.
+5. **Sources** lists every calendar, project and board with its setting. Switch one to Hidden and back.
+6. Switch off Wi-Fi and click **Refresh**: the banner says "showing what was saved at ...", the list stays.
+7. Switch the system to dark mode: all text is readable. No screen says "Nextcloud".
 
 ### Problem reports: what to try (after sign-in)
 

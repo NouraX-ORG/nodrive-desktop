@@ -107,6 +107,46 @@ Deck 1.19.1 and **nc_gantt 2.4.1** (release `v2.4.1-9a09070`, SHA-256
 (manager) and Ali and Sara (staff) in `org-a`, Olaf in `org-b`. The throwaway passwords are made at run time, masked
 and never written to the artifact (the job greps for them).
 
+## Auth proof (design section 5)
+
+Measured in the job `agenda-server` (Linux run [40789876560](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40789876560), commit `857c37f451`,
+artifact `nodrive-linux-agenda-server`) against a throwaway Nextcloud 35.0.2 with nc_gantt 2.4.1, Deck 1.19.1,
+Calendar 6.6.4 and Tasks 0.18.1. The credential is an app password made by `occ user:auth-tokens:add`, the same kind
+of credential the client gets from Login Flow v2, used through the client's own `Account` (Basic authentication).
+
+| Call | Answer |
+|---|---|
+| NoGantt `my-tasks`, `projects`, `resources`, `capacity-check`, `projects/{id}/tasks`, `milestones`, `task-sync` with `OCS-APIRequest: true` | 200, OCS JSON |
+| The same NoGantt call **without** `OCS-APIRequest` | **412**: the header is required (NoAgenda always sends it) |
+| Deck `boards?details=true`, `boards/{id}/stacks` (with `OCS-APIRequest: true`) | 200 |
+| CalDAV PROPFIND of the principal, REPORT `calendar-query` | 207 |
+| `remote.php/dav/files/<user>/NoAgenda/agent-registry.json` | 200 |
+
+So no part of NoAgenda has to fall back to an "Open in NoGantt" / "Open in NoBoard" row on this server. The fallback
+(`Open in ...` row, status code logged, never a credential to another host) is still there if a real server refuses.
+The key sets of every live answer are in the artifact (`contract-keys.txt`) and are compared with the committed
+fixtures (a missing key or another type fails the job).
+
+## Found against the real server
+
+- NoGantt writes a dependency's predecessor as `"t-<task id>"` (or `"m-<milestone id>"`), not as a number.
+- The server's calendar scheduling puts an invitation into each attendee's **default calendar**, so the same event is
+  in the team calendar and in the person's own calendar. NoAgenda shows it once (same UID and recurrence, the person's
+  own calendar wins).
+- Deck creates a "welcome" board with sample cards for every new user. The cards assigned to the person show in the
+  day list like any other card (the board's calendar is hidden automatically).
+- A daily repeating event is about 400 rows in the 14 month sync window (the server expands it).
+
+## Known limits of this step
+
+- No account picker in the header: the tray entry opens the window of the current account (one window per account).
+- No separate date picker for Day and Week (previous, next, Today); Month has a small calendar for jumping.
+- Views outside the sync window (previous month to 12 months ahead) are not read live and not marked
+  "Not saved for offline use" yet.
+- `calendar-multiget` and `sync-collection` are not used: a calendar whose token changed is read in full.
+- Edit, conflicts, the workload bar and the clash badge (design steps 2 and 3) are not here.
+- The new texts are English; translations are a to-do.
+
 ## Server-side items (not done here; for the Workspace session)
 
 See the notes at the end of `plans/noagenda-desktop-plan.md` (section 6): the Nourax agents app and its per-user
