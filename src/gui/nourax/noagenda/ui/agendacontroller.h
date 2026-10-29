@@ -10,6 +10,7 @@
 
 #include "../accountagenda.h"
 #include "agendastyle.h"
+#include "editcontroller.h"
 
 #include <QDate>
 #include <QObject>
@@ -24,6 +25,9 @@ class AgendaController : public QObject
     Q_OBJECT
 
     Q_PROPERTY(QObject *style READ style CONSTANT)
+    Q_PROPERTY(QObject *edit READ edit CONSTANT)
+    Q_PROPERTY(bool conflictsOnly READ conflictsOnly WRITE setConflictsOnly NOTIFY changed)
+    Q_PROPERTY(QString selectedDateIso READ selectedDateIso NOTIFY changed)
     Q_PROPERTY(QString accountName READ accountName NOTIFY changed)
     Q_PROPERTY(QString viewMode READ viewMode WRITE setViewMode NOTIFY changed)
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY changed)
@@ -55,6 +59,11 @@ public:
     explicit AgendaController(AccountAgenda *agenda, QObject *parent = nullptr);
 
     [[nodiscard]] QObject *style() { return &_style; }
+    [[nodiscard]] QObject *edit() { return _edit; }
+    [[nodiscard]] EditController *editController() { return _edit; }
+    [[nodiscard]] bool conflictsOnly() const { return _conflictsOnly; }
+    [[nodiscard]] QString selectedDateIso() const { return _date.toString(Qt::ISODate); }
+    void setConflictsOnly(bool on);
     [[nodiscard]] AgendaStyle *agendaStyle() { return &_style; }
     [[nodiscard]] QString accountName() const { return _accountName; }
     void setAccountName(const QString &name);
@@ -133,6 +142,8 @@ private:
 
     QPointer<AccountAgenda> _agenda;
     AgendaStyle _style;
+    EditController *_edit = nullptr;
+    bool _conflictsOnly = false;
     QString _accountName;
     QString _view = QStringLiteral("day");
     QString _category = QStringLiteral("all");

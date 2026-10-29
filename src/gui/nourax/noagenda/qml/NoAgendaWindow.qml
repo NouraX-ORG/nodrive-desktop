@@ -47,7 +47,25 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Escape"
-        onActivated: win.ctrl.clearSelection()
+        onActivated: {
+            if (newItem.open) {
+                newItem.open = false;
+            } else if (confirmDelete.open) {
+                confirmDelete.open = false;
+            } else if (newMenu.visible) {
+                newMenu.visible = false;
+            } else {
+                win.ctrl.clearSelection();
+            }
+        }
+    }
+    Shortcut {
+        sequence: "Ctrl+N"
+        onActivated: newItem.show("event")
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+N"
+        onActivated: newItem.show("todo")
     }
 
     Item {
@@ -62,11 +80,22 @@ ApplicationWindow {
             height: visible ? implicitHeight : 0
             ctrl: win.ctrl
             onSourcesRequested: win.ctrl.page = "sources"
+            onNewMenuRequested: newMenu.visible = !newMenu.visible
+        }
+
+        NotSentPanel {
+            id: notSent
+            visible: win.ctrl.page === "agenda" && win.ctrl.edit.notSent.length > 0
+            anchors.top: header.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            edit: win.ctrl.edit
+            st: win.st
         }
 
         Column {
             id: banners
-            anchors.top: header.bottom
+            anchors.top: notSent.visible ? notSent.bottom : header.bottom
             anchors.left: parent.left
             anchors.right: parent.right
             visible: win.ctrl.page === "agenda"
@@ -138,7 +167,8 @@ ApplicationWindow {
                             sourceComponent: del.modelData.type === "item" ? itemC
                                 : (del.modelData.type === "day" ? dayC
                                 : (del.modelData.type === "group" ? groupC
-                                : (del.modelData.type === "noDate" ? noDateC : quietC)))
+                                : (del.modelData.type === "workload" ? workloadC
+                                : (del.modelData.type === "noDate" ? noDateC : quietC))))
                         }
 
                         Component {
@@ -149,6 +179,14 @@ ApplicationWindow {
                                 row: del.modelData
                                 selected: win.ctrl.selectedKey === del.modelData.key
                                 onActivated: win.ctrl.select(del.modelData.key)
+                            }
+                        }
+                        Component {
+                            id: workloadC
+                            WorkloadBar {
+                                objectName: "workloadBar"
+                                st: win.st
+                                row: del.modelData
                             }
                         }
                         Component {
@@ -302,8 +340,14 @@ ApplicationWindow {
                 width: visible ? 360 : 0
                 st: win.st
                 info: win.ctrl.detail
+                edit: win.ctrl.edit
                 onOpenRequested: win.ctrl.openSelected()
                 onCloseRequested: win.ctrl.clearSelection()
+                onDeleteRequested: {
+                    confirmDelete.todo = win.ctrl.edit.form.kind === "todo";
+                    confirmDelete.itemTitle = win.ctrl.detail.title ? win.ctrl.detail.title : "";
+                    confirmDelete.open = true;
+                }
             }
         }
 
@@ -317,6 +361,83 @@ ApplicationWindow {
         PersonalCalendarsDialog {
             anchors.fill: parent
             ctrl: win.ctrl
+        }
+
+        // The "+" menu: a new event or a new to-do.
+        Rectangle {
+            id: newMenu
+            objectName: "newMenu"
+            visible: false
+            z: 80
+            anchors.top: header.top
+            anchors.topMargin: 52
+            anchors.right: parent.right
+            anchors.rightMargin: 12
+            width: 180
+            height: menuColumn.height + 12
+            radius: 8
+            color: win.st.surface
+            border.width: 1
+            border.color: win.st.border
+            Column {
+                id: menuColumn
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 6
+                spacing: 2
+                FlatButton {
+                    objectName: "newEventItem"
+                    width: parent.width
+                    st: win.st
+                    flat: true
+                    label: qsTr("New event")
+                    onClicked: {
+                        newMenu.visible = false;
+                        newItem.show("event");
+                    }
+                }
+                FlatButton {
+                    objectName: "newTodoItem"
+                    width: parent.width
+                    st: win.st
+                    flat: true
+                    label: qsTr("New to-do")
+                    onClicked: {
+                        newMenu.visible = false;
+                        newItem.show("todo");
+                    }
+                }
+            }
+        }
+
+        NewItemDialog {
+            id: newItem
+            anchors.fill: parent
+            ctrl: win.ctrl
+        }
+
+        ConfirmDeleteDialog {
+            id: confirmDelete
+            anchors.fill: parent
+            st: win.st
+            onCancelled: confirmDelete.open = false
+            onConfirmed: {
+                confirmDelete.open = false;
+                var err = win.ctrl.edit.deleteSelected();
+                if (err !== "") {
+                    win.ctrl.edit.showToast(err, "warn");
+                }
+            }
+        }
+
+        UndoToast {
+            id: toast
+            edit: win.ctrl.edit
+            st: win.st
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 16
         }
     }
 }

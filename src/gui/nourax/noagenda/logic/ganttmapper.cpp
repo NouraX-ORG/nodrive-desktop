@@ -23,6 +23,7 @@ struct Person
     int resourceId = 0;
     double workHours = -1;
     QList<const Agent *> agents;
+    double agentWorkHours = -1; ///< the work of the first agent's own planning person on the task (hours)
     QStringList unknownAgentLabels;
 };
 
@@ -136,6 +137,7 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
             {
                 int id = 0;
                 QString name;
+                double work = -1; ///< the work of this planning person on the task, in hours
             };
             QList<Candidate> candidates;
             int roleRows = 0;
@@ -159,7 +161,7 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                     p.workHours = workHours(row, resource, hoursPerPt);
                     persons.append(p);
                 } else if (type == QLatin1String("person")) {
-                    candidates.append({resourceId, resource.value(QLatin1String("name")).toString()});
+                    candidates.append({resourceId, resource.value(QLatin1String("name")).toString(), workHours(row, resource, hoursPerPt)});
                 }
             }
 
@@ -227,6 +229,9 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                         continue;
                     }
                     persons[owner].agents.append(agent);
+                    if (persons[owner].agents.size() == 1) {
+                        persons[owner].agentWorkHours = cand.work;
+                    }
                     if (agent->isRetired()) {
                         flags.append({makeFlag(ProblemFlag::Kind::RetiredAgent, ProblemFlag::Audience::Person, FlagText::retiredAgent(agent->name)), persons.at(owner).uid});
                     }
@@ -293,6 +298,7 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                 item.projectName = projectTitle;
                 item.taskId = taskId;
                 item.version = task.value(QLatin1String("updated_at")).toString();
+                item.progressMode = task.value(QLatin1String("progress_mode")).toString();
                 item.versionReadOnly = readOnlyByGuard;
                 item.description = task.value(QLatin1String("description")).toString().left(2000);
                 const auto cardId = task.value(QLatin1String("deck_card_id"));
@@ -337,6 +343,7 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                 item.agent = agentFor(*mine);
                 item.workKind = item.agent.isSelf ? WorkKind::Self : WorkKind::MyAgent;
                 item.myWorkHours = mine->workHours;
+                item.agentWorkHours = mine->agentWorkHours;
                 for (const auto &f : std::as_const(flags)) {
                     const bool forMe = f.personUid.isEmpty() || ctx.isMe(f.personUid);
                     const bool personAudience = f.flag.audience == ProblemFlag::Audience::Person || f.flag.audience == ProblemFlag::Audience::Both;
@@ -401,6 +408,7 @@ void map(const BuildContext &ctx, const GanttSnapshot &snapshot, Result *out)
                 fillCommon(item);
                 item.key = QStringLiteral("gantt:task:") + QString::number(taskId) + QStringLiteral(":") + p.uid;
                 item.workKind = WorkKind::Team;
+                item.agentWorkHours = p.agentWorkHours;
                 item.personName = p.name;
                 item.personUid = p.uid;
                 item.agent = agentFor(p);

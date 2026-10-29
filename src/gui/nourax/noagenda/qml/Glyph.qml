@@ -286,4 +286,76 @@ Item {
         border.color: g.tone
         border.width: 1.5
     }
+
+    // waiting to send: a clock
+    Item {
+        visible: g.kind === "clock"
+        anchors.fill: parent
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: width / 2
+            color: "transparent"
+            border.color: g.tone
+            border.width: 1.5
+        }
+        Rectangle {
+            x: parent.width / 2 - 0.75
+            y: parent.height * 0.22
+            width: 1.5
+            height: parent.height * 0.3
+            color: g.tone
+        }
+        Rectangle {
+            x: parent.width / 2 - 0.75
+            y: parent.height / 2 - 0.75
+            width: parent.width * 0.26
+            height: 1.5
+            color: g.tone
+        }
+    }
+
+    // a plus
+    Item {
+        visible: g.kind === "plus"
+        anchors.fill: parent
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width * 0.7
+            height: 2
+            color: g.tone
+        }
+        Rectangle {
+            anchors.centerIn: parent
+            width: 2
+            height: parent.height * 0.7
+            color: g.tone
+        }
+    }
+
+    // a clash: two overlapping boxes
+    Item {
+        visible: g.kind === "clash"
+        anchors.fill: parent
+        Rectangle {
+            x: 1
+            y: 1
+            width: parent.width * 0.62
+            height: parent.height * 0.62
+            radius: 2
+            color: "transparent"
+            border.color: g.tone
+            border.width: 1.5
+        }
+        Rectangle {
+            x: parent.width * 0.32
+            y: parent.height * 0.32
+            width: parent.width * 0.62
+            height: parent.height * 0.62
+            radius: 2
+            color: "transparent"
+            border.color: g.tone
+            border.width: 1.5
+        }
+    }
 }

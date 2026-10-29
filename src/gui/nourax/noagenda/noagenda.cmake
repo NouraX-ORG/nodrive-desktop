@@ -54,6 +54,34 @@ target_sources(nextcloudCore PRIVATE
     ${NOAGENDA_DIR}/logic/deckmapper.cpp
     ${NOAGENDA_DIR}/logic/agendabuilder.h
     ${NOAGENDA_DIR}/logic/agendabuilder.cpp
+    ${NOAGENDA_DIR}/ical/icalpatch.h
+    ${NOAGENDA_DIR}/ical/icalpatch.cpp
+    ${NOAGENDA_DIR}/logic/conflicts.h
+    ${NOAGENDA_DIR}/logic/conflicts.cpp
+    ${NOAGENDA_DIR}/logic/workload.h
+    ${NOAGENDA_DIR}/logic/workload.cpp
+    ${NOAGENDA_DIR}/logic/agentload.h
+    ${NOAGENDA_DIR}/logic/agentload.cpp
+    ${NOAGENDA_DIR}/edit/editcommand.h
+    ${NOAGENDA_DIR}/edit/editcommand.cpp
+    ${NOAGENDA_DIR}/edit/editability.h
+    ${NOAGENDA_DIR}/edit/editability.cpp
+    ${NOAGENDA_DIR}/edit/writerutil.h
+    ${NOAGENDA_DIR}/edit/writerutil.cpp
+    ${NOAGENDA_DIR}/edit/caldavwriter.h
+    ${NOAGENDA_DIR}/edit/caldavwriter.cpp
+    ${NOAGENDA_DIR}/edit/ganttagentchange.h
+    ${NOAGENDA_DIR}/edit/ganttagentchange.cpp
+    ${NOAGENDA_DIR}/edit/ganttwriter.h
+    ${NOAGENDA_DIR}/edit/ganttwriter.cpp
+    ${NOAGENDA_DIR}/edit/deckwriter.h
+    ${NOAGENDA_DIR}/edit/deckwriter.cpp
+    ${NOAGENDA_DIR}/edit/editqueue.h
+    ${NOAGENDA_DIR}/edit/editqueue.cpp
+    ${NOAGENDA_DIR}/edit/editservice.h
+    ${NOAGENDA_DIR}/edit/editservice.cpp
+    ${NOAGENDA_DIR}/ui/editcontroller.h
+    ${NOAGENDA_DIR}/ui/editcontroller.cpp
     ${NOAGENDA_DIR}/store/agendacache.h
     ${NOAGENDA_DIR}/store/agendacache.cpp
     ${NOAGENDA_DIR}/accountagenda.h

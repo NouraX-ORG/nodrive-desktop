@@ -170,6 +170,7 @@ void map(const BuildContext &ctx, const DeckSnapshot &snapshot, const QSet<int> 
                 item.lateDays = lateDays;
                 item.dueToday = dueToday;
                 item.boardId = boardId;
+                item.stackId = intOf(stack.value(QLatin1String("id")));
                 item.cardId = cardId;
                 item.projectName = boardTitle;
                 const auto etag = card.value(QLatin1String("ETag")).toString();

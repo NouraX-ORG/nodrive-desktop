@@ -91,6 +91,47 @@ Rectangle {
                     size: 14
                 }
                 Glyph {
+                    objectName: "badgeClash"
+                    visible: (r.row.badges || []).indexOf("clash") >= 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    kind: "clash"
+                    tone: r.st.danger
+                    size: 14
+                }
+                Glyph {
+                    objectName: "badgeSoftClash"
+                    visible: (r.row.badges || []).indexOf("softclash") >= 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    kind: "clash"
+                    tone: r.st.warning
+                    size: 14
+                    opacity: 0.6
+                }
+                Glyph {
+                    objectName: "badgeDayOff"
+                    visible: (r.row.badges || []).indexOf("dayoff") >= 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    kind: "event"
+                    tone: r.st.warning
+                    size: 14
+                }
+                Glyph {
+                    objectName: "badgePending"
+                    visible: (r.row.badges || []).indexOf("pending") >= 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    kind: "clock"
+                    tone: r.st.textMuted
+                    size: 14
+                }
+                Glyph {
+                    objectName: "badgeNotSent"
+                    visible: (r.row.badges || []).indexOf("notsent") >= 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    kind: "alert"
+                    tone: r.st.danger
+                    size: 14
+                }
+                Glyph {
                     visible: (r.row.badges || []).indexOf("flag") >= 0
                     anchors.verticalCenter: parent.verticalCenter
                     kind: "alert"

@@ -29,6 +29,8 @@ enum class Home { Calendar, Tasks, Gantt, Board };
 enum class WorkKind { Self, MyAgent, Team };
 /// For the All / Work / Personal switch.
 enum class Category { Personal, Work, Info };
+/// A change of mine that is waiting to be sent (edit stage, plans/noagenda-desktop-plan.md, 2.3).
+enum class PendingState { None, Waiting, Sending, Conflict };
 
 struct AgentRef
 {
@@ -124,7 +126,20 @@ struct AgendaItem
 
     QString description;
     QString location;
-    QString version; ///< ETag, updated_at or lastModified (edit stage)
+    QString version; ///< ETag, updated_at or lastModified (the base version of an edit)
+
+    // Edit stage: what the editor needs, and what the conflict rules found.
+    QString progressMode; ///< NoGantt: manual | deck | ... (% done is read only when it comes from the board)
+    int stackId = 0; ///< NoBoard: the stack of the card
+    double agentWorkHours = -1; ///< NoGantt: the work of the agent's own planning person on the task (hours; -1 = none)
+    PendingState pending = PendingState::None;
+    bool clash = false; ///< overlaps another timed item of mine
+    bool softClash = false; ///< the overlap involves a tentative item
+    QStringList clashWith; ///< titles of the items it overlaps
+    bool deadlineDayOff = false; ///< the due or end date is on a day off
+    /// A synthetic row of the conflict rules: one of the agents is over its capacity on `agentLoadDay`.
+    bool agentLoad = false;
+    QDate agentLoadDay;
 
     // References
     int projectId = 0;

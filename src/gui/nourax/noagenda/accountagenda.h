@@ -7,7 +7,9 @@
 
 #pragma once
 
+#include "edit/editservice.h"
 #include "logic/agendabuilder.h"
+#include "logic/conflicts.h"
 #include "net/httptransport.h"
 #include "registry/registrysource.h"
 #include "store/agendacache.h"
@@ -34,6 +36,7 @@ struct AgendaState
     QString personName;
     QString personUid;
     WorkingHours hours;
+    DayModel dayModel; ///< the person's working days, holidays and days off (workload and conflicts)
     QDate today;
     QDateTime refreshedAt; ///< the last time anything was read from the server
     bool refreshing = false;
@@ -60,6 +63,16 @@ public:
     [[nodiscard]] QString davUser() const { return _transport->davUser(); }
     [[nodiscard]] bool isRefreshing() const { return _refreshing; }
     [[nodiscard]] QList<Agent> myAgents() const { return _state.build.myAgents; }
+
+    // Edit stage (plans/noagenda-desktop-plan.md, 2): the edits, the offline queue and the edit conflicts.
+    [[nodiscard]] EditService *edit() { return _edit.get(); }
+    /// Everything the writers and the editor need besides the command.
+    [[nodiscard]] EditContext editContext() const;
+    [[nodiscard]] const CalendarSnapshot &calendarSnapshot() const { return _calendar; }
+    [[nodiscard]] const GanttSnapshot &ganttSnapshot() const { return _gantt; }
+    [[nodiscard]] const DeckSnapshot &deckSnapshot() const { return _deck; }
+    [[nodiscard]] const AgentRegistry &registry() const { return _registry; }
+    [[nodiscard]] const ServerInfo &serverInfo() const { return _server; }
 
     /// For tests: the clock, the zone and the e-mail of the account.
     void setClock(const std::function<QDateTime()> &clock) { _clock = clock; }
@@ -128,6 +141,8 @@ private:
     std::unique_ptr<HttpTransport> _transport;
     AgendaCache _cache;
     std::unique_ptr<RegistrySource> _registrySource;
+    std::unique_ptr<EditService> _edit;
+    int _refreshSequence = 0;
     std::function<QDateTime()> _clock;
     QTimeZone _zone;
     QString _accountEmail;

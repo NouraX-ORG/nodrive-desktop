@@ -11,6 +11,7 @@ Rectangle {
     required property var ctrl
     readonly property var st: ctrl.style
     signal sourcesRequested
+    signal newMenuRequested
 
     color: st.surface
     implicitHeight: column.height + 24
@@ -48,6 +49,14 @@ Rectangle {
                     text: h.ctrl.updatedText
                     color: h.st.textMuted
                     font.pixelSize: 12
+                }
+                FlatButton {
+                    objectName: "newButton"
+                    st: h.st
+                    primary: true
+                    label: "+ " + qsTr("New")
+                    Accessible.name: qsTr("New event or to-do")
+                    onClicked: h.newMenuRequested()
                 }
                 FlatButton {
                     objectName: "refreshButton"
@@ -144,6 +153,14 @@ Rectangle {
                 label: qsTr("My team")
                 on: h.ctrl.chipTeam
                 onToggled: function (value) { h.ctrl.chooseChip("team", value); }
+            }
+            Chip {
+                objectName: "chipConflicts"
+                st: h.st
+                glyph: "clash"
+                label: qsTr("Conflicts")
+                on: h.ctrl.conflictsOnly
+                onToggled: function (value) { h.ctrl.conflictsOnly = value; }
             }
             Chip {
                 objectName: "showAllTeam"

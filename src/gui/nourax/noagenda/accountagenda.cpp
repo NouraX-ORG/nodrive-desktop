@@ -8,6 +8,7 @@
 #include "caldav/calendarreader.h"
 #include "deck/deckclient.h"
 #include "gantt/ganttclient.h"
+#include "logic/agentload.h"
 #include "logic/ganttmapper.h"
 #include "ocs/serverinfo.h"
 
@@ -38,6 +39,15 @@ AccountAgenda::AccountAgenda(std::unique_ptr<HttpTransport> transport, const QSt
 {
     _registrySource = makeRegistrySource(_transport.get());
     _registry = AgentRegistry::missing();
+    _edit = std::make_unique<EditService>(_transport.get(), cacheDir, [this] { return editContext(); }, this);
+    connect(_edit.get(), &EditService::changed, this, [this] { rebuild(); });
+    connect(_edit.get(), &EditService::refreshNeeded, this, [this] {
+        if (_online) {
+            QPointer<AccountAgenda> self(this);
+            QMetaObject::invokeMethod(this, [self] { if (self) { self->refresh(true); } }, Qt::QueuedConnection);
+        }
+    });
+    connect(_edit.get(), &EditService::loginNeeded, this, [this] { setNeedsLogin(true); });
     for (const auto *key : {"calendar", "gantt", "board", "registry"}) {
         SourceStatus s;
         s.key = QString::fromLatin1(key);
@@ -75,6 +85,7 @@ void AccountAgenda::loadFromCache()
     _calendar = _cache.loadCalendar();
     _gantt = _cache.loadGantt();
     _deck = _cache.loadDeck();
+    _edit->load();
     if (_calendar.loaded) {
         markStatus(QStringLiteral("calendar"), SourceStatus::State::Saved, _calendar.fetchedAt);
     }
@@ -121,14 +132,23 @@ void AccountAgenda::rebuild()
     input.today = input.now.toTimeZone(_zone).date();
 
     auto build = AgendaBuilder::build(input);
-    _state.items = build.items;
+    _state.hours = AgendaBuilder::workingHours(input);
+    const QString me = input.server.uid.isEmpty() ? input.davUser : input.server.uid;
+
+    // What the person changed and has not been read back yet is drawn on top, then the conflict rules run on the
+    // result, so every local change shows its effect (clash, workload, day off, agent load) at once.
+    auto items = build.items;
+    _edit->overlay(&items, input.today);
+    _state.dayModel = DayModel(items, _state.hours, Conflicts::holidaysFor(_gantt, me), _zone);
+    Conflicts::annotate(&items, _state.dayModel);
+    items.append(AgentLoad::asItems(AgentLoad::compute(_registry, items, input.today, input.today.addDays(28), _zone, me), _registry));
+    _state.items = items;
     _state.sources = build.sources;
     _state.build = build;
     _state.registryStatus = _registry.status();
     _state.registrySkipped = _registry.skippedCount();
     _state.personUid = input.server.uid.isEmpty() ? input.davUser : input.server.uid;
     _state.personName = input.server.displayName.isEmpty() ? _state.personUid : input.server.displayName;
-    _state.hours = AgendaBuilder::workingHours(input);
     _state.today = input.today;
     _state.refreshing = _refreshing;
     _state.offline = !_online;
@@ -162,6 +182,7 @@ void AccountAgenda::setOnline(bool online)
         return;
     }
     _online = online;
+    _edit->setOnline(online);
     rebuild();
 }
 
@@ -210,8 +231,48 @@ void AccountAgenda::finishPart()
     }
     _refreshing = false;
     _state.refreshedAt = now();
+    // What was sent before this refresh started is in the data now (only when every source was read: after a
+    // failed read the cached rows are old, so the sent change stays drawn on top of them).
+    bool allRead = true;
+    for (const auto *key : {"calendar", "gantt", "board"}) {
+        const auto state = _statuses.value(QString::fromLatin1(key)).state;
+        if (state == SourceStatus::State::Cached || state == SourceStatus::State::Failed || state == SourceStatus::State::Refused
+            || state == SourceStatus::State::Saved || state == SourceStatus::State::NeverLoaded) {
+            allRead = false;
+        }
+    }
+    if (allRead) {
+        _edit->clearAppliedUpTo(_refreshSequence);
+    }
     rebuild();
     Q_EMIT refreshFinished();
+    if (_online && !_state.needsLogin) {
+        _edit->retry();
+        if (_edit->appliedSequence() > _refreshSequence) {
+            // Something was sent while this refresh was reading: read once more, so the data catches up.
+            QPointer<AccountAgenda> self(this);
+            QMetaObject::invokeMethod(this, [self] { if (self) { self->refresh(true); } }, Qt::QueuedConnection);
+        }
+    }
+}
+
+EditContext AccountAgenda::editContext() const
+{
+    EditContext c;
+    c.davUser = _transport->davUser();
+    c.me = _server.uid.isEmpty() ? c.davUser : _server.uid;
+    c.myName = _server.displayName.isEmpty() ? c.me : _server.displayName;
+    c.registry = _registry;
+    c.ganttResources = _gantt.resources;
+    const double hoursPerPt = _gantt.settings.value(QLatin1String("hours_per_pt")).toDouble(8.0);
+    c.hoursPerPt = hoursPerPt > 0 ? hoursPerPt : 8.0;
+    c.now = now();
+    c.zone = _zone;
+    for (const auto &cal : _calendar.calendars) {
+        c.calendarNames.insert(cal.uri, cal.name);
+        c.calendarColors.insert(cal.uri, cal.color);
+    }
+    return c;
 }
 
 void AccountAgenda::refresh(bool manual)
@@ -225,6 +286,7 @@ void AccountAgenda::refresh(bool manual)
         return;
     }
     _refreshing = true;
+    _refreshSequence = _edit->appliedSequence();
     _manual = manual;
     _state.refreshing = true;
     _state.needsLogin = false;

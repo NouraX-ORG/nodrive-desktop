@@ -6,6 +6,7 @@
 #include "agendacontroller.h"
 
 #include "../logic/agendacontext.h"
+#include "../logic/workload.h"
 #include "theme.h"
 
 #include <QLocale>
@@ -120,6 +121,10 @@ AgendaController::AgendaController(AccountAgenda *agenda, QObject *parent)
     _showAllTeam = settings.showAllTeam;
     _date = agenda->state().today.isValid() ? agenda->state().today : QDate::currentDate();
 
+    _edit = new EditController(agenda, this);
+    connect(_edit, &EditController::changed, this, [this] { Q_EMIT changed(); });
+    connect(_edit, &EditController::openUrlRequested, this, &AgendaController::openUrlRequested);
+
     _style.setDark(Theme::instance()->darkMode());
     connect(Theme::instance(), &Theme::darkModeChanged, this, [this] { _style.setDark(Theme::instance()->darkMode()); });
     connect(agenda, &AccountAgenda::stateChanged, this, [this] { rebuild(); });
@@ -139,6 +144,15 @@ void AgendaController::setViewMode(const QString &mode)
     }
     _view = mode;
     _agenda->setView(mode);
+    rebuild();
+}
+
+void AgendaController::setConflictsOnly(bool on)
+{
+    if (_conflictsOnly == on) {
+        return;
+    }
+    _conflictsOnly = on;
     rebuild();
 }
 
@@ -466,6 +480,9 @@ bool AgendaController::visible(const AgendaItem &item) const
             break;
         }
     }
+    if (_conflictsOnly && !(item.clash || item.softClash || item.blocked || item.late || item.deadlineDayOff || item.agentLoad)) {
+        return false;
+    }
     if (_category == QLatin1String("work") && item.category == Category::Personal) {
         return false;
     }
@@ -501,6 +518,20 @@ QVariantMap AgendaController::rowOf(const AgendaItem &item, bool inTeam) const
     if (item.repeating) {
         badges.append(QStringLiteral("repeating"));
     }
+    if (item.clash && !inTeam) {
+        badges.append(QStringLiteral("clash"));
+    }
+    if (item.softClash && !inTeam) {
+        badges.append(QStringLiteral("softclash"));
+    }
+    if (item.deadlineDayOff && !inTeam) {
+        badges.append(QStringLiteral("dayoff"));
+    }
+    if (item.pending == PendingState::Waiting) {
+        badges.append(QStringLiteral("pending"));
+    } else if (item.pending == PendingState::Conflict) {
+        badges.append(QStringLiteral("notsent"));
+    }
     if (item.readOnly || item.versionReadOnly) {
         badges.append(QStringLiteral("lock"));
     }
@@ -515,7 +546,7 @@ QVariantMap AgendaController::rowOf(const AgendaItem &item, bool inTeam) const
         {QStringLiteral("type"), QStringLiteral("item")},
         {QStringLiteral("key"), item.key},
         {QStringLiteral("title"), item.title},
-        {QStringLiteral("glyph"), glyphOf(item.kind)},
+        {QStringLiteral("glyph"), item.agentLoad ? QStringLiteral("alert") : glyphOf(item.kind)},
         {QStringLiteral("sourceName"), item.sourceName},
         {QStringLiteral("sourceColor"), item.sourceColor},
         {QStringLiteral("agentText"), item.agent.displayText()},
@@ -550,6 +581,18 @@ void AgendaController::addDay(const QDate &day, bool dayView, QVariantList *out,
 
     for (const auto &item : state.items) {
         if (!visible(item)) {
+            continue;
+        }
+        if (item.agentLoad) {
+            // "Writer-Bot is overbooked on Thursday": shown on that day, for my agents with the problems with my
+            // agents, for the agents of my team in My team.
+            if (item.agentLoadDay == day) {
+                if (item.workKind == WorkKind::Team) {
+                    team.append(&item);
+                } else {
+                    attention.append(&item);
+                }
+            }
             continue;
         }
         if (item.problemOnly) {
@@ -625,6 +668,24 @@ void AgendaController::addDay(const QDate &day, bool dayView, QVariantList *out,
     std::sort(attention.begin(), attention.end(), [](const AgendaItem *a, const AgendaItem *b) { return a->title.localeAwareCompare(b->title) < 0; });
 
     QVariantList rows;
+    // The workload of the day (design 7 and 8): "6 h planned / 4 h free", with a warning when it is too much.
+    const bool wantWorkload = (dayView || header) && !(info.isEmpty() && timed.isEmpty() && due.isEmpty() && working.isEmpty() && late.isEmpty());
+    if (wantWorkload && _chipMe) {
+        const auto load = Workload::forDay(state.items, state.dayModel, day);
+        const bool show = load.workingDay && (load.planned > 0 || load.busy > 0 || load.noEstimate > 0) && (!_conflictsOnly || load.overbooked);
+        if (show) {
+            QVariantMap row = headerRow(QStringLiteral("workload"), load.text());
+            row.insert(QStringLiteral("planned"), load.planned);
+            row.insert(QStringLiteral("free"), load.free);
+            row.insert(QStringLiteral("working"), load.working);
+            row.insert(QStringLiteral("busy"), load.busy);
+            row.insert(QStringLiteral("overbooked"), load.overbooked);
+            row.insert(QStringLiteral("noEstimate"), load.noEstimate);
+            row.insert(QStringLiteral("noEstimateText"), load.noEstimate > 0 ? AgendaText::tr("No estimate") + QStringLiteral(": ") + QString::number(load.noEstimate) : QString());
+            row.insert(QStringLiteral("day"), day.toString(Qt::ISODate));
+            rows.append(row);
+        }
+    }
     auto addItems = [&](const QList<const AgendaItem *> &list, bool inTeam) {
         for (const auto *item : list) {
             auto row = rowOf(*item, inTeam);
@@ -825,6 +886,9 @@ void AgendaController::rebuildBanners()
     if (state.needsLogin) {
         add(AgendaText::tr("Sign in to NoDrive to see new changes."), QStringLiteral("warn"), QStringLiteral("login"), AgendaText::tr("Log in"));
     }
+    if (_edit && _edit->pendingCount() > 0) {
+        add(_edit->pendingText(), QStringLiteral("info"));
+    }
     if (state.offline) {
         QDateTime latest;
         for (const auto &s : state.statuses) {
@@ -954,6 +1018,9 @@ void AgendaController::rebuildDetail()
 {
     _detail.clear();
     const auto *item = itemWithKey(_selected);
+    if (_edit) {
+        _edit->setSelected(item);
+    }
     if (!item) {
         return;
     }

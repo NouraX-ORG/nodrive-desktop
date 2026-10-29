@@ -3,6 +3,14 @@
         <file alias="AgendaHeader.qml">qml/AgendaHeader.qml</file>
         <file alias="AgendaRow.qml">qml/AgendaRow.qml</file>
         <file alias="AgentLabel.qml">qml/AgentLabel.qml</file>
+        <file alias="AgentPicker.qml">qml/AgentPicker.qml</file>
+        <file alias="CheckRow.qml">qml/CheckRow.qml</file>
+        <file alias="ConfirmDeleteDialog.qml">qml/ConfirmDeleteDialog.qml</file>
+        <file alias="FieldBox.qml">qml/FieldBox.qml</file>
+        <file alias="NewItemDialog.qml">qml/NewItemDialog.qml</file>
+        <file alias="NotSentPanel.qml">qml/NotSentPanel.qml</file>
+        <file alias="UndoToast.qml">qml/UndoToast.qml</file>
+        <file alias="WorkloadBar.qml">qml/WorkloadBar.qml</file>
         <file alias="Chip.qml">qml/Chip.qml</file>
         <file alias="DetailPanel.qml">qml/DetailPanel.qml</file>
         <file alias="FlatButton.qml">qml/FlatButton.qml</file>
