@@ -28,3 +28,6 @@ target_sources(nextcloudCore PRIVATE
 
 # NoAgenda (plans/noagenda-decisions.md): the one screen with everything a person is responsible for.
 include(${CMAKE_CURRENT_LIST_DIR}/noagenda/noagenda.cmake)
+
+# Device calendar and contacts sync (plans/noagenda-desktop-plan.md, section 4).
+include(${CMAKE_CURRENT_LIST_DIR}/devicesync/devicesync.cmake)

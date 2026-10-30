@@ -117,6 +117,7 @@ target_compile_definitions(NoDriveProblemReportUiTest PRIVATE NODRIVE_SOURCE_DIR
 nextcloud_add_test(NoDriveProblemReportServer) # NoDrive: problem reports
 include(${CMAKE_CURRENT_SOURCE_DIR}/nodrive/noagenda.cmake) # NoDrive: NoAgenda
 nextcloud_add_test(SettingsDialog)
+include(${CMAKE_CURRENT_SOURCE_DIR}/nodrive/devicesync.cmake) # NoDrive: device calendar and contacts
 nextcloud_add_test(IconUtils)
 nextcloud_add_test(CustomStateIcons)
 target_compile_definitions(CustomStateIconsTest PRIVATE NEXTCLOUD_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

@@ -73,6 +73,7 @@ using namespace Qt::StringLiterals;
 #endif
 
 #include "account.h"
+#include "nourax/devicesync/devicesyncpanel.h" // NoDrive: device calendar and contacts
 
 namespace {
 constexpr auto propertyFolder = "folder";
@@ -383,6 +384,7 @@ AccountSettings::AccountSettings(AccountState *accountState, QWidget *parent)
     connect(&_userInfo, &UserInfo::quotaUpdated,
         this, &AccountSettings::slotUpdateQuota);
 
+    Nourax::DeviceSync::DeviceSyncPanel::install(this, _accountState, _ui->verticalLayout_2, _ui->accountActionsPanel); // NoDrive: device calendar and contacts
     customizeStyle();
 
     connect(_accountState->account()->e2e(), &ClientSideEncryption::startingDiscoveryEncryptionUsbToken,

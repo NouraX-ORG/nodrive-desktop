@@ -169,6 +169,37 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+  devicesync-server:
+    name: Device calendar and contacts sync against a throwaway server
+    needs: branding
+    if: ${{ !inputs.reuse_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      # Python 3.12, so that Playwright (tools/ci/devicesync-grant.py, CI only) gets ready-made wheels.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # A real server in a Docker container, created for this job only and thrown away with the runner. Chromium plays
+      # the person who allows access on the Login Flow v2 pages. No secret is stored anywhere: the throwaway passwords
+      # are generated and masked at run time (tools/ci/devicesync-server.sh). The Drive of Nourax is never contacted.
+      - name: Phase device-sync (tools/ci/devicesync-server.sh)
+        run: bash tools/ci/devicesync-server.sh
+
+      - name: Upload the report (names, status codes, counts; screenshots of the grant pages)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nodrive-linux-devicesync-server
+          path: devicesync-server-out/
+          if-no-files-found: warn
+          retention-days: 30
+
   appimage:
     name: AppImage
     needs: branding
