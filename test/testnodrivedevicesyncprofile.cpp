@@ -11,7 +11,10 @@
 #include "gui/nourax/devicesync/devicesyncsettings.h"
 #include "gui/nourax/devicesync/macprofileinstaller.h"
 
+#include "account.h"
+#include "accountmanager.h"
 #include "configfile.h"
+#include "testhelper.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -370,6 +373,39 @@ private Q_SLOTS:
         QVERIFY(DeviceSyncService::removalText(13).contains(QStringLiteral("Privacy & Security")));
         QVERIFY(DeviceSyncService::removalText(15).contains(QStringLiteral("General › Device Management")));
         QVERIFY(DeviceSyncService::removalText(26).contains(QStringLiteral("General › Device Management")));
+    }
+
+    void removingTheAccountInTheAppShowsTheNoteThroughTheRealSignal()
+    {
+        // AccountManager::removeAccountState() emits accountSyncConnectionRemoved: the service must be connected to it.
+        DeviceSyncService::instance();
+        auto account = Account::create();
+        account->setUrl(QUrl(QStringLiteral("https://drive.example.test")));
+        account->setDavUser(QStringLiteral("ali"));
+        account->setProperty("id", QStringLiteral("ali-signal@drive.example.test"));
+        FakeAccountState state(account);
+        QStringList notes;
+        DeviceSyncService::setMessageHookForTests([&](const QString &text) { notes << text; });
+        DeviceSyncService::setMacForTests(1);
+        DeviceSyncService::setMacMajorVersionForTests(15);
+
+        // The profile was never offered: no note.
+        Q_EMIT AccountManager::instance()->accountSyncConnectionRemoved(&state);
+        QVERIFY(notes.isEmpty());
+
+        DeviceSyncSettings::setProfileOffered(account->id(), true);
+        // accountRemoved also fires when the app quits: it must not show anything.
+        Q_EMIT AccountManager::instance()->accountRemoved(&state);
+        QVERIFY(notes.isEmpty());
+        QVERIFY(DeviceSyncSettings::profileOffered(account->id()));
+
+        Q_EMIT AccountManager::instance()->accountSyncConnectionRemoved(&state);
+        QCOMPARE(notes.size(), 1);
+        QVERIFY(notes.first().contains(QStringLiteral("General › Device Management")));
+        QVERIFY(!DeviceSyncSettings::profileOffered(account->id()));
+        DeviceSyncService::setMessageHookForTests({});
+        DeviceSyncService::setMacForTests(-1);
+        DeviceSyncService::setMacMajorVersionForTests(-1);
     }
 
     void onlyTheOfferedFlagIsSaved()

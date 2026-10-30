@@ -19,6 +19,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSysInfo>
 #include <QStackedWidget>
 #include <QTimer>
@@ -42,6 +43,12 @@ int &flowPollMs()
 }
 
 int &flowTimeoutMs()
+{
+    static int value = -1;
+    return value;
+}
+
+int &revokeTimeoutMs()
 {
     static int value = -1;
     return value;
@@ -90,6 +97,22 @@ QString MacSetupDialog::installText(int macMajorVersion)
 QString MacSetupDialog::insecureText()
 {
     return trMacSetup("A secure connection (https) is needed to add the calendars and contacts to this Mac.");
+}
+
+QString MacSetupDialog::wrongPersonText(const QString &allowedAs, const QString &expected)
+{
+    return trMacSetup("You allowed access as %1 in the browser. Sign in there as %2 and try again.").arg(allowedAs, expected);
+}
+
+QString MacSetupDialog::revokeFailedText(const QString &computerName)
+{
+    return trMacSetup("NoDrive couldn't remove the separate password. Remove \"NoDrive Calendar & Contacts (%1)\" in Security settings on the web.")
+        .arg(computerName);
+}
+
+void MacSetupDialog::setRevokeTimeoutForTests(int ms)
+{
+    revokeTimeoutMs() = ms;
 }
 
 void MacSetupDialog::setFlowTimingForTests(int pollMs, int timeoutMs)
@@ -169,7 +192,10 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
         pageLayout->addStretch();
         _closeButton = new QPushButton(trMacSetup("Close"), page);
         _closeButton->setObjectName(QStringLiteral("macSetupClose"));
-        pageLayout->addWidget(buttonRow(page, {_closeButton}));
+        _openSecurityButton = new QPushButton(trMacSetup("Open Security settings"), page);
+        _openSecurityButton->setObjectName(QStringLiteral("macSetupOpenSecurity"));
+        _openSecurityButton->hide(); // only after a revoke that did not work
+        pageLayout->addWidget(buttonRow(page, {_openSecurityButton, _closeButton}));
         _stack->addWidget(page);
     }
 
@@ -179,6 +205,11 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
     connect(_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
     connect(_waitingCancelButton, &QPushButton::clicked, this, &QDialog::reject);
     connect(_closeButton, &QPushButton::clicked, this, &QDialog::reject);
+    connect(_openSecurityButton, &QPushButton::clicked, this, [this] {
+        auto url = _account->url();
+        url.setPath(url.path().remove(QRegularExpression(QStringLiteral("/+$"))) + QStringLiteral("/index.php/settings/user/security"));
+        openInBrowser(url);
+    });
     connect(_reopenButton, &QPushButton::clicked, this, [this] {
         if (_loginUrl.isValid()) {
             openInBrowser(_loginUrl);
@@ -191,6 +222,11 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
 MacSetupDialog::~MacSetupDialog()
 {
     finishUp();
+}
+
+DeviceAppPasswordFlow *MacSetupDialog::flow() const
+{
+    return _flow.data();
 }
 
 MacSetupDialog::Step MacSetupDialog::step() const
@@ -221,18 +257,25 @@ void MacSetupDialog::onContinue()
         return;
     }
     _flow = new DeviceAppPasswordFlow(_account->url(), _computerName, _nam, this);
+    if (!_nam && _account->networkAccessManager()) {
+        // The proxy set for this account also applies to the flow's own plain network manager.
+        _flow->setProxy(_account->networkAccessManager()->proxy());
+    }
+    if (revokeTimeoutMs() >= 0) {
+        _flow->setRevokeTimeout(std::chrono::milliseconds(revokeTimeoutMs()));
+    }
     if (flowPollMs() >= 0) {
         _flow->setPollInterval(std::chrono::milliseconds(flowPollMs()));
     }
     if (flowTimeoutMs() >= 0) {
         _flow->setTimeout(std::chrono::milliseconds(flowTimeoutMs()));
     }
-    connect(_flow, &DeviceAppPasswordFlow::loginUrlReady, this, [this](const QUrl &url) {
+    connect(_flow.data(), &DeviceAppPasswordFlow::loginUrlReady, this, [this](const QUrl &url) {
         _loginUrl = url;
         openInBrowser(url);
     });
-    connect(_flow, &DeviceAppPasswordFlow::granted, this, &MacSetupDialog::onGranted, Qt::DirectConnection);
-    connect(_flow, &DeviceAppPasswordFlow::failed, this, [this](DeviceAppPasswordFlow::Failure, const QString &text) { onFlowFailed(text); });
+    connect(_flow.data(), &DeviceAppPasswordFlow::granted, this, &MacSetupDialog::onGranted, Qt::DirectConnection);
+    connect(_flow.data(), &DeviceAppPasswordFlow::failed, this, [this](DeviceAppPasswordFlow::Failure, const QString &text) { onFlowFailed(text); });
     _stack->setCurrentIndex(static_cast<int>(Step::Waiting));
     _flow->start();
 }
@@ -248,6 +291,19 @@ void MacSetupDialog::onGranted(const QString &loginName, const QByteArray &appPa
     _loginName = loginName;
     _password = QByteArray(appPassword.constData(), appPassword.size());
 
+    // The browser may be signed in as somebody else (a second account, a shared Mac): the profile would pair that
+    // person's password with this account's principal. Check the identity before anything is built.
+    auto expected = _account->userFromCredentials();
+    if (expected.isEmpty()) {
+        expected = _account->davUser();
+    }
+    const auto sameAs = [&loginName](const QString &name) { return !name.isEmpty() && loginName.compare(name, Qt::CaseInsensitive) == 0; };
+    if (!sameAs(_account->userFromCredentials()) && !sameAs(_account->davUser())) {
+        showFailure(wrongPersonText(loginName, expected));
+        onDidNotWork();
+        return;
+    }
+
     AppleProfileInput input;
     input.server = _account->url();
     input.davUser = _account->davUser();
@@ -257,7 +313,7 @@ void MacSetupDialog::onGranted(const QString &loginName, const QByteArray &appPa
     input.bundleId = QStringLiteral(APPLICATION_REV_DOMAIN);
     QByteArray profile = AppleProfileBuilder::build(input);
     if (profile.isEmpty()) {
-        showFailure(trMacSetup("The server didn't create a password. Ask your administrator."));
+        showFailure(trMacSetup("NoDrive could not prepare the profile."));
         onDidNotWork();
         return;
     }
@@ -291,40 +347,47 @@ void MacSetupDialog::onInstalled()
 
 void MacSetupDialog::onDidNotWork()
 {
+    // Whatever was offered is not installed: removing the account later must not talk about a profile.
+    DeviceSyncSettings::setProfileOffered(_account->id(), false);
     if (_password.isEmpty() || !_flow) {
         forgetPassword();
         _installer->cleanup();
         return;
     }
-    // The new password revokes itself.
+    // The new password revokes itself. The flow (and its network manager) outlive this dialog until the DELETE has an
+    // answer; the dialog stays open meanwhile, so the answer can always be shown.
     _revoking = true;
+    _failureBeforeRevoke = step() == Step::Failed ? _failureLabel->text() : QString();
     _didNotWorkButton->setEnabled(false);
     _installedButton->setEnabled(false);
+    _closeButton->setEnabled(false);
     _installer->cleanup();
-    auto done = std::make_shared<bool>(false);
-    connect(_flow, &DeviceAppPasswordFlow::revoked, this, [this, done](bool) {
-        *done = true;
-        _revoking = false;
+    connect(_flow.data(), &DeviceAppPasswordFlow::revoked, this, &MacSetupDialog::onRevoked);
+    _flow->deleteAfterRevoke();
+    _flow->revoke(_loginName, QByteArray(_password.constData(), _password.size()));
+    forgetPassword();
+}
+
+void MacSetupDialog::onRevoked(bool ok)
+{
+    _revoking = false;
+    _closeButton->setEnabled(true);
+    if (ok) {
         if (step() == Step::Install) {
             reject();
         }
-    });
-    _flow->revoke(_loginName, QByteArray(_password.constData(), _password.size()));
-    forgetPassword();
-    // Do not wait forever for the answer.
-    QTimer::singleShot(10000, this, [this, done] {
-        if (!*done && step() == Step::Install) {
-            reject();
-        }
-    });
+        return;
+    }
+    // The password may still be valid on the server: tell the person where to remove it.
+    const auto note = revokeFailedText(_computerName);
+    showFailure(_failureBeforeRevoke.isEmpty() ? note : _failureBeforeRevoke + QStringLiteral("\n\n") + note);
+    _openSecurityButton->show();
 }
 
 void MacSetupDialog::finishUp()
 {
-    if (_flow) {
-        if (!_revoking) {
-            _flow->cancel();
-        }
+    if (_flow && !_revoking) {
+        _flow->cancel();
     }
     forgetPassword();
     if (_installer) {
@@ -334,10 +397,12 @@ void MacSetupDialog::finishUp()
 
 void MacSetupDialog::done(int result)
 {
-    // Closing the window on step 3 counts as "Installed"; on step 2 as "Cancel". Either way nothing is kept.
-    if (!_revoking) {
-        finishUp();
+    // The window cannot be closed while the revoke waits for its answer (at most 10 s): the answer is always shown.
+    if (_revoking) {
+        return;
     }
+    // Closing the window on step 3 counts as "Installed"; on step 2 as "Cancel". Either way nothing is kept.
+    finishUp();
     QDialog::done(result);
 }
 

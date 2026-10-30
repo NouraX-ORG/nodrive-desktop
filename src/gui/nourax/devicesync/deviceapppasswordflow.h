@@ -7,11 +7,15 @@
 // Contacts, made through Login Flow v2 (POST /index.php/login/v2, then poll). plans/noagenda-desktop-plan.md, 4.3.
 //
 // It runs on a plain QNetworkAccessManager and not on OCC::AccessManager, so that HttpLogger never sees a body.
+// Every request sets QNetworkRequest::ManualRedirectPolicy (as OCC::AccessManager does): an answer that redirects is a
+// failure, so neither the poll token nor the new password's Authorization header can ever travel to another address.
 // The password lives in a QByteArray in memory only and is overwritten with zeros after use. It is never logged.
 
 #pragma once
 
 #include <QByteArray>
+#include <QNetworkAccessManager>
+#include <QNetworkProxy>
 #include <QNetworkReply>
 #include <QObject>
 #include <QPointer>
@@ -20,8 +24,6 @@
 #include <QUrl>
 
 #include <chrono>
-
-class QNetworkAccessManager;
 
 namespace OCC::Nourax::DeviceSync {
 
@@ -48,6 +50,13 @@ public:
 
     void setPollInterval(std::chrono::milliseconds interval) { _pollInterval = interval; }
     void setTimeout(std::chrono::milliseconds timeout) { _timeout = timeout; }
+    /// How long a revoke may take before it counts as not done (revoked(false)); the request is aborted then.
+    void setRevokeTimeout(std::chrono::milliseconds timeout) { _revokeTimeout = timeout; }
+    /// The proxy of the account: applied to the flow's own manager (an injected manager keeps its own settings).
+    void setProxy(const QNetworkProxy &proxy);
+    /// For a revoke that must outlive its dialog: the flow moves under the application object and deletes itself
+    /// when the revoke has an answer (or its time is up).
+    void deleteAfterRevoke();
 
     /// "NoDrive Calendar & Contacts (<computer name>)": becomes the token's name in the web Security settings.
     [[nodiscard]] static QByteArray userAgent(const QString &computerName);
@@ -56,7 +65,8 @@ public:
     /// Same scheme, host, port (default ports understood) and path (a trailing slash does not matter).
     [[nodiscard]] static bool sameServer(const QUrl &a, const QUrl &b);
 
-    /// Overwrites the bytes with zeros (the buffer is detached first, so that no shared copy stays behind) and clears it.
+    /// Overwrites the bytes with zeros and clears the array. The shared buffer is zeroed in place, so every implicit copy
+    /// is cleared too (never pass an array that points into a string literal: it is read-only memory).
     static void wipe(QByteArray &data);
 
     /// POST <server>/index.php/login/v2. Emits loginUrlReady(), then granted() or failed().
@@ -65,7 +75,9 @@ public:
     void cancel();
 
     /// "It didn't work": DELETE <server>/ocs/v2.php/core/apppassword, signed in with that password (it revokes itself).
-    /// The caller wipes its own copy (DeviceAppPasswordFlow::wipe). Emits revoked().
+    /// The flow works on a private copy of the password and wipes it; the caller wipes its own copy
+    /// (DeviceAppPasswordFlow::wipe). Emits revoked(): false for any answer but 200 (a redirect, 401, ...) and when the
+    /// time is up.
     void revoke(const QString &loginName, QByteArray appPassword);
 
 Q_SIGNALS:
@@ -81,15 +93,20 @@ private:
     void poll();
     void handleInit(QNetworkReply *reply);
     void handlePoll(QNetworkReply *reply);
+    void finishRevoke(bool ok);
 
     QUrl _server;
     QString _computerName;
-    QNetworkAccessManager *_nam = nullptr;
+    QPointer<QNetworkAccessManager> _nam;
     bool _ownsNam = false;
+    bool _deleteAfterRevoke = false;
     std::chrono::milliseconds _pollInterval{5000};
     std::chrono::milliseconds _timeout{20 * 60 * 1000};
+    std::chrono::milliseconds _revokeTimeout{10000};
     QTimer _pollTimer;
     QTimer _timeoutTimer;
+    QTimer _revokeTimer;
+    QPointer<QNetworkReply> _revokeReply;
     QUrl _loginUrl;
     QUrl _pollEndpoint;
     QByteArray _pollToken;

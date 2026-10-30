@@ -37,6 +37,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
+#include <QSignalSpy>
 #include <QStandardPaths>
 #include <QStyleHints>
 #include <QTemporaryDir>
@@ -89,6 +90,9 @@ struct Script
     bool neverGrant = false;
     int initStatus = 200;
     QString grantServer = serverUrl;
+    QString grantLogin = QStringLiteral("ali");
+    int revokeStatus = 200;
+    bool revokeHangs = false;
     int polls = 0;
 };
 
@@ -114,10 +118,16 @@ FakeQNAM *makeNam(Script &script)
             if (script.neverGrant || script.polls <= script.pendingPolls) {
                 return new FakeErrorReply(op, request, nam, 404);
             }
-            QJsonObject root{{"server", script.grantServer}, {"loginName", "ali"}, {"appPassword", QString::fromUtf8(plantedPassword)}};
+            QJsonObject root{{"server", script.grantServer}, {"loginName", script.grantLogin}, {"appPassword", QString::fromUtf8(plantedPassword)}};
             return new FakePayloadReply(op, request, QJsonDocument(root).toJson(QJsonDocument::Compact), nam);
         }
         if (path.endsWith(QLatin1String("/ocs/v2.php/core/apppassword"))) {
+            if (script.revokeHangs) {
+                return new FakeHangingReply(op, request, nam);
+            }
+            if (script.revokeStatus != 200) {
+                return new FakeErrorReply(op, request, nam, script.revokeStatus);
+            }
             return new FakePayloadReply(op, request, QByteArrayLiteral("{}"), nam);
         }
         return new FakeErrorReply(op, request, nam, 500);
@@ -131,7 +141,9 @@ AccountPtr makeAccount(const QString &url = serverUrl)
     account->setUrl(QUrl(url));
     account->setDavUser(QStringLiteral("ali"));
     account->setProperty("id", QString(QStringLiteral("ali@") + QUrl(url).host()));
-    account->setCredentials(new FakeCredentials{new FakeQNAM({})});
+    auto *credentials = new FakeCredentials{new FakeQNAM({})};
+    credentials->setUserName(QStringLiteral("ali"));
+    account->setCredentials(credentials);
     return account;
 }
 
@@ -202,6 +214,7 @@ private Q_SLOTS:
         ConfigFile::setConfDir(_configDir.path());
         _originalPalette = QApplication::palette();
         MacSetupDialog::setFlowTimingForTests(20, -1);
+        MacSetupDialog::setRevokeTimeoutForTests(-1);
         QLoggingCategory::setFilterRules(QStringLiteral("*.debug=true\n*.info=true"));
         _previousHandler = qInstallMessageHandler(captureMessage);
         previousHandler() = _previousHandler;
@@ -218,6 +231,7 @@ private Q_SLOTS:
         DeviceSyncService::setMacMajorVersionForTests(-1);
         urlOpenerHook() = {};
         MacProfileInstaller::setOpenerForTests({});
+        MacSetupDialog::setRevokeTimeoutForTests(-1);
         QGuiApplication::styleHints()->unsetColorScheme();
         QApplication::setPalette(_originalPalette);
     }
@@ -508,6 +522,125 @@ private Q_SLOTS:
         QCOMPARE(script.urls.at(index), QUrl(QStringLiteral("https://drive.example.test/ocs/v2.php/core/apppassword")));
         QCOMPARE(script.authorizations.at(index), "Basic " + QByteArray("ali:" + plantedPassword).toBase64());
         QVERIFY(!QFileInfo::exists(profilePath));
+        DeviceSyncSettings::setProfileOffered(account->id(), false);
+    }
+
+    void macFlowARefusedRevokeIsShownWithAWayToRemoveIt()
+    {
+        Script script;
+        script.pendingPolls = 0;
+        script.revokeStatus = 401;
+        std::unique_ptr<FakeQNAM> nam(makeNam(script));
+        QUrl browser;
+        urlOpenerHook() = [&](const QUrl &url) {
+            browser = url;
+            return true;
+        };
+        QString profilePath;
+        MacProfileInstaller::setOpenerForTests([&](const QUrl &url) {
+            profilePath = url.toLocalFile();
+            return true;
+        });
+        auto account = makeAccount();
+        MacSetupDialog dialog(account, nullptr, nam.get());
+        dialog.setComputerName(QStringLiteral("test-mac"));
+        dialog.continueButton()->click();
+        QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Install, 20000);
+        QVERIFY(DeviceSyncSettings::profileOffered(account->id()));
+
+        dialog.didNotWorkButton()->click();
+        QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Failed, 20000);
+        QCOMPARE(dialog.errorText(),
+            QStringLiteral("NoDrive couldn't remove the separate password. Remove \"NoDrive Calendar & Contacts (test-mac)\" in Security settings on the web."));
+        QVERIFY(!dialog.openSecurityButton()->isHidden());
+        QVERIFY(dialog.closeButton()->isEnabled());
+        QVERIFY(!QFileInfo::exists(profilePath));
+        QVERIFY(!DeviceSyncSettings::profileOffered(account->id())); // the removal note must not talk about a profile that was not installed
+        QVERIFY(script.verbs.contains(QStringLiteral("DELETE")));
+
+        browser.clear();
+        dialog.openSecurityButton()->click();
+        QCOMPARE(browser, QUrl(QStringLiteral("https://drive.example.test/index.php/settings/user/security")));
+        // The flow cleaned up after itself.
+        QTRY_VERIFY_WITH_TIMEOUT(dialog.flow() == nullptr, 10000);
+        QSignalSpy finishedSpy(&dialog, &QDialog::finished);
+        dialog.closeButton()->click();
+        QCOMPARE(finishedSpy.size(), 1);
+    }
+
+    void macFlowARevokeWithoutAnswerIsShownAndTheWindowStaysOpenMeanwhile()
+    {
+        Script script;
+        script.pendingPolls = 0;
+        script.revokeHangs = true;
+        std::unique_ptr<FakeQNAM> nam(makeNam(script));
+        urlOpenerHook() = [](const QUrl &) { return true; };
+        MacProfileInstaller::setOpenerForTests([](const QUrl &) { return true; });
+        MacSetupDialog::setRevokeTimeoutForTests(600);
+        auto account = makeAccount();
+        MacSetupDialog dialog(account, nullptr, nam.get());
+        dialog.setComputerName(QStringLiteral("test-mac"));
+        dialog.continueButton()->click();
+        QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Install, 20000);
+
+        QSignalSpy finishedSpy(&dialog, &QDialog::finished);
+        dialog.didNotWorkButton()->click();
+        QTRY_VERIFY_WITH_TIMEOUT(script.verbs.contains(QStringLiteral("DELETE")), 10000);
+        // Esc or the close button while the DELETE is on its way: the window stays, so the answer can be shown.
+        dialog.reject();
+        QCOMPARE(finishedSpy.size(), 0);
+        QCOMPARE(dialog.step(), MacSetupDialog::Step::Install);
+
+        QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Failed, 20000);
+        QCOMPARE(dialog.errorText(),
+            QStringLiteral("NoDrive couldn't remove the separate password. Remove \"NoDrive Calendar & Contacts (test-mac)\" in Security settings on the web."));
+        QVERIFY(!dialog.openSecurityButton()->isHidden());
+        QCOMPARE(finishedSpy.size(), 0);
+        dialog.reject();
+        QCOMPARE(finishedSpy.size(), 1);
+    }
+
+    void macFlowAnotherPersonInTheBrowserIsRevokedAndNoProfileIsWritten()
+    {
+        Script script;
+        script.pendingPolls = 0;
+        script.grantLogin = QStringLiteral("bob");
+        std::unique_ptr<FakeQNAM> nam(makeNam(script));
+        urlOpenerHook() = [](const QUrl &) { return true; };
+        bool profileOpened = false;
+        MacProfileInstaller::setOpenerForTests([&](const QUrl &) {
+            profileOpened = true;
+            return true;
+        });
+        auto account = makeAccount(); // ali
+        MacSetupDialog dialog(account, nullptr, nam.get());
+        dialog.setComputerName(QStringLiteral("test-mac"));
+        dialog.continueButton()->click();
+        QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Failed, 20000);
+        QCOMPARE(dialog.errorText(), QStringLiteral("You allowed access as bob in the browser. Sign in there as ali and try again."));
+        QTRY_VERIFY_WITH_TIMEOUT(script.verbs.contains(QStringLiteral("DELETE")), 10000);
+        const auto index = script.verbs.indexOf(QStringLiteral("DELETE"));
+        QCOMPARE(script.authorizations.at(index), "Basic " + QByteArray("bob:" + plantedPassword).toBase64());
+        QVERIFY(!profileOpened);
+        QVERIFY(!DeviceSyncSettings::profileOffered(account->id()));
+        QTRY_VERIFY_WITH_TIMEOUT(dialog.flow() == nullptr, 10000);
+        QVERIFY(dialog.openSecurityButton()->isHidden()); // the revoke worked
+    }
+
+    void macFlowTheSamePersonIsRecognisedWhateverTheCase()
+    {
+        Script script;
+        script.pendingPolls = 0;
+        script.grantLogin = QStringLiteral("Ali");
+        std::unique_ptr<FakeQNAM> nam(makeNam(script));
+        urlOpenerHook() = [](const QUrl &) { return true; };
+        MacProfileInstaller::setOpenerForTests([](const QUrl &) { return true; });
+        auto account = makeAccount();
+        MacSetupDialog dialog(account, nullptr, nam.get());
+        dialog.continueButton()->click();
+        QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Install, 20000);
+        dialog.installedButton()->click();
+        QVERIFY(!script.verbs.contains(QStringLiteral("DELETE")));
         DeviceSyncSettings::setProfileOffered(account->id(), false);
     }
 

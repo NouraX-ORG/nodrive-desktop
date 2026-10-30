@@ -19,7 +19,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
+#include <QHostAddress>
+#include <QPointer>
 #include <QSignalSpy>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
@@ -89,6 +93,7 @@ struct Request
     QByteArray userAgent;
     QByteArray body;
     QByteArray authorization;
+    int redirectPolicy = -1;
 };
 
 // A tiny scripted server: records the requests and answers from the members.
@@ -101,6 +106,8 @@ struct Script
     bool neverGrant = false;
     QByteArray grant = grantAnswer();
     int revokeStatus = 200;
+    int pollStatus = 0; // when set, every poll is answered with this status
+    bool revokeHangs = false;
 
     int count(const QString &verb, const QString &pathEnd) const
     {
@@ -125,6 +132,7 @@ FakeQNAM *makeNam(Script &script, QObject *parent)
         r.url = request.url();
         r.userAgent = request.header(QNetworkRequest::UserAgentHeader).toByteArray();
         r.authorization = request.rawHeader("Authorization");
+        r.redirectPolicy = request.attribute(QNetworkRequest::RedirectPolicyAttribute, -1).toInt();
         if (device) {
             r.body = device->peek(device->size()); // peek: the client's HttpLogger asserts that the position is 0
         }
@@ -137,12 +145,18 @@ FakeQNAM *makeNam(Script &script, QObject *parent)
             return new FakePayloadReply(op, request, script.init, nam);
         }
         if (path.endsWith(QLatin1String("/login/v2/poll"))) {
+            if (script.pollStatus != 0) {
+                return new FakeErrorReply(op, request, nam, script.pollStatus);
+            }
             if (script.neverGrant || script.count(QStringLiteral("POST"), QStringLiteral("/login/v2/poll")) <= script.pendingPolls) {
                 return new FakeErrorReply(op, request, nam, 404);
             }
             return new FakePayloadReply(op, request, script.grant, nam);
         }
         if (path.endsWith(QLatin1String("/ocs/v2.php/core/apppassword"))) {
+            if (script.revokeHangs) {
+                return new FakeHangingReply(op, request, nam);
+            }
             if (script.revokeStatus != 200) {
                 return new FakeErrorReply(op, request, nam, script.revokeStatus);
             }
@@ -160,6 +174,38 @@ std::unique_ptr<DeviceAppPasswordFlow> makeFlow(FakeQNAM *nam)
     flow->setTimeout(std::chrono::seconds(20));
     return flow;
 }
+
+// A tiny real HTTP server on the loopback: it records the requests it gets and answers each with a fixed text.
+struct TinyServer
+{
+    QTcpServer server;
+    QByteArray response;
+    QStringList requests;
+
+    bool listen(const QHostAddress &address)
+    {
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [this] {
+            while (auto *socket = server.nextPendingConnection()) {
+                auto *buffer = new QByteArray;
+                QObject::connect(socket, &QTcpSocket::readyRead, socket, [this, socket, buffer] {
+                    buffer->append(socket->readAll());
+                    if (buffer->contains("\r\n\r\n")) {
+                        requests << QString::fromLatin1(*buffer);
+                        buffer->clear();
+                        socket->write(response);
+                        socket->disconnectFromHost();
+                    }
+                });
+                QObject::connect(socket, &QTcpSocket::disconnected, socket, [socket, buffer] {
+                    delete buffer;
+                    socket->deleteLater();
+                });
+            }
+        });
+        return server.listen(address, 0);
+    }
+    [[nodiscard]] quint16 port() const { return server.serverPort(); }
+};
 
 } // namespace
 
@@ -242,6 +288,7 @@ private Q_SLOTS:
         // Then three polls (two 404, one 200), each with the token and the same user agent.
         QCOMPARE(script.count(QStringLiteral("POST"), QStringLiteral("/login/v2/poll")), 3);
         for (const auto &r : std::as_const(script.requests)) {
+            QCOMPARE(r.redirectPolicy, int(QNetworkRequest::ManualRedirectPolicy)); // a redirect is never followed
             QCOMPARE(r.userAgent, QByteArrayLiteral("NoDrive Calendar & Contacts (test-mac)"));
             QVERIFY(r.authorization.isEmpty());
             if (r.url.path().endsWith(QLatin1String("/poll"))) {
@@ -392,6 +439,7 @@ private Q_SLOTS:
         QCOMPARE(r.url, QUrl("https://drive.example.test/ocs/v2.php/core/apppassword"));
         QCOMPARE(r.authorization, "Basic " + QByteArray("ali:" + plantedPassword).toBase64());
         QCOMPARE(r.userAgent, QByteArrayLiteral("NoDrive Calendar & Contacts (test-mac)"));
+        QCOMPARE(r.redirectPolicy, int(QNetworkRequest::ManualRedirectPolicy));
         for (const auto &line : std::as_const(captured())) {
             QVERIFY(!line.contains(QString::fromUtf8(plantedPassword)));
         }
@@ -412,6 +460,123 @@ private Q_SLOTS:
         flow->revoke(QStringLiteral("ali"), plantedPassword);
         QTRY_COMPARE_WITH_TIMEOUT(revokedSpy.size(), 1, 10000);
         QCOMPARE(revokedSpy.first().first().toBool(), false);
+    }
+
+    void aRedirectedPollOrRevokeCountsAsAFailure()
+    {
+        {
+            Script script;
+            script.pollStatus = 307;
+            std::unique_ptr<FakeQNAM> nam(makeNam(script, nullptr));
+            auto flow = makeFlow(nam.get());
+            QSignalSpy failedSpy(flow.get(), &DeviceAppPasswordFlow::failed);
+            flow->start();
+            QTRY_COMPARE_WITH_TIMEOUT(failedSpy.size(), 1, 10000);
+            QCOMPARE(failedSpy.first().at(0).value<DeviceAppPasswordFlow::Failure>(), DeviceAppPasswordFlow::Failure::BadAnswer);
+            QCOMPARE(script.count(QStringLiteral("POST"), QStringLiteral("/login/v2/poll")), 1); // no second try
+        }
+        {
+            Script script;
+            script.initStatus = 308;
+            std::unique_ptr<FakeQNAM> nam(makeNam(script, nullptr));
+            auto flow = makeFlow(nam.get());
+            QSignalSpy failedSpy(flow.get(), &DeviceAppPasswordFlow::failed);
+            flow->start();
+            QTRY_COMPARE_WITH_TIMEOUT(failedSpy.size(), 1, 10000);
+            QCOMPARE(failedSpy.first().at(0).value<DeviceAppPasswordFlow::Failure>(), DeviceAppPasswordFlow::Failure::NotStarted);
+        }
+        {
+            Script script;
+            script.revokeStatus = 307;
+            std::unique_ptr<FakeQNAM> nam(makeNam(script, nullptr));
+            auto flow = makeFlow(nam.get());
+            QSignalSpy revokedSpy(flow.get(), &DeviceAppPasswordFlow::revoked);
+            flow->revoke(QStringLiteral("ali"), plantedPassword);
+            QTRY_COMPARE_WITH_TIMEOUT(revokedSpy.size(), 1, 10000);
+            QCOMPARE(revokedSpy.first().first().toBool(), false);
+        }
+    }
+
+    // The real network stack: a server that redirects every request to another host. Qt's default policy follows an
+    // http -> http redirect and copies every header (checked here with a plain manager as the control); the flow must not.
+    void noRequestEverReachesTheServerAnAnswerRedirectsTo()
+    {
+        TinyServer other;
+        other.response = QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+        QVERIFY(other.listen(QHostAddress::Any));
+        TinyServer ours;
+        QVERIFY(ours.listen(QHostAddress::LocalHost));
+        // "localhost" and "127.0.0.1" are different hosts for Qt.
+        const auto target = QStringLiteral("http://localhost:%1/ocs/v2.php/core/apppassword").arg(other.port());
+        ours.response = "HTTP/1.1 307 Temporary Redirect\r\nLocation: " + target.toUtf8() + "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        const auto ourUrl = QStringLiteral("http://127.0.0.1:%1").arg(ours.port());
+
+        {
+            // Control: without our policy the other host does get the request, with the Authorization header.
+            QNetworkAccessManager plain;
+            QNetworkRequest request(QUrl(ourUrl + QStringLiteral("/ocs/v2.php/core/apppassword")));
+            request.setRawHeader("Authorization", "Basic Y29udHJvbDpjb250cm9s");
+            std::unique_ptr<QNetworkReply> reply(plain.sendCustomRequest(request, "DELETE"));
+            QSignalSpy finished(reply.get(), &QNetworkReply::finished);
+            QVERIFY(finished.wait(10000));
+            QCOMPARE(other.requests.size(), 1);
+            QVERIFY(other.requests.first().toLower().contains(QStringLiteral("basic y29udhjvbdpjb250cm9s")));
+        }
+        other.requests.clear();
+        ours.requests.clear();
+
+        {
+            // The revoke: refused, and nothing reaches the other host (in particular no Authorization header).
+            DeviceAppPasswordFlow flow{QUrl(ourUrl), QStringLiteral("test-mac")};
+            QSignalSpy revokedSpy(&flow, &DeviceAppPasswordFlow::revoked);
+            flow.revoke(QStringLiteral("ali"), plantedPassword);
+            QTRY_COMPARE_WITH_TIMEOUT(revokedSpy.size(), 1, 10000);
+            QCOMPARE(revokedSpy.first().first().toBool(), false);
+            QCOMPARE(ours.requests.size(), 1);
+            QVERIFY(ours.requests.first().toLower().contains(QStringLiteral("authorization: basic")));
+        }
+        {
+            // The start of the sign-in and the poll.
+            DeviceAppPasswordFlow flow{QUrl(ourUrl), QStringLiteral("test-mac")};
+            QSignalSpy failedSpy(&flow, &DeviceAppPasswordFlow::failed);
+            flow.start();
+            QTRY_COMPARE_WITH_TIMEOUT(failedSpy.size(), 1, 10000);
+            QCOMPARE(failedSpy.first().at(0).value<DeviceAppPasswordFlow::Failure>(), DeviceAppPasswordFlow::Failure::NotStarted);
+        }
+        QTest::qWait(300);
+        QVERIFY2(other.requests.isEmpty(), qPrintable(other.requests.join(QStringLiteral("\n---\n"))));
+    }
+
+    void aRevokeWithoutAnswerEndsAsNotDone()
+    {
+        Script script;
+        script.revokeHangs = true;
+        std::unique_ptr<FakeQNAM> nam(makeNam(script, nullptr));
+        auto flow = makeFlow(nam.get());
+        flow->setRevokeTimeout(std::chrono::milliseconds(300));
+        QSignalSpy revokedSpy(flow.get(), &DeviceAppPasswordFlow::revoked);
+        flow->revoke(QStringLiteral("ali"), plantedPassword);
+        QTRY_COMPARE_WITH_TIMEOUT(revokedSpy.size(), 1, 10000);
+        QCOMPARE(revokedSpy.first().first().toBool(), false);
+        QTest::qWait(500);
+        QCOMPARE(revokedSpy.size(), 1); // once
+    }
+
+    void theFlowDeletesItselfAfterADetachedRevoke()
+    {
+        for (const auto status : {200, 401}) {
+            Script script;
+            script.revokeStatus = status;
+            std::unique_ptr<FakeQNAM> nam(makeNam(script, nullptr));
+            QPointer<DeviceAppPasswordFlow> flow = new DeviceAppPasswordFlow(QUrl(serverUrl), QStringLiteral("test-mac"), nam.get());
+            QSignalSpy revokedSpy(flow.data(), &DeviceAppPasswordFlow::revoked);
+            flow->deleteAfterRevoke();
+            QVERIFY(flow->parent() == QCoreApplication::instance());
+            flow->revoke(QStringLiteral("ali"), plantedPassword);
+            QTRY_COMPARE_WITH_TIMEOUT(revokedSpy.size(), 1, 10000);
+            QCOMPARE(revokedSpy.first().first().toBool(), status == 200);
+            QTRY_VERIFY_WITH_TIMEOUT(flow.isNull(), 10000);
+        }
     }
 
     void thePlantedPasswordIsInNoSettingAndNoFile()

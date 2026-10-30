@@ -5,6 +5,7 @@
 
 #include "deviceapppasswordflow.h"
 
+#include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
@@ -66,6 +67,8 @@ QNetworkRequest baseRequest(const QUrl &url, const QString &computerName)
     request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
     request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
     request.setAttribute(QNetworkRequest::AuthenticationReuseAttribute, QNetworkRequest::Manual);
+    // Never follow a redirect: Qt copies every header (the Authorization of the revoke, the token of the poll) to the new address.
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
     return request;
 }
 
@@ -83,6 +86,17 @@ DeviceAppPasswordFlow::DeviceAppPasswordFlow(const QUrl &server, const QString &
     }
     _pollTimer.setSingleShot(true);
     _timeoutTimer.setSingleShot(true);
+    _revokeTimer.setSingleShot(true);
+    connect(&_revokeTimer, &QTimer::timeout, this, [this] {
+        qCInfo(lcDeviceSyncFlow) << "revoke: no answer in time";
+        if (_revokeReply) {
+            _revokeReply->disconnect(this);
+            _revokeReply->abort();
+            _revokeReply->deleteLater();
+        }
+        _revokeReply = nullptr;
+        finishRevoke(false);
+    });
     connect(&_pollTimer, &QTimer::timeout, this, &DeviceAppPasswordFlow::poll);
     connect(&_timeoutTimer, &QTimer::timeout, this, [this] { fail(Failure::TimedOut); });
 }
@@ -90,6 +104,19 @@ DeviceAppPasswordFlow::DeviceAppPasswordFlow(const QUrl &server, const QString &
 DeviceAppPasswordFlow::~DeviceAppPasswordFlow()
 {
     cancel();
+}
+
+void DeviceAppPasswordFlow::setProxy(const QNetworkProxy &proxy)
+{
+    if (_ownsNam && _nam) {
+        _nam->setProxy(proxy);
+    }
+}
+
+void DeviceAppPasswordFlow::deleteAfterRevoke()
+{
+    _deleteAfterRevoke = true;
+    setParent(QCoreApplication::instance());
 }
 
 QByteArray DeviceAppPasswordFlow::userAgent(const QString &computerName)
@@ -223,6 +250,12 @@ void DeviceAppPasswordFlow::handlePoll(QNetworkReply *reply)
         return;
     }
     const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (status >= 300 && status < 400) {
+        // A redirect is never followed (see baseRequest): the server does not answer in the shape of Login Flow v2.
+        qCInfo(lcDeviceSyncFlow) << "the poll was answered with a redirect: HTTP" << status;
+        fail(Failure::BadAnswer);
+        return;
+    }
     if (status != 200) {
         // 404 means "not allowed yet". Anything else (a hiccup) is tried again until the time is up.
         qCInfo(lcDeviceSyncFlow) << "waiting for the person to allow access: HTTP" << status;
@@ -261,18 +294,38 @@ void DeviceAppPasswordFlow::handlePoll(QNetworkReply *reply)
 
 void DeviceAppPasswordFlow::revoke(const QString &loginName, QByteArray appPassword)
 {
+    // Work on a private copy that is wiped here; the caller's copy (and any string literal behind it) stays untouched.
+    appPassword.detach();
     auto request = baseRequest(serverPath(QStringLiteral("/ocs/v2.php/core/apppassword")), _computerName);
     QByteArray credentials = loginName.toUtf8() + ':' + appPassword;
     request.setRawHeader("Authorization", "Basic " + credentials.toBase64());
     wipe(credentials);
+    wipe(appPassword);
+    if (!_nam) {
+        finishRevoke(false);
+        return;
+    }
     qCInfo(lcDeviceSyncFlow) << "revoking the separate password (it was not installed)";
     const auto reply = _nam->sendCustomRequest(request, "DELETE");
+    _revokeReply = reply;
+    _revokeTimer.start(_revokeTimeout);
     connect(reply, &QNetworkReply::finished, this, [this, reply] {
         reply->deleteLater();
+        _revokeTimer.stop();
+        _revokeReply = nullptr;
         const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         qCInfo(lcDeviceSyncFlow) << "revoke answered: HTTP" << status;
-        Q_EMIT revoked(status == 200);
+        finishRevoke(status == 200);
     });
+}
+
+void DeviceAppPasswordFlow::finishRevoke(bool ok)
+{
+    _revokeTimer.stop();
+    Q_EMIT revoked(ok);
+    if (_deleteAfterRevoke) {
+        deleteLater();
+    }
 }
 
 } // namespace OCC::Nourax::DeviceSync

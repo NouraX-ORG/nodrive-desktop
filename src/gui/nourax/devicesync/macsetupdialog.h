@@ -8,7 +8,9 @@
 // 3. install the profile in System Settings. plans/noagenda-desktop-plan.md, 4.3 and 4.5.
 //
 // The password is never shown, logged or saved: it goes from the flow into the profile, and is overwritten with zeros
-// after "Installed" or "It didn't work" (which revokes it).
+// after "Installed" or "It didn't work" (which revokes it). The revoke belongs to the flow, not to the dialog: the flow
+// outlives the dialog until the DELETE has an answer, and the dialog cannot be closed meanwhile, so a refused or
+// unanswered revoke is always shown (with a button to the web Security settings).
 
 #pragma once
 
@@ -16,6 +18,7 @@
 
 #include <QByteArray>
 #include <QDialog>
+#include <QPointer>
 #include <QString>
 #include <QUrl>
 
@@ -45,6 +48,8 @@ public:
     [[nodiscard]] QString errorText() const;
     /// Tests make the flow fast: poll interval and time limit in milliseconds (-1 = the real values: 5 s and 20 min).
     static void setFlowTimingForTests(int pollMs, int timeoutMs);
+    /// Tests shorten the time a revoke may take (-1 = the real value: 10 s).
+    static void setRevokeTimeoutForTests(int ms);
 
     /// The computer name that ends up in the token's name; tests set it.
     void setComputerName(const QString &name);
@@ -55,13 +60,17 @@ public:
     [[nodiscard]] QPushButton *reopenButton() const { return _reopenButton; }
     [[nodiscard]] QPushButton *installedButton() const { return _installedButton; }
     [[nodiscard]] QPushButton *didNotWorkButton() const { return _didNotWorkButton; }
+    [[nodiscard]] QPushButton *closeButton() const { return _closeButton; }
+    [[nodiscard]] QPushButton *openSecurityButton() const { return _openSecurityButton; }
     [[nodiscard]] QLabel *installLabel() const { return _installLabel; }
-    [[nodiscard]] DeviceAppPasswordFlow *flow() const { return _flow; }
+    [[nodiscard]] DeviceAppPasswordFlow *flow() const;
 
     [[nodiscard]] static QString introText();
     [[nodiscard]] static QString waitingText();
     [[nodiscard]] static QString installText(int macMajorVersion);
     [[nodiscard]] static QString insecureText();
+    [[nodiscard]] static QString wrongPersonText(const QString &allowedAs, const QString &expected);
+    [[nodiscard]] static QString revokeFailedText(const QString &computerName);
 
     void done(int result) override;
 
@@ -71,6 +80,7 @@ private:
     void onFlowFailed(const QString &text);
     void onInstalled();
     void onDidNotWork();
+    void onRevoked(bool ok);
     void showFailure(const QString &text);
     void forgetPassword();
     void finishUp();
@@ -78,12 +88,13 @@ private:
     AccountPtr _account;
     QNetworkAccessManager *_nam = nullptr;
     QString _computerName;
-    DeviceAppPasswordFlow *_flow = nullptr;
+    QPointer<DeviceAppPasswordFlow> _flow;
     MacProfileInstaller *_installer = nullptr;
     QUrl _loginUrl;
     QString _loginName;
     QByteArray _password;
     bool _revoking = false;
+    QString _failureBeforeRevoke;
 
     QStackedWidget *_stack = nullptr;
     QPushButton *_continueButton = nullptr;
@@ -93,6 +104,7 @@ private:
     QPushButton *_installedButton = nullptr;
     QPushButton *_didNotWorkButton = nullptr;
     QPushButton *_closeButton = nullptr;
+    QPushButton *_openSecurityButton = nullptr;
     QLabel *_waitingLabel = nullptr;
     QLabel *_installLabel = nullptr;
     QLabel *_failureLabel = nullptr;

@@ -35,10 +35,24 @@ profile again and mentions the password in the web Security settings.
   `NoDrive Calendar & Contacts (<computer name>)`, which becomes the token's name in the web Security settings.
 - The sign-in and poll addresses must lie on the account's own server, and the answer must name that server, or it is
   dropped with an error.
+- Every request sets `ManualRedirectPolicy` (as the client's `AccessManager` does) and a redirect is a failure: Qt's default
+  would follow an https to https redirect to any host and copy every header, so the revoke's `Authorization` or the poll
+  token could have travelled to another server. The account's proxy is copied onto the flow's own manager.
+- The browser may be signed in as somebody else. Before a profile is built, the granted login name must equal (case
+  does not matter) the account's login or its DAV user; otherwise the new password is revoked, no profile is written and
+  the dialog says "You allowed access as X in the browser. Sign in there as Y and try again." (An account that signed in
+  with its e-mail address and a browser that signed in with the user id is accepted too, as long as one of the two
+  names matches.)
 - The password is held in a `QByteArray` in memory only and overwritten with zeros after use. It is never logged
   (the flow logs status codes only), never shown and never saved. It goes straight into the profile.
-- **It didn't work** revokes it: `DELETE /ocs/v2.php/core/apppassword`, signed in with that new password. **Installed**,
-  closing the window, a timeout or quitting just forget it (the Mac keeps it in its profile).
+- **It didn't work** (and every failure after the password was made: another person in the browser, a profile that could
+  not be written or opened) revokes it: `DELETE /ocs/v2.php/core/apppassword`, signed in with that new password. The
+  flow, not the dialog, owns the request: it outlives the dialog until the DELETE has an answer (10 s at most, then it is
+  aborted and counts as not done), and the window cannot be closed meanwhile. If the revoke is refused, redirected or
+  unanswered, the dialog shows "NoDrive couldn't remove the separate password. Remove "NoDrive Calendar & Contacts
+  (<computer>)" in Security settings on the web." with an **Open Security settings** button. **Installed**, closing the
+  window or quitting just forget it (the Mac keeps the password in its profile). "It didn't work" also clears the
+  "profile offered" flag, so removing the account later shows no note about a profile that was never installed.
 - The profile file is written into a fresh private folder (0700, file 0600), handed to the system, overwritten with zeros
   and deleted after the answer, after 10 minutes, or when NoDrive quits.
 
@@ -73,9 +87,9 @@ Upstream hooks (marked `// NoDrive: device calendar and contacts`, applied by `t
 
 | Test | Covers |
 |---|---|
-| `NoDriveDeviceSyncProfileTest` (all three systems) | valid XML with exactly the Apple keys and types, principal URLs, stable identifier and fresh UUIDs, no "Nextcloud", ports and path prefix, incomplete input, the private file (0600 in 0700) and its removal, the removal note; **macOS: `plutil -lint`** |
-| `NoDriveDeviceSyncFlowTest` | our user agent, polling over 404, a matching server, a mismatching server refused, the start answer pointing elsewhere refused, timeout, cancel, revoke with Basic auth of the new password; the planted password in no log line, no setting, no file |
-| `NoDriveDeviceSyncUiTest` | the panel on the real account page (macOS and the other variant), disabled state, the three Mac steps end to end against a scripted server, the Thunderbird guide texts, **the clipboard after each copy button holds exactly the address**, the removal note; screenshots in light and dark in `nodrive-screenshots/devicesync/` (`account-panel-mac`, `account-panel-other`, `mac-step1`, `mac-step3`, `thunderbird-guide`, `removal-note`) |
+| `NoDriveDeviceSyncProfileTest` (all three systems) | the removal note through the real `AccountManager::accountSyncConnectionRemoved` signal (not on `accountRemoved`), valid XML with exactly the Apple keys and types, principal URLs, stable identifier and fresh UUIDs, no "Nextcloud", ports and path prefix, incomplete input, the private file (0600 in 0700) and its removal, the removal note; **macOS: `plutil -lint`** |
+| `NoDriveDeviceSyncFlowTest` | our user agent, polling over 404, a matching server, a mismatching server refused, the start answer pointing elsewhere refused, timeout, cancel, revoke with Basic auth of the new password; **redirects are never followed (a real loopback server redirects every request to another host: nothing reaches it, with a plain manager as the control that does)**, a revoke without an answer, the flow deleting itself after a detached revoke; the planted password in no log line, no setting, no file |
+| `NoDriveDeviceSyncUiTest` | the panel on the real account page (macOS and the other variant), disabled state, the three Mac steps end to end against a scripted server (also: a refused revoke and a revoke without an answer are shown with "Open Security settings" and the window stays open meanwhile; another person's grant is revoked and no profile is written), the Thunderbird guide texts, **the clipboard after each copy button holds exactly the address**, the removal note; screenshots in light and dark in `nodrive-screenshots/devicesync/` (`account-panel-mac`, `account-panel-other`, `mac-step1`, `mac-step3`, `thunderbird-guide`, `removal-note`) |
 | `NoDriveDeviceSyncServerTest` (Linux CI job "Device calendar and contacts sync against a throwaway server", `tools/ci/devicesync-server.sh`) | a real Nextcloud 35 in Docker; Chromium signs in as the throwaway person and grants access; the poll returns a password; `occ user:auth-tokens:list` shows a token named "NoDrive Calendar & Contacts (ci)"; that password does a CalDAV and a CardDAV PROPFIND (207); the profile is built for the host; "It didn't work" revokes it and the same PROPFIND is 401 |
 
 ## Owner test rows
@@ -93,6 +107,7 @@ Windows and Linux: follow the Thunderbird guide (Thunderbird 102 or newer); cale
 ## Open points
 
 - **Seen while testing, not caused by this feature:** with Qt 6.11.2 (macOS CI) the client's `HttpLogger` (`src/libsync/httplogger.cpp`, category `sync.httplogger`) printed the `Authorization: Basic ...` header of a request unredacted in the test network manager; the cause was not investigated (the redaction compares the header name with `Authorization`, so the case of the name is the first thing to check). The device sync is not affected (its requests do not go through `HttpLogger`, and a test checks that its own log lines hold no credentials), but upstream's logs and the problem reports' scrubber should be looked at. The file was not changed here (upstream file).
+- The account's approved certificates are not copied onto the flow's plain manager (the server is the fixed public one, so there are none to approve); the account's proxy is.
 - Thunderbird's menus can change; the guide names them plainly (no automated test is possible).
 - The profile is unsigned ("Unverified"): signing needs a real certificate.
 - New texts are English only; translations are a to-do.
