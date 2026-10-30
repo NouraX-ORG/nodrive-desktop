@@ -383,7 +383,6 @@ QString EditController::submit(const EditCommand &command)
     if (!_agenda || !_agenda->edit()) {
         return AgendaText::tr("Nothing can be changed right now.");
     }
-    _moveTexts.remove(command.itemKey);
     _agenda->edit()->submit(command);
     return QString();
 }
