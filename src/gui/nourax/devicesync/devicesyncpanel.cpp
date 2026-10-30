@@ -99,7 +99,8 @@ DeviceSyncPanel::DeviceSyncPanel(OCC::AccountState *state, QWidget *parent)
     auto *buttons = new QHBoxLayout();
     buttons->setSpacing(12);
     if (mac) {
-        _macButton = new QPushButton(trPanel("Add to my Mac's Calendar & Contacts"), this);
+        // "&&" shows one "&": a button text reads a single "&" as a shortcut marker.
+        _macButton = new QPushButton(trPanel("Add to my Mac's Calendar && Contacts"), this);
         _macButton->setObjectName(QStringLiteral("deviceSyncMacButton"));
         buttons->addWidget(_macButton, 0, Qt::AlignLeft);
         connect(_macButton, &QPushButton::clicked, this, &DeviceSyncPanel::showMacSetup);

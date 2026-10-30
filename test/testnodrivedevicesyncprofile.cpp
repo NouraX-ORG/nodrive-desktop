@@ -274,8 +274,16 @@ private Q_SLOTS:
             file.close();
             folder = QFileInfo(path).absolutePath();
 #ifndef Q_OS_WIN
-            QCOMPARE(QFileInfo(path).permissions(), QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-            QCOMPARE(QFileInfo(folder).permissions(), QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+            // 0600 and 0700: the owner only. (QFileInfo reports the owner bits twice, as Owner and as User.)
+            const auto others = QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup | QFileDevice::ReadOther
+                | QFileDevice::WriteOther | QFileDevice::ExeOther;
+            const auto filePermissions = QFileInfo(path).permissions();
+            QVERIFY(filePermissions.testFlags(QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+            QVERIFY(!(filePermissions & QFileDevice::ExeOwner));
+            QVERIFY(!(filePermissions & others));
+            const auto folderPermissions = QFileInfo(folder).permissions();
+            QVERIFY(folderPermissions.testFlags(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+            QVERIFY(!(folderPermissions & others));
 #endif
             QVERIFY(QFileInfo(folder).fileName().startsWith(QStringLiteral("nodrive-dav-")));
 

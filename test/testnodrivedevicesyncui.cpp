@@ -57,9 +57,19 @@ QStringList &captured()
     return messages;
 }
 
-void captureMessage(QtMsgType, const QMessageLogContext &, const QString &message)
+QtMessageHandler &previousHandler()
+{
+    static QtMessageHandler handler = nullptr;
+    return handler;
+}
+
+void captureMessage(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
     captured() << message;
+    // Warnings and worse still reach QtTest's output (a fatal message must not vanish).
+    if (type != QtDebugMsg && type != QtInfoMsg && previousHandler()) {
+        previousHandler()(type, context, message);
+    }
 }
 
 QString screenshotDir()
@@ -194,6 +204,7 @@ private Q_SLOTS:
         MacSetupDialog::setFlowTimingForTests(20, -1);
         QLoggingCategory::setFilterRules(QStringLiteral("*.debug=true\n*.info=true"));
         _previousHandler = qInstallMessageHandler(captureMessage);
+        previousHandler() = _previousHandler;
     }
 
     void cleanupTestCase()
@@ -231,7 +242,9 @@ private Q_SLOTS:
         QCOMPARE(panel->descriptionLabel()->text(),
             QStringLiteral("Use your NoDrive calendars, reminders and contacts in the Calendar, Reminders and Contacts apps on this Mac."));
         QVERIFY(panel->macButton());
-        QCOMPARE(panel->macButton()->text(), QStringLiteral("Add to my Mac's Calendar & Contacts"));
+        // A button text reads a single & as a shortcut marker, so the text has && and shows one &.
+        QCOMPARE(panel->macButton()->text(), QStringLiteral("Add to my Mac's Calendar && Contacts"));
+        QCOMPARE(QString(panel->macButton()->text()).replace(QStringLiteral("&&"), QStringLiteral("&")), QStringLiteral("Add to my Mac's Calendar & Contacts"));
         QCOMPARE(panel->thunderbirdButton()->text(), QStringLiteral("Use with Thunderbird…"));
         QVERIFY(panel->thunderbirdButton()->isFlat()); // the link
         QVERIFY(panel->macButton()->isEnabled());
@@ -293,6 +306,7 @@ private Q_SLOTS:
                 layout->setContentsMargins(16, 16, 16, 16);
                 auto *panel = new DeviceSyncPanel(state, holder);
                 layout->addWidget(panel);
+                layout->addStretch(); // the panel keeps its own height, as on the account page
                 holder->setMinimumWidth(640);
                 QObject::connect(holder, &QObject::destroyed, state, &QObject::deleteLater);
                 return holder;

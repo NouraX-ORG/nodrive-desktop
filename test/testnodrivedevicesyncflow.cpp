@@ -39,9 +39,19 @@ QStringList &captured()
     return messages;
 }
 
-void captureMessage(QtMsgType, const QMessageLogContext &, const QString &message)
+QtMessageHandler &previousHandler()
+{
+    static QtMessageHandler handler = nullptr;
+    return handler;
+}
+
+void captureMessage(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
     captured() << message;
+    // Warnings and worse still reach QtTest's output (a fatal message must not vanish).
+    if (type != QtDebugMsg && type != QtInfoMsg && previousHandler()) {
+        previousHandler()(type, context, message);
+    }
 }
 
 QByteArray initAnswer(const QString &loginHost = QStringLiteral("drive.example.test"), const QString &endpointHost = QStringLiteral("drive.example.test"))
@@ -101,7 +111,7 @@ FakeQNAM *makeNam(Script &script, QObject *parent)
         r.userAgent = request.header(QNetworkRequest::UserAgentHeader).toByteArray();
         r.authorization = request.rawHeader("Authorization");
         if (device) {
-            r.body = device->readAll();
+            r.body = device->peek(device->size()); // peek: the client's HttpLogger asserts that the position is 0
         }
         script.requests << r;
         const auto path = r.url.path();
@@ -155,6 +165,7 @@ private Q_SLOTS:
         ConfigFile::setConfDir(_configDir.path());
         QLoggingCategory::setFilterRules(QStringLiteral("*.debug=true\n*.info=true"));
         _previousHandler = qInstallMessageHandler(captureMessage);
+        previousHandler() = _previousHandler;
     }
 
     void cleanupTestCase()
