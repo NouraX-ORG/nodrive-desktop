@@ -448,6 +448,7 @@ No new library and **no new line in an upstream file**: the three small hooks of
 6. The arrows match the dependencies you see in NoGantt; a task that waits for somebody else's task shows a short line with "After: ... (name)" on hover.
 7. A day with a long meeting is shaded; weekends and holidays are hatched.
 8. Switch the Wi-Fi off and drag a bar: "Waiting to send" shows next to it; after switching it on the change reaches NoGantt.
+9. Drop a bar so that its end falls on a Saturday or Sunday: the toast names the dates NoGantt really saved (they can differ from where you dropped the bar), and the bar jumps to them at the next refresh.
 
 ### Open points of the Timeline step
 
@@ -461,6 +462,12 @@ No new library and **no new line in an upstream file**: the three small hooks of
 - "My team" and "Show all team tasks" are dimmed on the Timeline, because team work is not drawn there.
 - The agent label leaves out the robot emoji that a planning person's name starts with (the label draws its own robot icon).
 - Dependencies of a milestone (milestone as the successor) are not drawn: only tasks have arrows into them.
+- Review nits not fixed in this step (cosmetic, no data effect): (1) the note "NoGantt kept it on working days." is added whenever the saved dates differ from the
+  drop, but in a project with strict dependencies NoGantt may also have moved the task because of a predecessor; neutral wording ("NoGantt adjusted the dates")
+  is a to-do. (2) A Timeline move that waits offline and is merged with a date change from the detail panel keeps the drag's `move` bookkeeping, so the toast
+  can name the drag's dates for a to-do; `EditCommand::merge` should drop `move` when the newer command has date fields and no `move`. (3) Two code comments
+  (`testnodriveagendaui.cpp` near line 1619, `AgendaHeader.qml` near line 152) describe the fixture dates and the dimmed chip slightly wrong. (4) The local-only `move`
+  bookkeeping lives in the saved `change` object; both writers read named keys only, but a dedicated `EditCommand` field would be safer.
 - Texts are English; translations are a to-do ("Timeline", "Weeks", "Days", "After: %1 (%2)", "No dated work in this
   range.", "%1 - %2", "Moved to %1 - %2", "lag %1 days" and the legend).
 

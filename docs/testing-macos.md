@@ -59,6 +59,8 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | Problem reports: dark mode readable | owner | pending owner test | |
 | NoAgenda: the menu-bar popup shows "NoAgenda" and it opens the window; the personal-calendars question; Today; tasks with their agent; My team; offline banner; dark mode | owner | pending owner test | |
 | NoAgenda editing: change an event, a to-do, a NoGantt task and a card and see it on the Drive; Undo; "changed somewhere else"; Wi-Fi off and on; clash and workload warning; delete an event and find it in the Trash bin; edit an event in the macOS Calendar app and see whether its agent stays | owner | pending owner test | |
+| NoAgenda Timeline: layout unit tests and the window in light and dark (real mouse drag, Undo, weekend drop, offline move) | CI | PASS | `100% tests passed out of 114` (commit `d147c2a218`, run [40993269434](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40993269434)) |
+| NoAgenda Timeline: the **Timeline** button; bars under project and phase; drag a bar and Undo; drop a bar across a weekend and read the toast; Esc; keys; a viewer-only project shows locks; Wi-Fi off and a drag | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 
