@@ -62,6 +62,9 @@ Before sign-in: CI. After sign-in: the owner, at home (Cloudflare only lets the 
 | NoAgenda: the tray menu shows "NoAgenda" and it opens the window; the personal-calendars question; Today; tasks with their agent; My team; offline banner; dark mode | owner | pending owner test | |
 | NoAgenda editing: change an event, a to-do, a NoGantt task and a card and see it on the Drive; Undo; "changed somewhere else"; Wi-Fi off and on; clash and workload warning; delete an event and find it in the Trash bin | owner | pending owner test | |
 | NoAgenda Timeline: the **Timeline** button; bars under project and phase; drag a bar and Undo; drop a bar across a weekend and read the toast; Esc; keys; a viewer-only project shows locks; Wi-Fi off and a drag | owner | pending owner test | |
+| Calendar and contacts on this computer: unit tests, the panel and guides in light and dark, the profile, the login flow without redirects, the server phase | CI | PASS | Linux run [41077737776](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/41077737776), Windows run [41077737875](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/41077737875), macOS run [41077737918](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/41077737918) at the approved head `ddbdf33a21`; details in [testing.md](testing.md) 1.1e and [device-sync.md](device-sync.md) |
+| Calendar and contacts on this computer ([device-sync.md](device-sync.md)): Settings, the account page shows a panel "Calendar and contacts" above "Log out"; it is greyed out with "Connect to NoDrive first." when you are not connected | owner | pending owner test | |
+| Calendar and contacts, Windows and Linux: "Use with Thunderbird..."; the three steps work in Thunderbird 102 or newer; "Copy calendar address" and "Copy contacts address" paste an address and never a password | owner | pending owner test | |
 
 Offline files and automatic photo upload are phone features; they do not apply to the desktop app.
 

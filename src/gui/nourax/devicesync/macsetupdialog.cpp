@@ -24,7 +24,6 @@
 #include <QStackedWidget>
 #include <QVBoxLayout>
 
-
 namespace OCC::Nourax::DeviceSync {
 
 namespace {

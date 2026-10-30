@@ -117,4 +117,6 @@ Windows and Linux: follow the Thunderbird guide (Thunderbird 102 or newer); cale
 - Thunderbird's menus can change; the guide names them plainly (no automated test is possible).
 - The profile is unsigned ("Unverified"): signing needs a real certificate.
 - New texts are English only; translations are a to-do.
+- The panel's service is created when an account page is built. A remote wipe (`src/gui/remotewipe.cpp`) in a run where Settings was never opened shows no removal note and leaves the flag in the config; account ids are reused, so a later account with the same id may show one harmless extra note. Fix when wanted: create the service at start-up from the Nourax-owned start point, as `AgendaService` is created (review round 3, N2).
+- The CI artifact of the device-sync server phase keeps the Login Flow login tokens of the throwaway server (`login-url-A.txt`, `login-url-B.txt`, `server-requests.txt`). They are single-use and the server is gone; they could be redacted like the poll token (review round 3, N4).
 - Server side (not done here): login flow v2 and app-password creation must stay enabled for normal users (plan server note 13).
