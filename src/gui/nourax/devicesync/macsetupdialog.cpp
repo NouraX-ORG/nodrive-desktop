@@ -30,7 +30,7 @@ namespace OCC::Nourax::DeviceSync {
 
 namespace {
 
-QString tr2(const char *text)
+QString trMacSetup(const char *text)
 {
     return QCoreApplication::translate("OCC::Nourax::DeviceSync::MacSetupDialog", text);
 }
@@ -72,24 +72,24 @@ QWidget *buttonRow(QWidget *parent, const QList<QPushButton *> &buttons)
 
 QString MacSetupDialog::introText()
 {
-    return tr2("NoDrive will open your browser. Allow access there to create a separate password for this Mac's Calendar and Contacts. "
+    return trMacSetup("NoDrive will open your browser. Allow access there to create a separate password for this Mac's Calendar and Contacts. "
                "You won't see it, and NoDrive doesn't keep it.");
 }
 
 QString MacSetupDialog::waitingText()
 {
-    return tr2("Waiting for you to allow access in the browser…");
+    return trMacSetup("Waiting for you to allow access in the browser…");
 }
 
 QString MacSetupDialog::installText(int macMajorVersion)
 {
-    return tr2("Now install the profile: open %1, double-click \"NoDrive Calendar & Contacts\" in Downloaded, then click Install.")
+    return trMacSetup("Now install the profile: open %1, double-click \"NoDrive Calendar & Contacts\" in Downloaded, then click Install.")
         .arg(DeviceSyncService::profilesPath(macMajorVersion));
 }
 
 QString MacSetupDialog::insecureText()
 {
-    return tr2("A secure connection (https) is needed to add the calendars and contacts to this Mac.");
+    return trMacSetup("A secure connection (https) is needed to add the calendars and contacts to this Mac.");
 }
 
 void MacSetupDialog::setFlowTimingForTests(int pollMs, int timeoutMs)
@@ -105,7 +105,7 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
     , _computerName(QSysInfo::machineHostName())
 {
     setObjectName(QStringLiteral("macSetupDialog"));
-    setWindowTitle(tr2("Add to my Mac's Calendar & Contacts"));
+    setWindowTitle(trMacSetup("Add to my Mac's Calendar & Contacts"));
     setMinimumWidth(480);
 
     auto *layout = new QVBoxLayout(this);
@@ -121,10 +121,10 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
         label->setText(introText());
         pageLayout->addWidget(label);
         pageLayout->addStretch();
-        _continueButton = new QPushButton(tr2("Continue"), page);
+        _continueButton = new QPushButton(trMacSetup("Continue"), page);
         _continueButton->setObjectName(QStringLiteral("macSetupContinue"));
         _continueButton->setDefault(true);
-        _cancelButton = new QPushButton(tr2("Cancel"), page);
+        _cancelButton = new QPushButton(trMacSetup("Cancel"), page);
         _cancelButton->setObjectName(QStringLiteral("macSetupCancel"));
         pageLayout->addWidget(buttonRow(page, {_cancelButton, _continueButton}));
         _stack->addWidget(page);
@@ -137,9 +137,9 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
         _waitingLabel->setText(waitingText());
         pageLayout->addWidget(_waitingLabel);
         pageLayout->addStretch();
-        _reopenButton = new QPushButton(tr2("Open the browser again"), page);
+        _reopenButton = new QPushButton(trMacSetup("Open the browser again"), page);
         _reopenButton->setObjectName(QStringLiteral("macSetupReopen"));
-        _waitingCancelButton = new QPushButton(tr2("Cancel"), page);
+        _waitingCancelButton = new QPushButton(trMacSetup("Cancel"), page);
         _waitingCancelButton->setObjectName(QStringLiteral("macSetupWaitingCancel"));
         pageLayout->addWidget(buttonRow(page, {_waitingCancelButton, _reopenButton}));
         _stack->addWidget(page);
@@ -152,9 +152,9 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
         _installLabel->setText(installText(DeviceSyncService::currentMacMajorVersion()));
         pageLayout->addWidget(_installLabel);
         pageLayout->addStretch();
-        _didNotWorkButton = new QPushButton(tr2("It didn't work"), page);
+        _didNotWorkButton = new QPushButton(trMacSetup("It didn't work"), page);
         _didNotWorkButton->setObjectName(QStringLiteral("macSetupDidNotWork"));
-        _installedButton = new QPushButton(tr2("Installed"), page);
+        _installedButton = new QPushButton(trMacSetup("Installed"), page);
         _installedButton->setObjectName(QStringLiteral("macSetupInstalled"));
         _installedButton->setDefault(true);
         pageLayout->addWidget(buttonRow(page, {_didNotWorkButton, _installedButton}));
@@ -167,7 +167,7 @@ MacSetupDialog::MacSetupDialog(const AccountPtr &account, QWidget *parent, QNetw
         _failureLabel = wrappedLabel(QStringLiteral("macSetupFailure"), page);
         pageLayout->addWidget(_failureLabel);
         pageLayout->addStretch();
-        _closeButton = new QPushButton(tr2("Close"), page);
+        _closeButton = new QPushButton(trMacSetup("Close"), page);
         _closeButton->setObjectName(QStringLiteral("macSetupClose"));
         pageLayout->addWidget(buttonRow(page, {_closeButton}));
         _stack->addWidget(page);
@@ -257,7 +257,7 @@ void MacSetupDialog::onGranted(const QString &loginName, const QByteArray &appPa
     input.bundleId = QStringLiteral(APPLICATION_REV_DOMAIN);
     QByteArray profile = AppleProfileBuilder::build(input);
     if (profile.isEmpty()) {
-        showFailure(tr2("The server didn't create a password. Ask your administrator."));
+        showFailure(trMacSetup("The server didn't create a password. Ask your administrator."));
         onDidNotWork();
         return;
     }

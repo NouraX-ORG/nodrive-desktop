@@ -25,7 +25,7 @@ namespace OCC::Nourax::DeviceSync {
 
 namespace {
 
-QString tr2(const char *text)
+QString trPanel(const char *text)
 {
     return QCoreApplication::translate("OCC::Nourax::DeviceSync::DeviceSyncPanel", text);
 }
@@ -34,22 +34,22 @@ QString tr2(const char *text)
 
 QString DeviceSyncPanel::titleText()
 {
-    return tr2("Calendar and contacts");
+    return trPanel("Calendar and contacts");
 }
 
 QString DeviceSyncPanel::macDescriptionText()
 {
-    return tr2("Use your NoDrive calendars, reminders and contacts in the Calendar, Reminders and Contacts apps on this Mac.");
+    return trPanel("Use your NoDrive calendars, reminders and contacts in the Calendar, Reminders and Contacts apps on this Mac.");
 }
 
 QString DeviceSyncPanel::otherDescriptionText()
 {
-    return tr2("Use your NoDrive calendars and contacts in Thunderbird.");
+    return trPanel("Use your NoDrive calendars and contacts in Thunderbird.");
 }
 
 QString DeviceSyncPanel::notConnectedText()
 {
-    return tr2("Connect to NoDrive first.");
+    return trPanel("Connect to NoDrive first.");
 }
 
 DeviceSyncPanel *DeviceSyncPanel::install(QWidget *page, OCC::AccountState *state, QVBoxLayout *layout, QWidget *before)
@@ -99,20 +99,20 @@ DeviceSyncPanel::DeviceSyncPanel(OCC::AccountState *state, QWidget *parent)
     auto *buttons = new QHBoxLayout();
     buttons->setSpacing(12);
     if (mac) {
-        _macButton = new QPushButton(tr2("Add to my Mac's Calendar & Contacts"), this);
+        _macButton = new QPushButton(trPanel("Add to my Mac's Calendar & Contacts"), this);
         _macButton->setObjectName(QStringLiteral("deviceSyncMacButton"));
         buttons->addWidget(_macButton, 0, Qt::AlignLeft);
         connect(_macButton, &QPushButton::clicked, this, &DeviceSyncPanel::showMacSetup);
 
         // The guide is also offered on macOS, as a link.
-        _thunderbirdButton = new QPushButton(tr2("Use with Thunderbird…"), this);
+        _thunderbirdButton = new QPushButton(trPanel("Use with Thunderbird…"), this);
         _thunderbirdButton->setFlat(true);
         auto linkFont = _thunderbirdButton->font();
         linkFont.setUnderline(true);
         _thunderbirdButton->setFont(linkFont);
         _thunderbirdButton->setCursor(Qt::PointingHandCursor);
     } else {
-        _thunderbirdButton = new QPushButton(tr2("Use with Thunderbird…"), this);
+        _thunderbirdButton = new QPushButton(trPanel("Use with Thunderbird…"), this);
     }
     _thunderbirdButton->setObjectName(QStringLiteral("deviceSyncThunderbirdButton"));
     buttons->addWidget(_thunderbirdButton, 0, Qt::AlignLeft);

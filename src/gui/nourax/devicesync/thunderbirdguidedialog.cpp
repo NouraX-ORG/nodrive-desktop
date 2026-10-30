@@ -22,7 +22,7 @@ namespace OCC::Nourax::DeviceSync {
 
 namespace {
 
-QString tr2(const char *text)
+QString trGuide(const char *text)
 {
     return QCoreApplication::translate("OCC::Nourax::DeviceSync::ThunderbirdGuideDialog", text);
 }
@@ -31,29 +31,29 @@ QString tr2(const char *text)
 
 QString ThunderbirdGuideDialog::titleText()
 {
-    return tr2("Use NoDrive calendars and contacts in Thunderbird");
+    return trGuide("Use NoDrive calendars and contacts in Thunderbird");
 }
 
 QString ThunderbirdGuideDialog::stepOneText()
 {
-    return tr2("Create an app password for Thunderbird: click Open Security settings, then Create new app password, and name it Thunderbird.");
+    return trGuide("Create an app password for Thunderbird: click Open Security settings, then Create new app password, and name it Thunderbird.");
 }
 
 QString ThunderbirdGuideDialog::stepTwoText(const QString &loginName)
 {
-    return tr2("In Thunderbird's Calendar, click New Calendar… › On the Network. Enter your user name (%1) and paste the calendar address as the location. "
+    return trGuide("In Thunderbird's Calendar, click New Calendar… › On the Network. Enter your user name (%1) and paste the calendar address as the location. "
                "Click Find Calendars, sign in with the app password and choose your calendars.")
         .arg(loginName);
 }
 
 QString ThunderbirdGuideDialog::stepThreeText()
 {
-    return tr2("In the Address Book, open the menu next to New Address Book › Add CardDAV Address Book, paste the contacts address and sign in with the app password.");
+    return trGuide("In the Address Book, open the menu next to New Address Book › Add CardDAV Address Book, paste the contacts address and sign in with the app password.");
 }
 
 QString ThunderbirdGuideDialog::footerText()
 {
-    return tr2("NoDrive never copies passwords.");
+    return trGuide("NoDrive never copies passwords.");
 }
 
 ThunderbirdGuideDialog::ThunderbirdGuideDialog(const QUrl &server, const QString &davUser, const QString &loginName, QWidget *parent)
@@ -86,7 +86,7 @@ ThunderbirdGuideDialog::ThunderbirdGuideDialog(const QUrl &server, const QString
     title->setWordWrap(true);
     layout->addWidget(title);
 
-    auto *intro = new QLabel(tr2("Thunderbird 102 or newer has calendars and contacts built in. Follow these three steps."), this);
+    auto *intro = new QLabel(trGuide("Thunderbird 102 or newer has calendars and contacts built in. Follow these three steps."), this);
     intro->setObjectName(QStringLiteral("thunderbirdIntro"));
     intro->setWordWrap(true);
     layout->addWidget(intro);
@@ -112,13 +112,13 @@ ThunderbirdGuideDialog::ThunderbirdGuideDialog(const QUrl &server, const QString
         connect(button, &QPushButton::clicked, this, [onClick, confirmation] { onClick(confirmation); });
     };
 
-    addStep(1, stepOneText(), tr2("Open Security settings"), QStringLiteral("openSecuritySettingsButton"), [this](QLabel *) {
+    addStep(1, stepOneText(), trGuide("Open Security settings"), QStringLiteral("openSecuritySettingsButton"), [this](QLabel *) {
         openInBrowser(_securityUrl);
     });
-    addStep(2, stepTwoText(loginName), tr2("Copy calendar address"), QStringLiteral("copyCalendarAddressButton"), [this](QLabel *confirmation) {
+    addStep(2, stepTwoText(loginName), trGuide("Copy calendar address"), QStringLiteral("copyCalendarAddressButton"), [this](QLabel *confirmation) {
         copyAddress(_calendarAddress, confirmation);
     });
-    addStep(3, stepThreeText(), tr2("Copy contacts address"), QStringLiteral("copyContactsAddressButton"), [this](QLabel *confirmation) {
+    addStep(3, stepThreeText(), trGuide("Copy contacts address"), QStringLiteral("copyContactsAddressButton"), [this](QLabel *confirmation) {
         copyAddress(_contactsAddress, confirmation);
     });
 
@@ -140,7 +140,7 @@ void ThunderbirdGuideDialog::copyAddress(const QString &address, QLabel *confirm
     for (auto *label : findChildren<QLabel *>(QRegularExpression(QStringLiteral("^thunderbirdCopied")))) {
         label->clear();
     }
-    confirmation->setText(tr2("Copied"));
+    confirmation->setText(trGuide("Copied"));
 }
 
 } // namespace OCC::Nourax::DeviceSync
