@@ -22,10 +22,8 @@
 #include <QRegularExpression>
 #include <QSysInfo>
 #include <QStackedWidget>
-#include <QTimer>
 #include <QVBoxLayout>
 
-#include <memory>
 
 namespace OCC::Nourax::DeviceSync {
 
@@ -347,8 +345,9 @@ void MacSetupDialog::onInstalled()
 
 void MacSetupDialog::onDidNotWork()
 {
-    // Whatever was offered is not installed: removing the account later must not talk about a profile.
-    DeviceSyncSettings::setProfileOffered(_account->id(), false);
+    // The "profile offered" flag stays as it is: a profile may still be on this Mac (left from an earlier run, or
+    // installed just before "It didn't work" was pressed), and removing the account later must tell the user how to
+    // remove it. A note about a profile that is not there costs nothing.
     if (_password.isEmpty() || !_flow) {
         forgetPassword();
         _installer->cleanup();

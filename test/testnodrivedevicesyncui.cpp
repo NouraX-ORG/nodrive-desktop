@@ -555,7 +555,7 @@ private Q_SLOTS:
         QVERIFY(!dialog.openSecurityButton()->isHidden());
         QVERIFY(dialog.closeButton()->isEnabled());
         QVERIFY(!QFileInfo::exists(profilePath));
-        QVERIFY(!DeviceSyncSettings::profileOffered(account->id())); // the removal note must not talk about a profile that was not installed
+        QVERIFY(DeviceSyncSettings::profileOffered(account->id())); // a profile may still be installed: the removal note stays
         QVERIFY(script.verbs.contains(QStringLiteral("DELETE")));
 
         browser.clear();
@@ -566,6 +566,68 @@ private Q_SLOTS:
         QSignalSpy finishedSpy(&dialog, &QDialog::finished);
         dialog.closeButton()->click();
         QCOMPARE(finishedSpy.size(), 1);
+        DeviceSyncSettings::setProfileOffered(account->id(), false);
+    }
+
+    void macFlowAFailedRunKeepsTheRemovalNoteOfAnEarlierProfile()
+    {
+        // (A) A profile from an earlier successful run is still on the Mac when a second run fails; (B) the user
+        // installed the profile and then pressed "It didn't work". Removing the account must still show the note.
+        urlOpenerHook() = [](const QUrl &) { return true; };
+        MacProfileInstaller::setOpenerForTests([](const QUrl &) { return true; });
+        DeviceSyncService::setMacForTests(1);
+        DeviceSyncService::setMacMajorVersionForTests(15);
+        QStringList notes;
+        DeviceSyncService::setMessageHookForTests([&](const QString &text) { notes << text; });
+        {
+            // "It didn't work" after the grant.
+            Script script;
+            script.pendingPolls = 0;
+            std::unique_ptr<FakeQNAM> nam(makeNam(script));
+            auto account = makeAccount();
+            DeviceSyncSettings::setProfileOffered(account->id(), true);
+            MacSetupDialog dialog(account, nullptr, nam.get());
+            dialog.continueButton()->click();
+            QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Install, 20000);
+            dialog.didNotWorkButton()->click();
+            QTRY_COMPARE_WITH_TIMEOUT(dialog.result(), int(QDialog::Rejected), 20000);
+            QVERIFY(script.verbs.contains(QStringLiteral("DELETE")));
+            QVERIFY(DeviceSyncSettings::profileOffered(account->id()));
+        }
+        {
+            // Another person in the browser.
+            Script script;
+            script.pendingPolls = 0;
+            script.grantLogin = QStringLiteral("bob");
+            std::unique_ptr<FakeQNAM> nam(makeNam(script));
+            auto account = makeAccount();
+            MacSetupDialog dialog(account, nullptr, nam.get());
+            dialog.continueButton()->click();
+            QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Failed, 20000);
+            QTRY_VERIFY_WITH_TIMEOUT(script.verbs.contains(QStringLiteral("DELETE")), 10000);
+            QTRY_VERIFY_WITH_TIMEOUT(dialog.flow() == nullptr, 10000);
+            QVERIFY(DeviceSyncSettings::profileOffered(account->id()));
+        }
+        {
+            // The server does not start the flow.
+            Script script;
+            script.initStatus = 403;
+            std::unique_ptr<FakeQNAM> nam(makeNam(script));
+            auto account = makeAccount();
+            MacSetupDialog dialog(account, nullptr, nam.get());
+            dialog.continueButton()->click();
+            QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Failed, 20000);
+            QVERIFY(DeviceSyncSettings::profileOffered(makeAccount()->id()));
+        }
+        // Removing the account now shows the note, and only once.
+        QVERIFY(notes.isEmpty());
+        DeviceSyncService::instance()->accountDeleted(makeAccount()->id());
+        QCOMPARE(notes.size(), 1);
+        QVERIFY(notes.first().contains(QStringLiteral("General › Device Management")));
+        QVERIFY(!DeviceSyncSettings::profileOffered(makeAccount()->id()));
+        DeviceSyncService::setMessageHookForTests({});
+        DeviceSyncService::setMacForTests(-1);
+        DeviceSyncService::setMacMajorVersionForTests(-1);
     }
 
     void macFlowARevokeWithoutAnswerIsShownAndTheWindowStaysOpenMeanwhile()
@@ -598,6 +660,7 @@ private Q_SLOTS:
         QCOMPARE(finishedSpy.size(), 0);
         dialog.reject();
         QCOMPARE(finishedSpy.size(), 1);
+        DeviceSyncSettings::setProfileOffered(account->id(), false);
     }
 
     void macFlowAnotherPersonInTheBrowserIsRevokedAndNoProfileIsWritten()
