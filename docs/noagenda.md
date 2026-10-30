@@ -1,9 +1,9 @@
-# NoAgenda (desktop): the core and the edit step
+# NoAgenda (desktop): the core, the edit step and the Timeline
 
 Binding spec: `plans/noagenda-decisions.md` (approved 2026-10-28). Platform plan: `plans/noagenda-desktop-plan.md`.
 This page describes what is built in the first step ("NoAgenda core", read only), in the second step ("Editing and
-conflicts", the section further down) and how both are tested. The Timeline and the computer's own Calendar and
-Contacts apps come in the next steps.
+conflicts", the section further down), in the third step ("The Timeline", further down) and how they are tested. The
+computer's own Calendar and Contacts apps come in the next step.
 
 ## What the user gets
 
@@ -231,6 +231,13 @@ All computed on the device from rows the person can already see (`logic/conflict
 | `NoDriveAgendaGanttAgent` | "my agent" on a task: other rows unchanged, order and main row kept, the 4-row limit, work-total guard (hours and person days), invisible rows, the answer check, an agent with two planning people (Self and another agent remove both), the planning person must belong to the project |
 | `NoDriveAgendaQueue` | order, persistence across a restart, no parallel sends, folding, conflicts kept until a click, offline then online, "Apply my change again", the optimistic overlay |
 | `NoDriveAgendaConflicts` | clash and soft clash (events, timed cards, tasks with real times), spread of work, my review time on an agent's task, holidays and days off, busy time, no estimate, deadline on a day off (three sources), blocked, an agent's capacity, days off and time zone, agent overbooking (events and timed cards), the text of a card or task time |
+| `NoDriveAgendaTimelineLayout` | the pure Timeline maths: date and x round trips at both zooms, the half-day snap (0.49 stays, 0.51 moves), groups (project, phase, NoTasks list, NoBoard board) and their order, bar and diamond rectangles, a cut bar, the four dependency types (end points and direction of every arrow), the stub for an outside predecessor, the lag in the tooltip, the shading of my busy time and the days off, drag to dates, locked bars give no drag, my own work only |
+| `NoDriveAgendaUi` (Timeline) | the Timeline in light and dark (bars, % fill, groups with a phase, diamonds, the agent, arrows drawn on screen, shading, today), the Weeks / Days zoom, a real mouse drag with the ghost bar, the saved `PUT` (dates, `adjust_lag`, `deck_confirmed`), "Moved to ... Also moved: ..." and Undo, a drag under half a day, Esc, the keys, a locked bar, a to-do bar, a move made offline, the empty state, the chips |
+| `NoDriveAgendaServer` phase `timeline` | on the real throwaway server: the layout of the seeded data, a drag by two days of one of Ali's tasks, the dependent task moves (`propagated`), the toast, Undo gives both tasks their dates back |
+
+The window test also covers the Timeline with screenshots in light and dark: `timeline`, `timeline-drag`, `timeline-undo`,
+`timeline-readonly`, plus `timeline-days-light` and `timeline-empty-light`; the server job adds `live-timeline-{light,dark}.png`
+(Ali's seeded data on the real throwaway server).
 
 The window test also covers the edit step with screenshots in light and dark: `day-clash-overbooked`, `edit-agent-gantt`,
 `edit-agent-not-in-project`, `new-event`, `edit-conflict`, `pending-offline`, `delete-confirm`, `repeating-locked`, `viewer-locked`.
@@ -427,6 +434,17 @@ No new library and **no new line in an upstream file**: the three small hooks of
   `HoverHandler`, `TapHandler`, `WheelHandler`, `Canvas`, `Flickable`) were taken from the official Qt 6 documentation as
   known from the plan's earlier check; the UI tests drive them with real mouse and key events.
 
+### Owner test rows (Timeline, real computers, plain English)
+
+1. Open NoAgenda, choose **Timeline**: your NoGantt tasks are bars under their project and phase, the % done fills the bar, and the agent (or Self) is next to each bar.
+2. Drag a bar two days to the right: a ghost bar shows the new dates, and when you let go NoGantt has the new dates and the toast says "Moved to ... Also moved: ..." if other tasks moved. Press **Undo** within 10 seconds: everything is back.
+3. Start a drag and press **Esc**: nothing is saved.
+4. Click a bar, press Right and then Enter: the bar moves by one day.
+5. In a project where you are only a viewer, the bars show a lock, do not move, and say why.
+6. The arrows match the dependencies you see in NoGantt; a task that waits for somebody else's task shows a short line with "After: ... (name)" on hover.
+7. A day with a long meeting is shaded; weekends and holidays are hatched.
+8. Switch the Wi-Fi off and drag a bar: "Waiting to send" shows next to it; after switching it on the change reaches NoGantt.
+
 ### Open points of the Timeline step
 
 - Mid-drag, a refresh that rebuilds the rows drops the drag (nothing is sent). The 5-minute refresh is the only trigger.
@@ -472,7 +490,7 @@ No new library and **no new line in an upstream file**: the three small hooks of
 - A card or task time is a clash only when both ends are on one day; a longer span is a due or end date only.
 - The time of a NoGantt task is read as the time of the person's time zone (NoGantt stores no zone).
 - A new card due date keeps the card's time of day; a card without a time is due at local midnight.
-- The Timeline (design step 3) and the computer's own Calendar and Contacts apps (step 4) are not here.
+- The computer's own Calendar and Contacts apps (step 4) are not here.
 - The new texts are English; translations are a to-do.
 
 ## Server-side items (not done here; for the Workspace session)

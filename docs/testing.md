@@ -105,6 +105,21 @@ macOS run [40929677752](https://github.com/NouraX-ORG/nodrive-desktop/actions/ru
 Not verified by CI: that the calendar's trash bin keeps a deleted event (the job reports "not verified"; owner row "Delete an event"), and what the iPhone, Android and
 macOS calendar apps do to the agent id (owner row). Known limits and the review's nits are listed in [noagenda.md](noagenda.md), "Open points of the edit step".
 
+### 1.1d NoAgenda Timeline (CI, [noagenda.md](noagenda.md))
+
+Commit `9ec65087c7` (branch `feature/noagenda-timeline`; the code is the same in the commit with these documents): Linux run [40975285170](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40975285170),
+Windows run [40975285221](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40975285221), macOS run [40975285216](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/40975285216). All three are green.
+The Linux job "Build and unit tests" failed once in `SearchQmlTest` (`test_providerHeaderReceivesDelegateDataAndGeometry`: `hovered` was true, an upstream search test that has nothing to do with the Timeline) and passed when the failed job was re-run once.
+Earlier heads of this branch failed for reasons of this step and were fixed: a moc error in the UI test (helpers inside the slots section), the layout test (`QByteArray + const char*`), a QML property name in the scale header (`top`) that Qt does not allow, a `Canvas` that painted no arrows (now plain scene-graph lines), a sentence kept after a quick answer, and a to-do bar outside a small macOS window.
+
+| Feature | Linux | Windows | macOS |
+|---|---|---|---|
+| `NoDriveAgendaTimelineLayoutTest` (new): date and x at both zooms, the half-day snap, groups and order, rectangles, the four dependency types, the stub, the lag, shading and days off, drag to dates, locked bars give no drag | PASS (`100% tests passed, 0 tests failed out of 120` in the re-run) | PASS (`100% tests passed, 0 tests failed out of 117`) | PASS (`100% tests passed out of 114`) |
+| `NoDriveAgendaUiTest`, Timeline: the view in light and dark (bars, % fill, phase, diamonds, agents, arrows with a pixel check, shading, today), zoom, a real mouse drag with the ghost and the saved `PUT` (dates, `adjust_lag`, `deck_confirmed`), the toast with "Also moved" and Undo, a half-day drag moves nothing, Esc, the keys, a locked bar, a to-do bar, a move made offline, the empty state, chips and switches; no text with the server software's name | PASS, screenshots `timeline`, `timeline-drag`, `timeline-undo`, `timeline-readonly` (light and dark), `timeline-days-light`, `timeline-empty-light` in the artifact `nodrive-linux-test-results` | PASS | PASS |
+| Real Nextcloud 35.0.2 (throwaway) with the four pinned apps: phase `timeline` (17 PASS rows: the layout of the seeded data, two new tasks with a dependency, a drag by two days, the dependent task moves and is named, Undo gives both tasks their dates back) | PASS: 0 FAIL in the whole report (job `agenda-server`, artifact `nodrive-linux-agenda-server`, with `live-timeline-light.png` and `live-timeline-dark.png`) | not run (no Docker on the runner) | not run (no Docker on the runner) |
+| No change to a server and nothing deleted: the Timeline creates no delete; the only DELETE after the seed is still the event the edit phase made | PASS (`edit-deletes-only-its-own-event`, `no-destructive-requests-in-read-steps`, `no-secret-in-artifact`) | n/a | n/a |
+| Branding gate stays green and `rebrand.py --check` is clean; no new line in an upstream file | PASS | PASS | PASS |
+
 ### 1.2 After sign-in (owner)
 
 | Feature | Linux | Windows | macOS |
@@ -144,6 +159,13 @@ macOS calendar apps do to the agent id (owner row). Known limits and the review'
 | NoAgenda editing: a dentist visit and a client call at the same time both show the clash mark; 6 hours of work on a day with 4 free hours shows the workload warning | pending owner test | pending owner test | pending owner test |
 | NoAgenda editing: set an agent on an event, then edit that event in the iPhone, Android or macOS calendar app; is the agent still there in NoAgenda? | pending owner test | pending owner test | pending owner test |
 | NoAgenda editing: delete an event in NoAgenda (after the question); it is in the Trash bin of the Calendar page and can be restored | pending owner test | pending owner test | pending owner test |
+| NoAgenda Timeline ([noagenda.md](noagenda.md)): the Timeline view shows my NoGantt tasks as bars under their project and phase, with % done filling the bar and the agent or Self next to it | pending owner test | pending owner test | pending owner test |
+| NoAgenda Timeline: drag a bar two days; NoGantt has the new dates; "Moved to ... Also moved: ..." and **Undo** puts everything back | pending owner test | pending owner test | pending owner test |
+| NoAgenda Timeline: Esc during a drag saves nothing; Left, Right and Enter move a selected bar | pending owner test | pending owner test | pending owner test |
+| NoAgenda Timeline: in a project where I am only a viewer the bars show a lock and do not move | pending owner test | pending owner test | pending owner test |
+| NoAgenda Timeline: the arrows match NoGantt's dependencies; a task waiting for somebody else's shows "After: ..." on hover | pending owner test | pending owner test | pending owner test |
+| NoAgenda Timeline: long meetings shade their day, weekends and holidays are hatched; a trackpad scrolls sideways without moving a bar | pending owner test | pending owner test | pending owner test |
+| NoAgenda Timeline: Wi-Fi off, drag a bar: "Waiting to send"; Wi-Fi on: the change reaches NoGantt | pending owner test | pending owner test | pending owner test |
 
 Offline files and automatic photo upload are phone features; they do not apply to
 the desktop app.
