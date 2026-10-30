@@ -1360,8 +1360,8 @@ private:
                 saved = v.toObject();
             }
         }
-        saved.insert(QStringLiteral("start_date"), saveStart + QStringLiteral(" 00:00:00"));
-        saved.insert(QStringLiteral("end_date"), saveEnd + QStringLiteral(" 00:00:00"));
+        saved.insert(QStringLiteral("start_date"), QString(saveStart + QStringLiteral(" 00:00:00")));
+        saved.insert(QStringLiteral("end_date"), QString(saveEnd + QStringLiteral(" 00:00:00")));
         saved.insert(QStringLiteral("updated_at"), QStringLiteral("2026-10-28 12:00:00"));
         const QJsonObject moved{{QStringLiteral("id"), 104}, {QStringLiteral("title"), QStringLiteral("Publish banners")}};
         return ocsBody(QJsonObject{{QStringLiteral("task"), saved}, {QStringLiteral("propagated"), QJsonArray{moved}}, {QStringLiteral("op_id"), QStringLiteral("op-9")}, {QStringLiteral("deck"), QJsonObject()}});
@@ -1707,16 +1707,7 @@ private Q_SLOTS:
             xml.replace("DTSTART;VALUE=DATE:20261027", "DTSTART:20261027T080000Z");
             xml.replace("DUE;VALUE=DATE:20261031", "DUE:20261031T160000Z");
             t->answers.prepend({"REPORT", QStringLiteral("/remote.php/dav/calendars/ali/personal/"), "VTODO", 207, xml, {}});
-            const QByteArray text = "BEGIN:VCALENDAR
-VERSION:2.0
-BEGIN:VTODO
-UID:ci-td4
-SUMMARY:Draft report
-DTSTART:20261027T080000Z
-DUE:20261031T160000Z
-END:VTODO
-END:VCALENDAR
-";
+            const QByteArray text = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VTODO\r\nUID:ci-td4\r\nSUMMARY:Draft report\r\nDTSTART:20261027T080000Z\r\nDUE:20261031T160000Z\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
             prepend(t, "GET", path, 200, text, {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"d4\"")}});
             prepend(t, "PUT", path, 204, QByteArray(), {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"d5\"")}});
         }, true, [](Env *e) { e->agenda->setZone(QTimeZone::fromSecondsAheadOfUtc(3600)); });
