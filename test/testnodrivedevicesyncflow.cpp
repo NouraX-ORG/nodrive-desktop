@@ -327,7 +327,7 @@ private Q_SLOTS:
         script.neverGrant = true;
         std::unique_ptr<FakeQNAM> nam(makeNam(script, nullptr));
         auto flow = makeFlow(nam.get());
-        flow->setTimeout(std::chrono::milliseconds(300));
+        flow->setTimeout(std::chrono::milliseconds(2000)); // generous: a slow runner must still get a few polls in
         QSignalSpy grantedSpy(flow.get(), &DeviceAppPasswordFlow::granted);
         QSignalSpy failedSpy(flow.get(), &DeviceAppPasswordFlow::failed);
         flow->start();

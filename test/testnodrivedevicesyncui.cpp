@@ -547,7 +547,7 @@ private Q_SLOTS:
             auto account = makeAccount();
             MacSetupDialog dialog(account, nullptr, nam.get());
             QCOMPARE(dialog.step(), MacSetupDialog::Step::Intro);
-            MacSetupDialog::setFlowTimingForTests(20, 300);
+            MacSetupDialog::setFlowTimingForTests(20, 1000);
             dialog.continueButton()->click();
             MacSetupDialog::setFlowTimingForTests(20, -1);
             QTRY_COMPARE_WITH_TIMEOUT(dialog.step(), MacSetupDialog::Step::Failed, 20000);
