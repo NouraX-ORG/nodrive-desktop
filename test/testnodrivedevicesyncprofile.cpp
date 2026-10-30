@@ -310,7 +310,7 @@ private Q_SLOTS:
         QVERIFY(quitting.installProfile(QByteArrayLiteral("<plist/>")));
         const auto path = quitting.filePath();
         QVERIFY(QFileInfo::exists(path));
-        Q_EMIT QCoreApplication::instance()->aboutToQuit();
+        QMetaObject::invokeMethod(QCoreApplication::instance(), "aboutToQuit", Qt::DirectConnection); // a private signal: by name
         QVERIFY(!QFileInfo::exists(path));
         QCOMPARE(MacProfileInstaller::lifetimeMs, 10 * 60 * 1000);
     }

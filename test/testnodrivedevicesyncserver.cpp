@@ -71,7 +71,7 @@ Answer request(QNetworkAccessManager &nam, const QByteArray &verb, const QUrl &u
 
 QByteArray basic(const QString &user, const QByteArray &password)
 {
-    return "Basic " + (user.toUtf8() + ':' + password).toBase64();
+    return "Basic " + QByteArray(user.toUtf8() + ':' + password).toBase64();
 }
 
 } // namespace

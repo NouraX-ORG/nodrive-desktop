@@ -95,8 +95,8 @@ FakeQNAM *makeNam(Script &script)
             if (script.initStatus != 200) {
                 return new FakeErrorReply(op, request, nam, script.initStatus);
             }
-            QJsonObject poll{{"token", "tok-ui"}, {"endpoint", serverUrl + QStringLiteral("/login/v2/poll")}};
-            QJsonObject root{{"poll", poll}, {"login", serverUrl + QStringLiteral("/login/v2/flow/tok-ui")}};
+            QJsonObject poll{{"token", "tok-ui"}, {"endpoint", QString(serverUrl + QStringLiteral("/login/v2/poll"))}};
+            QJsonObject root{{"poll", poll}, {"login", QString(serverUrl + QStringLiteral("/login/v2/flow/tok-ui"))}};
             return new FakePayloadReply(op, request, QJsonDocument(root).toJson(QJsonDocument::Compact), nam);
         }
         if (path.endsWith(QLatin1String("/login/v2/poll"))) {
@@ -120,7 +120,7 @@ AccountPtr makeAccount(const QString &url = serverUrl)
     auto account = Account::create();
     account->setUrl(QUrl(url));
     account->setDavUser(QStringLiteral("ali"));
-    account->setProperty("id", QStringLiteral("ali@") + QUrl(url).host());
+    account->setProperty("id", QString(QStringLiteral("ali@") + QUrl(url).host()));
     account->setCredentials(new FakeCredentials{new FakeQNAM({})});
     return account;
 }
