@@ -122,6 +122,20 @@ An earlier run of the Linux job "Build and unit tests" had failed once in `Searc
 | No change to a server and nothing deleted: the Timeline creates no delete; the only DELETE after the seed is still the event the edit phase made | PASS (`edit-deletes-only-its-own-event`, `no-destructive-requests-in-read-steps`, `no-secret-in-artifact`) | n/a | n/a |
 | Branding gate stays green and `rebrand.py --check` is clean; no new line in an upstream file | PASS | PASS | PASS |
 
+### 1.1e Calendar and contacts on this computer (CI, [device-sync.md](device-sync.md))
+
+CI result at commit `c2a4145b` (branch `feature/device-calendar-sync`, all jobs green): Linux run [41029160151](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/41029160151), Windows run [41029160135](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/41029160135), macOS run [41029160286](https://github.com/NouraX-ORG/nodrive-desktop/actions/runs/41029160286). Earlier runs on this branch failed only in the new files of this feature (a name clash in the unity build, test compile errors, a test that consumed the request body its logger asserts on, a permission check that ignored Qt's duplicate owner bits, and one timing limit that was too short for the macOS runner); each was fixed in the feature's own files. No upstream test failed.
+
+| Feature | Linux | Windows | macOS |
+|---|---|---|---|
+| `NoDriveDeviceSyncProfileTest`: valid plist with exactly the Apple keys and types, principal URLs, stable identifier per account and fresh UUIDs, no "Nextcloud", ports and a path prefix, incomplete input gives nothing, the file is 0600 in a 0700 folder and gone after cleanup, after delete and at quit, the removal note (only on a Mac, only when offered, both System Settings paths); macOS also `plutil -lint` | PASS (`100% tests passed, 0 tests failed out of 124`) | PASS (out of 121) | PASS (out of 118, includes `plutil -lint` on the file) |
+| `NoDriveDeviceSyncFlowTest`: our user agent (the token's name), polling over 404, a matching server, a mismatching server refused, the start answer pointing to another host refused, the "ask your administrator" text, timeout, cancel, revoke with Basic auth of the new password; the planted password in no log line, setting or file | PASS | PASS | PASS |
+| `NoDriveDeviceSyncUiTest`: the panel on the real account page (macOS and other variant), before "Remove account", disabled with "Connect to NoDrive first.", the three Mac steps end to end against a scripted server (Installed, It didn't work, failures, cancel), the Thunderbird guide texts and **the clipboard holds exactly the address after each copy**, the removal note; screenshots `account-panel-mac`, `account-panel-other`, `mac-step1`, `mac-step3`, `thunderbird-guide`, `removal-note` in light and dark (artifacts `nodrive-<system>-test-results` / `-build-logs`, folder `nodrive-screenshots/devicesync`) | PASS | PASS | PASS |
+| Server phase "device-sync" (Linux job "Device calendar and contacts sync against a throwaway server", artifact `nodrive-linux-devicesync-server`): a real Nextcloud 35.0.2 in Docker; Chromium signs in as the throwaway person and grants access; the poll returns a password; `occ user:auth-tokens:list` shows exactly one token named "NoDrive Calendar & Contacts (ci)"; that password does a CalDAV and a CardDAV PROPFIND (207); the profile is built for the host (14 Apple keys, no Nextcloud name); "It didn't work" revokes it and the same PROPFIND is 401; no throwaway password in the artifact | PASS (16 checks) | n/a | n/a |
+| The server's own Apple profile (evidence for plan 0.3, `server-apple-profile.txt`) | anonymous: HTTP 401; signed in: HTTP 200, `text/plain`, 101 bytes, **mentions Nextcloud**, **no password key** | n/a | n/a |
+
+The Mac steps (browser sign-in, profile install in System Settings, Calendar and Contacts showing the data, alarms, the removal note on a real Mac) and the Thunderbird steps need a real computer and a real account: owner rows in [device-sync.md](device-sync.md).
+
 ### 1.2 After sign-in (owner)
 
 | Feature | Linux | Windows | macOS |
@@ -276,6 +290,17 @@ NoAgenda reads your calendars, to-dos, NoGantt projects and NoBoard boards. Step
    - Nothing on your computer or in your files is ever deleted by NoAgenda; NoGantt tasks and cards can't be deleted here.
    - Timeline (the **Timeline** button): drag a bar two days to the right and let go; the toast tells the dates that were saved and **Undo** puts it back. Drop a bar so that its end falls on a Saturday or Sunday: the toast names the dates NoGantt really saved (they may differ from where you dropped it). Press **Esc** during a drag: nothing is saved. Click a bar and press Right, then Enter: it moves one day. In a project where you are only a viewer, the bars show a lock.
 9. Send back PASS or what you saw for each point.
+
+### Calendar and contacts: what to try (after sign-in)
+
+macOS:
+1. Settings, then the account page, then **Add to my Mac's Calendar & Contacts**: click Continue, allow access in the browser, then install the profile in System Settings (macOS 13 and 14: Privacy & Security > Profiles; macOS 15 and newer: General > Device Management). It shows as "Unverified": that is expected (no signing yet).
+2. Calendar, Reminders and Contacts show your NoDrive calendars, lists and contacts.
+3. Make an event on the Mac: it appears in NoAgenda and on the web, and the other way round. An alarm fires.
+4. Edit a tagged event in macOS Calendar, then check its agent in NoAgenda.
+5. Remove the NoDrive account: the note about removing the profile appears.
+
+Windows and Linux: Settings, the account page, **Use with Thunderbird...**. Follow the three steps (Thunderbird 102 or newer). The calendars and contacts appear. The clipboard never holds a password from NoDrive.
 
 ### Problem reports: what to try (after sign-in)
 

@@ -92,6 +92,7 @@ Windows and Linux: follow the Thunderbird guide (Thunderbird 102 or newer); cale
 
 ## Open points
 
+- **Seen while testing, not caused by this feature:** with Qt 6.11.2 (macOS CI) the client's `HttpLogger` (`src/libsync/httplogger.cpp`, category `sync.httplogger`) printed the `Authorization: Basic ...` header of a request unredacted in the test network manager; the cause was not investigated (the redaction compares the header name with `Authorization`, so the case of the name is the first thing to check). The device sync is not affected (its requests do not go through `HttpLogger`, and a test checks that its own log lines hold no credentials), but upstream's logs and the problem reports' scrubber should be looked at. The file was not changed here (upstream file).
 - Thunderbird's menus can change; the guide names them plainly (no automated test is possible).
 - The profile is unsigned ("Unverified"): signing needs a real certificate.
 - New texts are English only; translations are a to-do.
