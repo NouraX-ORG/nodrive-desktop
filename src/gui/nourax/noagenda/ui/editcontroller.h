@@ -84,6 +84,7 @@ private:
     [[nodiscard]] QVariantMap fieldsOf(const AgendaItem &item) const;
     [[nodiscard]] QJsonObject agentField(const QString &agentId) const;
     QString submit(const EditCommand &command);
+    [[nodiscard]] QString movedText(const EditCommand &command, const EditResult &result) const;
 
     QPointer<AccountAgenda> _agenda;
     QString _lastEventCalendar;
@@ -96,7 +97,6 @@ private:
     QString _toast;
     QString _toastTone;
     QString _undoOp;
-    QHash<QString, QString> _moveTexts; ///< item key -> "Moved to 4 Nov - 8 Nov" (the Timeline)
     QTimer _toastTimer;
 };
 

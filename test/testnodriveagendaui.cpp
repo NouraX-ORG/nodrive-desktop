@@ -1349,8 +1349,10 @@ private:
         return ocsBody(tasks);
     }
 
-    /// NoGantt's answer to a move of task 111 to 31 Oct - 2 Nov: "Publish banners" moved with it, and there is an Undo.
-    static QByteArray movedTask111Answer()
+    /// NoGantt's answer to a move of task 111 (Wed 28 - Fri 30 Oct, three working days) dropped on 31 Oct - 2 Nov: with adjust_lag the server puts
+    /// the task on working days and works out the end from its length, so it saves Mon 2 - Wed 4 Nov (TaskService::update, snapToWorkingDays).
+    /// "Publish banners" moved with it, and there is an Undo. `saveStart` / `saveEnd` are the dates in the answer.
+    static QByteArray movedTask111Answer(const QString &saveStart = QStringLiteral("2026-11-02"), const QString &saveEnd = QStringLiteral("2026-11-04"))
     {
         QJsonObject saved;
         for (const auto &v : fixtureJson(QStringLiteral("gantt/tasks-1.json")).toArray()) {
@@ -1358,8 +1360,8 @@ private:
                 saved = v.toObject();
             }
         }
-        saved.insert(QStringLiteral("start_date"), QStringLiteral("2026-10-31 00:00:00"));
-        saved.insert(QStringLiteral("end_date"), QStringLiteral("2026-11-02 00:00:00"));
+        saved.insert(QStringLiteral("start_date"), saveStart + QStringLiteral(" 00:00:00"));
+        saved.insert(QStringLiteral("end_date"), saveEnd + QStringLiteral(" 00:00:00"));
         saved.insert(QStringLiteral("updated_at"), QStringLiteral("2026-10-28 12:00:00"));
         const QJsonObject moved{{QStringLiteral("id"), 104}, {QStringLiteral("title"), QStringLiteral("Publish banners")}};
         return ocsBody(QJsonObject{{QStringLiteral("task"), saved}, {QStringLiteral("propagated"), QJsonArray{moved}}, {QStringLiteral("op_id"), QStringLiteral("op-9")}, {QStringLiteral("deck"), QJsonObject()}});
@@ -1562,7 +1564,10 @@ private Q_SLOTS:
         QVERIFY(body.value(QStringLiteral("end_date")).toString().startsWith(QStringLiteral("2026-11-02")));
         QCOMPARE(body.value(QStringLiteral("adjust_lag")).toBool(), true); // NoGantt's own drag behaviour
         QCOMPARE(body.value(QStringLiteral("deck_confirmed")).toBool(), false);
-        QTRY_VERIFY2(edit->toastText().startsWith(QStringLiteral("Moved to 31 Oct - 2 Nov.")), qPrintable(edit->toastText()));
+        // The sent dates are the drop (a weekend); the toast tells what NoGantt saved, not what was sent.
+        QTRY_VERIFY2(edit->toastText().startsWith(QStringLiteral("Moved to 2 Nov - 4 Nov.")), qPrintable(edit->toastText()));
+        QVERIFY2(!edit->toastText().contains(QStringLiteral("31 Oct")), qPrintable(edit->toastText()));
+        QVERIFY2(edit->toastText().contains(QStringLiteral("NoGantt kept it on working days.")), qPrintable(edit->toastText()));
         QVERIFY2(edit->toastText().contains(QStringLiteral("Also moved: Publish banners")), qPrintable(edit->toastText()));
         QVERIFY(edit->toastCanUndo());
         QTRY_VERIFY(shown(content, QStringLiteral("undoToast")));
@@ -1611,7 +1616,8 @@ private Q_SLOTS:
 
     void theKeysMoveABarLikeTheMouse()
     {
-        const auto env = openTimeline(QStringLiteral("ali"), false, [](FakeTransport *t) { prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer()); });
+        // Here the server keeps the sent dates (one day on, Thu 29 - Fri 30 Oct is what NoGantt would save for a Wednesday task moved by a day).
+        const auto env = openTimeline(QStringLiteral("ali"), false, [](FakeTransport *t) { prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer(QStringLiteral("2026-10-29"), QStringLiteral("2026-10-31"))); });
         auto *tl = env->controller->timelineController();
         auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
         QVERIFY(bar);
@@ -1630,6 +1636,7 @@ private Q_SLOTS:
         QVERIFY(body.value(QStringLiteral("start_date")).toString().startsWith(QStringLiteral("2026-10-29")));
         QVERIFY(body.value(QStringLiteral("end_date")).toString().startsWith(QStringLiteral("2026-10-31")));
         QTRY_VERIFY(env->controller->editController()->toastText().startsWith(QStringLiteral("Moved to 29 Oct - 31 Oct.")));
+        QVERIFY(!env->controller->editController()->toastText().contains(QStringLiteral("working days"))); // the dates are the ones that were sent
     }
 
     void aLockedBarShowsTheLockAndDoesNotMove_data() { darkRows(); }
@@ -1688,6 +1695,82 @@ private Q_SLOTS:
         QVERIFY2(text.contains(QStringLiteral("20261029")) && text.contains(QStringLiteral("20261102")), qPrintable(text));
         QVERIFY(text.contains(QStringLiteral("SUMMARY:Draft report")));
         QTRY_VERIFY2(env->controller->editController()->toastText().startsWith(QStringLiteral("Moved to 29 Oct - 2 Nov.")), qPrintable(env->controller->editController()->toastText()));
+    }
+
+    void aToDoWithATimeOfDayKeepsItOnTheNewDays()
+    {
+        const QString path = QStringLiteral("/remote.php/dav/calendars/ali/personal/td4.ics");
+        // The account's zone is one hour ahead of UTC: 09:00 local is 08:00Z and 17:00 local is 16:00Z, on both the old and the new days.
+        const auto env = open(QStringLiteral("ali"), false, [&](FakeTransport *t) {
+            QByteArray xml = fixture(QStringLiteral("caldav/todos-personal.xml"));
+            QVERIFY(xml.contains("DTSTART;VALUE=DATE:20261027") && xml.contains("DUE;VALUE=DATE:20261031"));
+            xml.replace("DTSTART;VALUE=DATE:20261027", "DTSTART:20261027T080000Z");
+            xml.replace("DUE;VALUE=DATE:20261031", "DUE:20261031T160000Z");
+            t->answers.prepend({"REPORT", QStringLiteral("/remote.php/dav/calendars/ali/personal/"), "VTODO", 207, xml, {}});
+            const QByteArray text = "BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VTODO
+UID:ci-td4
+SUMMARY:Draft report
+DTSTART:20261027T080000Z
+DUE:20261031T160000Z
+END:VTODO
+END:VCALENDAR
+";
+            prepend(t, "GET", path, 200, text, {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"d4\"")}});
+            prepend(t, "PUT", path, 204, QByteArray(), {{QByteArrayLiteral("etag"), QByteArrayLiteral("\"d5\"")}});
+        }, true, [](Env *e) { e->agenda->setZone(QTimeZone::fromSecondsAheadOfUtc(3600)); });
+        env->controller->setViewMode(QStringLiteral("timeline"));
+        show(env.get());
+        auto *bar = barOf(env.get(), QStringLiteral("cal:personal/td4.ics"));
+        QVERIFY(bar);
+        auto *flick = findItem(env->window->contentItem(), QStringLiteral("timelineFlick"));
+        QVERIFY(flick);
+        flick->setProperty("contentY", qMax(0.0, bar->y() - 120));
+        QTest::qWait(300);
+        QVERIFY(centerOf(bar).y() < env->window->height() - 20);
+        const QPoint end = pressAndMove(env->window, bar, 24); // two days
+        QTRY_COMPARE(env->controller->timelineController()->ghost().value(QStringLiteral("days")).toInt(), 2);
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
+        QTRY_COMPARE(env->transport->count("PUT"), 1);
+        const QString text = QString::fromUtf8(env->transport->of("PUT").first().body);
+        QVERIFY2(text.contains(QStringLiteral("DTSTART:20261029T080000Z")), qPrintable(text)); // 09:00 local on the new start day
+        QVERIFY2(text.contains(QStringLiteral("DUE:20261102T160000Z")), qPrintable(text)); // 17:00 local on the new due day
+        QTRY_VERIFY2(env->controller->editController()->toastText().startsWith(QStringLiteral("Moved to 29 Oct - 2 Nov.")), qPrintable(env->controller->editController()->toastText()));
+    }
+
+    void aRefreshWhileABarIsHeldWaitsForTheDrop()
+    {
+        const auto env = openTimeline(QStringLiteral("ali"), false, [](FakeTransport *t) { prepend(t, "PUT", QString::fromLatin1(kPutTask111), 200, movedTask111Answer()); });
+        auto *tl = env->controller->timelineController();
+        auto *bar = barOf(env.get(), QStringLiteral("gantt:task:111"));
+        QVERIFY(bar);
+        const QPoint end = pressAndMove(env->window, bar, 36);
+        QTRY_VERIFY(tl->ghost().value(QStringLiteral("show")).toBool());
+        // The 5-minute timer (or another saved edit) refreshes the data while the bar is held: the bar and the ghost stay.
+        env->agenda->refresh(true);
+        QTest::qWait(300);
+        QVERIFY(tl->ghost().value(QStringLiteral("show")).toBool());
+        QCOMPARE(tl->ghost().value(QStringLiteral("days")).toInt(), 3);
+        QCOMPARE(findItem(env->window->contentItem(), QStringLiteral("bar-gantt:task:111")), bar);
+        QTest::mouseRelease(env->window, Qt::LeftButton, {}, end);
+        QTRY_COMPARE(env->transport->count("PUT"), 1); // the drop still saves
+        QTRY_VERIFY(!tl->ghost().value(QStringLiteral("show")).toBool());
+    }
+
+    void theTeamControlsDoNothingOnTheTimelineSoTheyAreDimmed()
+    {
+        const auto env = open(QStringLiteral("ali"), false);
+        show(env.get());
+        auto *content = env->window->contentItem();
+        auto *chip = findItem(content, QStringLiteral("chipTeam"));
+        QVERIFY(chip);
+        QVERIFY(chip->isEnabled());
+        env->controller->setViewMode(QStringLiteral("timeline"));
+        QTRY_VERIFY(!findItem(content, QStringLiteral("chipTeam"))->isEnabled());
+        QVERIFY(findItem(content, QStringLiteral("chipTeam"))->opacity() < 1.0);
+        env->controller->setViewMode(QStringLiteral("day"));
+        QTRY_VERIFY(findItem(content, QStringLiteral("chipTeam"))->isEnabled());
     }
 
     void aMoveMadeOfflineWaitsAndTheBarSaysSo()

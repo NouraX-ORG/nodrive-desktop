@@ -615,6 +615,24 @@ private Q_SLOTS:
         QCOMPARE(d.days, 0);
     }
 
+    void aTaskWithOnlyAnEndDateIsDrawnButCannotBeMoved()
+    {
+        auto t = task(7, QStringLiteral("Only an end"), QDate(), day(28));
+        t.due = day(28);
+        const auto r = layout({t});
+        const auto *e = entryOf(r, t.key);
+        QVERIFY(e); // it is still on the chart, as a one-day bar
+        QCOMPARE(e->start, day(28));
+        QCOMPARE(e->end, day(28));
+        QVERIFY(!e->canMove);
+        QVERIFY(e->locked);
+        QCOMPARE(e->lockReason, QStringLiteral("This task has no dates to move."));
+        const auto d = TimelineLayout::drag(*e, 3 * 12.0, 12.0);
+        QVERIFY(!d.allowed);
+        QCOMPARE(d.days, 0);
+        QCOMPARE(d.reason, e->lockReason);
+    }
+
     void waitingAndLateAndBlockedAreCarried()
     {
         auto t = task(1, QStringLiteral("T"), day(20), day(26));

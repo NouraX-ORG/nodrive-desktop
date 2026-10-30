@@ -91,6 +91,8 @@ private:
     [[nodiscard]] const TimelineEntry *entryWithKey(const QString &key) const;
     [[nodiscard]] QString rangeText(const QDate &a, const QDate &b) const;
     void rebuildScale();
+    /// A refresh that came while a bar was held waited; it is drawn now that the drop or the cancel is done.
+    void releaseHeldRebuild();
 
     QPointer<AccountAgenda> _agenda;
     QPointer<EditController> _edit;
@@ -105,6 +107,7 @@ private:
     QVariantList _scaleBottom;
     QVariantMap _ghost;
     QString _emptyText;
+    bool _rebuildHeld = false;
 };
 
 } // namespace OCC::Nourax::Agenda

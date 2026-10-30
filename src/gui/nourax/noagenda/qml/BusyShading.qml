@@ -37,9 +37,17 @@ Item {
                 opacity: 0.55
             }
             Canvas {
+                id: hatch
                 visible: day.modelData.dayOff
                 anchors.fill: parent
                 renderTarget: Canvas.Image
+                // The hatch takes its colour when it is painted: paint again when the theme switches or the day changes size.
+                Connections {
+                    target: s.st
+                    function onChanged() { hatch.requestPaint(); }
+                }
+                onWidthChanged: requestPaint()
+                onHeightChanged: requestPaint()
                 onPaint: {
                     var ctx = getContext("2d");
                     ctx.clearRect(0, 0, width, height);

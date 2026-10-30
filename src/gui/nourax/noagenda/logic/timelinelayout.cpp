@@ -326,10 +326,14 @@ TimelineLayoutResult build(const TimelineLayoutInput &input)
         const auto rules = EditRules::of(item);
         const bool isBar = !c.diamond;
         if (isBar) {
-            e.canMove = rules.canEdit && item.pending != PendingState::Conflict;
+            // A NoGantt task with only an end date is drawn as a one-day bar, but there is no start to move.
+            const bool noStart = item.kind == ItemKind::GanttTask && !item.startDate.isValid();
+            e.canMove = rules.canEdit && item.pending != PendingState::Conflict && !noStart;
             if (!e.canMove) {
                 e.locked = true;
-                if (item.pending == PendingState::Conflict) {
+                if (noStart && rules.canEdit) {
+                    e.lockReason = AgendaText::tr("This task has no dates to move.");
+                } else if (item.pending == PendingState::Conflict) {
                     e.lockReason = AgendaText::tr("A change to this was not sent. See the list of changes that were not sent.");
                 } else {
                     e.lockReason = rules.reason.isEmpty() ? AgendaText::tr("This can't be moved here.") : rules.reason;

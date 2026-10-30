@@ -13,6 +13,7 @@
 #include "../model/agendaitem.h"
 #include "../registry/agentregistry.h"
 
+#include <QDate>
 #include <QDateTime>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -108,6 +109,10 @@ struct EditResult
     QStringList alsoMoved; ///< NoGantt: titles of the tasks that moved with this one
     QString undoOpId; ///< NoGantt: "Undo" for 10 seconds
     QString note; ///< a sentence to show next to the result (for example a linked card that did not move)
+    /// NoGantt: the dates that the server saved for the task (from its answer), not the ones that were sent. NoGantt moves a
+    /// dragged task onto working days, so they can differ from the drop. Invalid when the answer had none.
+    QDate savedStart;
+    QDate savedEnd;
     bool checkInNoGantt = false; ///< NoGantt answered with another list than the one sent
     /// NoBoard agent label: the answer was lost after the old label was already taken off. The retry must not count
     /// NoAgenda's own partial change as "changed somewhere else".

@@ -371,6 +371,7 @@ private Q_SLOTS:
         QVERIFY(hasProblem(*item, ProblemFlag::Kind::UnknownAgent));
         QVERIFY(item->agent.displayText().contains(QStringLiteral("Ghost-Bot")));
         QVERIFY(item->agent.displayText().contains(QStringLiteral("(unknown agent)")));
+        QVERIFY(!item->agent.displayText().contains(QString::fromUcs4(U"\U0001F916"))); // the label draws its own robot icon
     }
 
     void aTaskWithRealTimesOnOneDayTakesThatTime()

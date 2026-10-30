@@ -149,6 +149,9 @@ Rectangle {
             Chip {
                 objectName: "chipTeam"
                 st: h.st
+                // Team work is not drawn on the Timeline, so the chip does nothing there: it is dimmed and off.
+                enabled: h.ctrl.viewMode !== "timeline"
+                opacity: enabled ? 1 : 0.4
                 glyph: "people"
                 label: qsTr("My team")
                 on: h.ctrl.chipTeam
@@ -166,6 +169,8 @@ Rectangle {
                 objectName: "showAllTeam"
                 visible: h.ctrl.hasTeamSection && h.ctrl.chipTeam
                 st: h.st
+                enabled: h.ctrl.viewMode !== "timeline"
+                opacity: enabled ? 1 : 0.4
                 label: qsTr("Show all team tasks")
                 on: h.ctrl.showAllTeam
                 onToggled: function (value) { h.ctrl.showAllTeam = value; }

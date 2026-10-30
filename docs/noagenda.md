@@ -401,8 +401,12 @@ is not drawn here (the Timeline is about my own work).
 - The drop goes through the **edit step**, not around it: `EditController::moveByDays` builds the same `ganttUpdate` /
   `calendarPatch` command, so the rules, the offline queue, the conflict handling ("Apply my change again") and **Undo**
   are the editor's. A NoGantt task sends `start_date` and `end_date` (the time of day NoGantt had is kept), `adjust_lag=true`
-  (NoGantt's own drag behaviour) and `deck_confirmed=false`; the toast says "Moved to 31 Oct - 2 Nov. Also moved: ..." and
-  offers **Undo** for 10 seconds. A to-do patches `DTSTART` and `DUE` and keeps their times of day.
+  (NoGantt's own drag behaviour) and `deck_confirmed=false`. The toast says "Moved to 2 Nov - 4 Nov. Also moved: ..." and
+  offers **Undo** for 10 seconds. The dates in the sentence are the ones **NoGantt saved** (read from its answer), not the
+  dates of the drop: NoGantt puts a moved task on working days and works out its end from its length in working days, so a
+  drop across a weekend is saved on other days. When they differ the toast adds "NoGantt kept it on working days.". (The
+  `move` object in the command holds the dates of the drop, so the sentence is also right for a move that waited offline or
+  was merged with a second move of the same bar.) A to-do patches `DTSTART` and `DUE` and keeps their times of day.
 - **Locked bars** (a project I only view, a read-only calendar, the version guard, a change that is in "Not sent") show a
   lock, do not move, and say why in a message. No command is created for them. Milestones and cards are not dragged (a
   card's due date is in the detail panel, a milestone is changed in NoGantt).
@@ -414,9 +418,9 @@ is not drawn here (the Timeline is about my own work).
 |---|---|
 | `logic/timelinelayout.h/.cpp` | The pure maths: date to x and back, groups, rows, rectangles, arrow routes, shading, drag to dates |
 | `ui/timelinecontroller.h/.cpp` | What QML needs: rows with geometry, scale, arrows, shading, zoom, ghost, drop |
-| `ui/editcontroller.*` | `moveByDays` (the one new entry of the edit step) and the "Moved to ..." sentence |
+| `ui/editcontroller.*` | `moveByDays` (the one new entry of the edit step) and the "Moved to ..." sentence (`movedText`, written from the dates the server saved) |
 | `model/agendaitem.h`, `logic/ganttmapper.cpp`, `logic/calendarmapper.cpp` | The row now carries its phase, its dependencies (type, lag, title and owner of the predecessor) and the start time of a to-do |
-| `qml/Timeline*.qml`, `qml/DependencyArrows.qml`, `qml/BusyShading.qml` | The view, the bars, the diamonds, the arrows (a `Canvas`, part of QtQuick), the shading, the scale, the legend |
+| `qml/Timeline*.qml`, `qml/DependencyArrows.qml`, `qml/BusyShading.qml` | The view, the bars, the diamonds, the arrows (scene-graph rectangles, `DependencyArrows.qml`), the shading, the scale, the legend |
 
 No new library and **no new line in an upstream file**: the three small hooks of the core step are the only ones.
 
@@ -431,7 +435,7 @@ No new library and **no new line in an upstream file**: the three small hooks of
 - Done tasks are not drawn (the core step does not read them as my work).
 - A move of a to-do changes `DTSTART` to a date-time only when it already was one.
 - Context7 was out of quota during this step ("Monthly quota reached"), so the Qt Quick items used (`DragHandler`,
-  `HoverHandler`, `TapHandler`, `WheelHandler`, `Canvas`, `Flickable`) were taken from the official Qt 6 documentation as
+  `HoverHandler`, `TapHandler`, `WheelHandler`, `Flickable`; `Canvas` for the hatching only) were taken from the official Qt 6 documentation as
   known from the plan's earlier check; the UI tests drive them with real mouse and key events.
 
 ### Owner test rows (Timeline, real computers, plain English)
@@ -447,11 +451,15 @@ No new library and **no new line in an upstream file**: the three small hooks of
 
 ### Open points of the Timeline step
 
-- Mid-drag, a refresh that rebuilds the rows drops the drag (nothing is sent). The 5-minute refresh is the only trigger.
-- The ghost shows whole-day moves only; NoGantt may place the result on the next working day (`adjust_lag`), the toast and the
-  next refresh show the real dates.
-- The hatching of days off is drawn with one small `Canvas` per day; with very many rows this is memory-heavy
-  (about 4 bytes per pixel of column).
+- A refresh that comes while a bar is held (the 5-minute refresh, or another saved edit) waits: the chart is rebuilt when the bar
+  is dropped or the drag is cancelled, so the drag is not lost. Switching to another view lets the bar go.
+- The ghost shows whole-day moves only; NoGantt may place the result on working days (`adjust_lag`). The toast then names the
+  dates that were saved and adds "NoGantt kept it on working days."; the bar jumps to them at the next refresh.
+- The hatching of days off is drawn with one small `Canvas` per day (painted again when the theme switches); with very many rows
+  this is memory-heavy (about 4 bytes per pixel of column).
+- A NoGantt task that has only an end date is drawn as a one-day bar with a lock ("This task has no dates to move."): it can't be dragged.
+- "My team" and "Show all team tasks" are dimmed on the Timeline, because team work is not drawn there.
+- The agent label leaves out the robot emoji that a planning person's name starts with (the label draws its own robot icon).
 - Dependencies of a milestone (milestone as the successor) are not drawn: only tasks have arrows into them.
 - Texts are English; translations are a to-do ("Timeline", "Weeks", "Days", "After: %1 (%2)", "No dated work in this
   range.", "%1 - %2", "Moved to %1 - %2", "lag %1 days" and the legend).

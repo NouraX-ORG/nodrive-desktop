@@ -32,6 +32,7 @@
 
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLocale>
 #include <QRegularExpression>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -1393,27 +1394,32 @@ private:
         // The drag: +2 days (and a bit less than half a day more, which snaps away), the call the drop handler makes.
         const auto firstBefore = taskOf(&transport, website, first);
         const auto secondBefore = taskOf(&transport, website, second);
+        // The answer of the editor to the last drop: a failed send is tried again a few times (the throwaway server may still be busy).
+        auto waitForEdit = [&](QSignalSpy &spy) {
+            EditResult last;
+            int tries = 0;
+            for (int i = 0; i < 1500; ++i) {
+                if (!spy.isEmpty()) {
+                    last = qvariant_cast<EditResult>(spy.last().at(1));
+                    if (last.outcome != EditResult::Outcome::Failed || ++tries > 3) {
+                        break;
+                    }
+                    spy.clear();
+                    QTest::qWait(1500);
+                    agenda->edit()->retry();
+                }
+                spy.wait(100);
+                if (i > 0 && i % 60 == 0 && spy.isEmpty() && !agenda->isRefreshing() && !agenda->edit()->isBusy()) {
+                    agenda->refresh(true);
+                }
+            }
+            return last;
+        };
         QSignalSpy spy(agenda->edit(), &EditService::finished);
         const double px = tl.pxPerDay();
         const QString error = tl.dragCommit(firstKey, 2 * px + 0.2 * px);
         check(QStringLiteral("drag: handed to the editor"), error.isEmpty(), error);
-        EditResult result;
-        int tries = 0;
-        for (int i = 0; i < 1500; ++i) {
-            if (!spy.isEmpty()) {
-                result = qvariant_cast<EditResult>(spy.last().at(1));
-                if (result.outcome != EditResult::Outcome::Failed || ++tries > 3) {
-                    break;
-                }
-                spy.clear();
-                QTest::qWait(1500);
-                agenda->edit()->retry();
-            }
-            spy.wait(100);
-            if (i > 0 && i % 60 == 0 && spy.isEmpty() && !agenda->isRefreshing() && !agenda->edit()->isBusy()) {
-                agenda->refresh(true);
-            }
-        }
+        const EditResult result = waitForEdit(spy);
         check(QStringLiteral("drag: sent"), result.done(), why(result));
         const auto firstAfter = taskOf(&transport, website, first);
         const QString wantStart = monday.addDays(2).toString(Qt::ISODate);
@@ -1443,6 +1449,37 @@ private:
             check(QStringLiteral("undo: the dependent task has its dates back"), secondBack.value(QStringLiteral("start_date")).toString().left(10) == secondBefore.value(QStringLiteral("start_date")).toString().left(10),
                 secondBack.value(QStringLiteral("start_date")).toString().left(10));
         }
+
+        // A drop onto a weekend: NoGantt puts the task on working days and works out its end from its length, so the dates it saves are not
+        // the dates of the drop. The toast must tell the dates that the server saved, with a note when they differ.
+        const QDate weekMonday = mondayFrom(21);
+        const int weekend = createTask(&transport, website, QStringLiteral("Timeline weekend"), weekMonday, weekMonday.addDays(1), ali);
+        check(QStringLiteral("weekend: a task for the drop was made"), weekend > 0, QString::number(weekend));
+        if (weekend <= 0) {
+            return;
+        }
+        settle(agenda.get());
+        tl.rebuild(agenda->state().today, {});
+        const QString weekendKey = QStringLiteral("gantt:task:%1").arg(weekend);
+        check(QStringLiteral("weekend: the task is a bar"), tl.itemKeys().contains(weekendKey), QString());
+        QSignalSpy weekendSpy(agenda->edit(), &EditService::finished);
+        const QString weekendError = tl.dragCommit(weekendKey, 5 * px); // Monday-Tuesday + 5 days = Saturday-Sunday
+        check(QStringLiteral("weekend: handed to the editor"), weekendError.isEmpty(), weekendError);
+        const EditResult weekendResult = waitForEdit(weekendSpy);
+        check(QStringLiteral("weekend: sent"), weekendResult.done(), why(weekendResult));
+        const auto weekendAfter = taskOf(&transport, website, weekend);
+        const QDate savedStart = QDate::fromString(weekendAfter.value(QStringLiteral("start_date")).toString().left(10), Qt::ISODate);
+        const QDate savedEnd = QDate::fromString(weekendAfter.value(QStringLiteral("end_date")).toString().left(10), Qt::ISODate);
+        check(QStringLiteral("weekend: the answer carries the saved dates"), weekendResult.savedStart == savedStart && weekendResult.savedEnd == savedEnd,
+            weekendResult.savedStart.toString(Qt::ISODate) + QStringLiteral(" ") + weekendResult.savedEnd.toString(Qt::ISODate) + QStringLiteral(" vs server ") + savedStart.toString(Qt::ISODate) + QStringLiteral(" ") + savedEnd.toString(Qt::ISODate));
+        const QString want = QStringLiteral("Moved to %1 - %2.").arg(QLocale().toString(savedStart, QStringLiteral("d MMM")), QLocale().toString(savedEnd, QStringLiteral("d MMM")));
+        check(QStringLiteral("weekend: the toast tells the dates the server saved"), edit.toastText().startsWith(want), edit.toastText() + QStringLiteral(" (wanted: ") + want + QLatin1Char(')'));
+        const bool differs = savedStart != weekMonday.addDays(5) || savedEnd != weekMonday.addDays(6);
+        check(QStringLiteral("weekend: a note when the server changed the dates, none when it did not"), edit.toastText().contains(QStringLiteral("NoGantt kept it on working days.")) == differs,
+            QStringLiteral("saved %1 - %2, dropped %3 - %4: %5").arg(savedStart.toString(Qt::ISODate), savedEnd.toString(Qt::ISODate), weekMonday.addDays(5).toString(Qt::ISODate), weekMonday.addDays(6).toString(Qt::ISODate), edit.toastText()));
+        // Recorded for the report: what the throwaway NoGantt really did with the drop (the check above holds either way).
+        check(QStringLiteral("weekend: server dates after the drop (info)"), true,
+            QStringLiteral("dropped %1 - %2, saved %3 - %4").arg(weekMonday.addDays(5).toString(Qt::ISODate), weekMonday.addDays(6).toString(Qt::ISODate), savedStart.toString(Qt::ISODate), savedEnd.toString(Qt::ISODate)));
     }
 
     // ---- offline: three edits wait while the server is not reachable, then go out in order ---------------------------------------------------------

@@ -222,6 +222,9 @@ void GanttWriter::put(HttpTransport *transport, const EditCommand &command, cons
         const auto data = reply.data.toObject();
         const auto task = data.value(QLatin1String("task")).toObject();
         EditResult ok = WriterUtil::done(task.value(QLatin1String("updated_at")).toString());
+        // The dates NoGantt really saved ("2026-11-02 00:00:00" or "2026-11-02"): it may have moved the task onto working days.
+        ok.savedStart = QDate::fromString(task.value(QLatin1String("start_date")).toString().left(10), Qt::ISODate);
+        ok.savedEnd = QDate::fromString(task.value(QLatin1String("end_date")).toString().left(10), Qt::ISODate);
         const int editedId = intOf(task.value(QLatin1String("id")));
         for (const auto &p : data.value(QLatin1String("propagated")).toArray()) {
             const auto moved = p.toObject();

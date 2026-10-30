@@ -6,6 +6,7 @@
 #include "timelinecontroller.h"
 
 #include <QLocale>
+#include <QScopeGuard>
 
 namespace OCC::Nourax::Agenda {
 
@@ -73,6 +74,12 @@ void TimelineController::rebuild(const QDate &anchor, const std::function<bool(c
     }
     _anchor = anchor;
     _filter = filter;
+    if (_ghost.value(QStringLiteral("show")).toBool()) {
+        // A bar is held (a refresh, the 5-minute timer or another saved edit): the chart waits for the drop or the cancel, so the drag is not lost.
+        _rebuildHeld = true;
+        return;
+    }
+    _rebuildHeld = false;
     const auto &state = _agenda->state();
 
     TimelineLayoutInput input;
@@ -254,10 +261,18 @@ QString TimelineController::dragPreview(const QString &key, double dx)
     return text;
 }
 
+void TimelineController::releaseHeldRebuild()
+{
+    if (_rebuildHeld && _anchor.isValid()) {
+        rebuild(_anchor, _filter);
+    }
+}
+
 void TimelineController::dragCancel()
 {
     _ghost.clear();
     Q_EMIT ghostChanged();
+    releaseHeldRebuild();
 }
 
 QString TimelineController::dragCommit(const QString &key, double dx)
@@ -265,6 +280,7 @@ QString TimelineController::dragCommit(const QString &key, double dx)
     const auto *e = entryWithKey(key);
     _ghost.clear();
     Q_EMIT ghostChanged();
+    const auto release = qScopeGuard([this] { releaseHeldRebuild(); });
     if (!e || !_edit) {
         return QString();
     }

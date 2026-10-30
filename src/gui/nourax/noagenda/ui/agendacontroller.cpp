@@ -145,6 +145,9 @@ void AgendaController::setViewMode(const QString &mode)
     if (mode != QLatin1String("day") && mode != QLatin1String("week") && mode != QLatin1String("month") && mode != QLatin1String("timeline")) {
         return;
     }
+    if (_timeline->ghost().value(QStringLiteral("show")).toBool()) {
+        _timeline->dragCancel(); // a bar still held when the view changes is let go, so the chart is not kept waiting
+    }
     _view = mode;
     _agenda->setView(mode);
     rebuild();

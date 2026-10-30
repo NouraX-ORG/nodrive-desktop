@@ -770,9 +770,11 @@ QString EditController::moveByDays(const QString &itemKey, int days)
         newEnd = end.addDays(days);
         fields.insert(QStringLiteral("start_date"), isoDate(newStart));
         fields.insert(QStringLiteral("end_date"), isoDate(newEnd));
-        // The sentence is kept before the command is handed over: with a quick answer the result arrives inside submit().
-        _moveTexts.insert(item.key, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
-        _agenda->edit()->submit(EditCommands::ganttUpdate(item, fields));
+        // The command itself carries the dates of the drop, so the sentence is right even for a command that is sent later (offline) or
+        // that was merged with another move of the same bar. The toast is written in onFinished().
+        auto command = EditCommands::ganttUpdate(item, fields);
+        command.change.insert(QStringLiteral("move"), QJsonObject{{QStringLiteral("start"), isoDate(newStart)}, {QStringLiteral("end"), isoDate(newEnd)}});
+        _agenda->edit()->submit(command);
         return QString();
     }
     if (item.home == Home::Tasks && item.kind == ItemKind::Todo) {
@@ -792,8 +794,9 @@ QString EditController::moveByDays(const QString &itemKey, int days)
         } else {
             fields.insert(QStringLiteral("due"), isoDate(newEnd));
         }
-        _moveTexts.insert(item.key, AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(newStart, QStringLiteral("d MMM")), QLocale().toString(newEnd, QStringLiteral("d MMM"))));
-        _agenda->edit()->submit(EditCommands::calendarPatch(item, fields));
+        auto command = EditCommands::calendarPatch(item, fields);
+        command.change.insert(QStringLiteral("move"), QJsonObject{{QStringLiteral("start"), isoDate(newStart)}, {QStringLiteral("end"), isoDate(newEnd)}});
+        _agenda->edit()->submit(command);
         return QString();
     }
     return AgendaText::tr("This can't be moved here.");
@@ -868,19 +871,38 @@ void EditController::onUndoFinished(const EditResult &result)
     showToast(text, QStringLiteral("warn"));
 }
 
+// "Moved to 2 Nov - 4 Nov." for a drag of the Timeline (the command holds a "move" object), else "Saved.". The dates are the ones the
+// server saved when it says so: NoGantt puts a moved task onto working days and works out its end from its length in working days,
+// so they can differ from the drop; the person is told that, never the dates of the drop alone.
+QString EditController::movedText(const EditCommand &command, const EditResult &result) const
+{
+    const auto move = command.change.value(QStringLiteral("move")).toObject();
+    if (move.isEmpty()) {
+        return AgendaText::tr("Saved.");
+    }
+    QDate start = QDate::fromString(move.value(QStringLiteral("start")).toString(), Qt::ISODate);
+    QDate end = QDate::fromString(move.value(QStringLiteral("end")).toString(), Qt::ISODate);
+    bool kept = false;
+    if (command.kind == EditKind::GanttUpdate && result.savedStart.isValid() && result.savedEnd.isValid()) {
+        kept = result.savedStart != start || result.savedEnd != end;
+        start = result.savedStart;
+        end = result.savedEnd;
+    }
+    if (!start.isValid() || !end.isValid()) {
+        return AgendaText::tr("Saved.");
+    }
+    QString text = AgendaText::tr("Moved to %1 - %2").arg(QLocale().toString(start, QStringLiteral("d MMM")), QLocale().toString(end, QStringLiteral("d MMM"))) + QLatin1Char('.');
+    if (kept) {
+        text += QLatin1Char(' ') + AgendaText::tr("NoGantt kept it on working days.");
+    }
+    return text;
+}
+
 void EditController::onFinished(const EditCommand &command, const EditResult &result)
 {
-    if (result.outcome != EditResult::Outcome::Done && result.outcome != EditResult::Outcome::Offline) {
-        _moveTexts.remove(command.itemKey);
-    }
     switch (result.outcome) {
     case EditResult::Outcome::Done: {
-        QString text = _moveTexts.take(command.itemKey);
-        if (text.isEmpty()) {
-            text = AgendaText::tr("Saved.");
-        } else {
-            text += QLatin1Char('.');
-        }
+        QString text = movedText(command, result);
         if (!result.alsoMoved.isEmpty()) {
             text += QLatin1Char(' ') + AgendaText::tr("Also moved: %1").arg(result.alsoMoved.join(QStringLiteral(", ")));
         }

@@ -9,6 +9,21 @@
 
 namespace OCC::Nourax::Agenda {
 
+namespace {
+
+/// The agent label draws its own robot icon, so the robot emoji that a planning person's name starts with is left out (it is
+/// also not in every font and shows as an empty box).
+QString withoutRobot(const QString &text)
+{
+    const QString robot = QString::fromUcs4(U"\U0001F916");
+    if (!text.startsWith(robot)) {
+        return text;
+    }
+    return text.mid(robot.size()).trimmed();
+}
+
+} // namespace
+
 QString AgentRef::displayText() const
 {
     if (isSelf) {
@@ -18,12 +33,12 @@ QString AgentRef::displayText() const
         return owner.isEmpty() ? AgendaText::tr("Agent of someone else") : AgendaText::tr("Agent of %1").arg(owner);
     }
     if (unknown) {
-        return AgendaText::tr("%1 (unknown agent)").arg(id);
+        return AgendaText::tr("%1 (unknown agent)").arg(withoutRobot(id));
     }
     if (retired) {
-        return AgendaText::tr("%1 (retired)").arg(name);
+        return AgendaText::tr("%1 (retired)").arg(withoutRobot(name));
     }
-    return name;
+    return withoutRobot(name);
 }
 
 bool AgendaItem::hasDate() const
