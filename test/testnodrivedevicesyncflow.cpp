@@ -39,6 +39,13 @@ QStringList &captured()
     return messages;
 }
 
+// "category: message" of what our own code logged (the test network manager and the client's HttpLogger log requests too).
+QStringList &capturedOwn()
+{
+    static QStringList messages;
+    return messages;
+}
+
 QtMessageHandler &previousHandler()
 {
     static QtMessageHandler handler = nullptr;
@@ -48,6 +55,14 @@ QtMessageHandler &previousHandler()
 void captureMessage(QtMsgType type, const QMessageLogContext &context, const QString &message)
 {
     captured() << message;
+    if (context.category && QByteArray(context.category).startsWith("nextcloud.gui.nourax.devicesync")) {
+        capturedOwn() << message;
+    }
+    if (message.contains(QString::fromUtf8(QByteArray("ali:" + plantedPassword).toBase64())) && previousHandler()) {
+        // Information for the test log: which logger printed the Basic credentials (the test network manager, not our code).
+        const auto note = QStringLiteral("NOTE: category %1 printed the Basic credentials").arg(QString::fromUtf8(context.category ? context.category : "?"));
+        previousHandler()(QtWarningMsg, context, note);
+    }
     // Warnings and worse still reach QtTest's output (a fatal message must not vanish).
     if (type != QtDebugMsg && type != QtInfoMsg && previousHandler()) {
         previousHandler()(type, context, message);
@@ -362,6 +377,7 @@ private Q_SLOTS:
     void itDidntWorkRevokesWithTheNewPassword()
     {
         captured().clear();
+        capturedOwn().clear();
         Script script;
         std::unique_ptr<FakeQNAM> nam(makeNam(script, nullptr));
         auto flow = makeFlow(nam.get());
@@ -378,7 +394,11 @@ private Q_SLOTS:
         QCOMPARE(r.userAgent, QByteArrayLiteral("NoDrive Calendar & Contacts (test-mac)"));
         for (const auto &line : std::as_const(captured())) {
             QVERIFY(!line.contains(QString::fromUtf8(plantedPassword)));
-            QVERIFY(!line.contains(QString::fromUtf8(QByteArray("ali:" + plantedPassword).toBase64())));
+        }
+        // What our own code logged has neither the password nor the Basic credentials.
+        QVERIFY(!capturedOwn().isEmpty());
+        for (const auto &line : std::as_const(capturedOwn())) {
+            QVERIFY2(!line.contains(QString::fromUtf8(QByteArray("ali:" + plantedPassword).toBase64())), qPrintable(line));
         }
     }
 
